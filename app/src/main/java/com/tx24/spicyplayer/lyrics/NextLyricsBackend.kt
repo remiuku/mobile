@@ -351,7 +351,7 @@ internal class NextLyricsBackend(context: Context, clientKey: String) {
 
     private val geniusRomanization = GeniusRomanizationSource(geniusPages)
     // Named anew when Genius matching changes, so answers matched the old way are asked again.
-    private val romanCache = File(context.cacheDir, "genius-roman-2")
+    private val romanCache = File(context.cacheDir, "genius-roman-3")
     private val geniusTranslation = GeniusTranslationSource(geniusPages)
     private val humanTranslationCache = com.tx24.spicyplayer.translation.DiskGeniusTranslationCache(File(context.cacheDir, "genius-translations"))
 

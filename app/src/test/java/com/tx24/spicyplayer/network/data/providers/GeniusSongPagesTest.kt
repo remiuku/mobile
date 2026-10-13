@@ -88,6 +88,16 @@ class GeniusSongPagesTest {
         assertNull(stranger.original("Pretender", "Some Other Band"))
     }
 
+    @Test fun `a title written in the other kana, or matched by its bracketed name, is the song`() = runBlocking {
+        // Spotify's "ヤラララ(YARARARA)" is Genius's "やラララ (YARARARA)".
+        val pages = GeniusSongPages(searchingGenius(listOf("やラララ (YARARARA)" to "AnythingBecomeMoe")), Gson())
+        assertEquals("やラララ (YARARARA)", pages.original("ヤラララ(YARARARA)", "AnythingBecomeMoe")?.get("title")?.asString)
+        assertEquals("やラララ (YARARARA)", pages.original("YARARARA", "AnythingBecomeMoe")?.get("title")?.asString)
+        // A featured credit in brackets is no other name for the song.
+        val featured = GeniusSongPages(searchingGenius(listOf("Different (feat. Kasane Teto)" to "AnythingBecomeMoe")), Gson())
+        assertNull(featured.original("Song (feat. Kasane Teto)", "AnythingBecomeMoe"))
+    }
+
     @Test fun `a title that matches outright goes before one that only holds it`() = runBlocking {
         val pages = GeniusSongPages(searchingGenius(listOf("Lemon Tree" to "米津玄師 (Kenshi Yonezu)", "Lemon" to "米津玄師 (Kenshi Yonezu)")), Gson())
         assertEquals("Lemon", pages.original("Lemon", "Kenshi Yonezu")?.get("title")?.asString)

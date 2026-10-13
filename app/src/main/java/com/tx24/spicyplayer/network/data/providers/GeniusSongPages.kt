@@ -53,13 +53,17 @@ internal class GeniusSongPages(
         // Several credited artists ("ROSÉ, Bruno Mars") can bury the song under its translation
         // pages; the first artist alone finds it.
         val firstArtist = artist.split(ARTIST_SEPARATOR).first().trim().takeIf { it.isNotEmpty() && it != artist.trim() }
+        // A title's other name in brackets ("ヤラララ(YARARARA)"): Genius's search may find the
+        // song by it alone when the whole title finds nothing.
+        val otherName = alternateTitles(title).firstOrNull()?.let { "$it ${firstArtist ?: cleanArtist}" }
         val queries = if (romanizations) listOfNotNull(
             "$title $artist",
             firstArtist?.let { "$cleanTitle $it" },
+            otherName,
             "$cleanTitle $cleanArtist Romanized",
             "$cleanTitle Romanized",
             "$title Genius Romanizations",
-        ) else listOfNotNull("$title $artist", "$cleanTitle $cleanArtist", firstArtist?.let { "$cleanTitle $it" })
+        ) else listOfNotNull("$title $artist", "$cleanTitle $cleanArtist", firstArtist?.let { "$cleanTitle $it" }, otherName)
         val hits = mutableListOf<JsonObject>()
         val seen = mutableSetOf<Long>()
         var failure: Exception? = null
@@ -173,9 +177,17 @@ internal class GeniusSongPages(
     private fun sameTitle(hit: JsonObject, title: String): Boolean {
         fun holds(a: String, b: String) = a.isNotEmpty() && b.isNotEmpty() && (a == b || a in b || b in a)
         val theirTitle = hit.str("title")
-        if (!holds(norm(theirTitle), norm(title)) && !holds(norm(theirTitle.replace(BRACKETED, "")), norm(title.replace(BRACKETED, "")))) return false
-        return !otherVersion(theirTitle, title)
+        val held = holds(norm(theirTitle), norm(title)) || holds(norm(theirTitle.replace(BRACKETED, "")), norm(title.replace(BRACKETED, "")))
+        // Or the two share a name in brackets outright: "ヤラララ(YARARARA)" and "やラララ (YARARARA)".
+        val named = !held && alternateTitles(title).map(::norm).any { it.isNotEmpty() && it in alternateTitles(theirTitle).map(::norm) }
+        return (held || named) && !otherVersion(theirTitle, title)
     }
+
+    /** A title's other names in brackets; not featured credits or version notes. */
+    private fun alternateTitles(title: String): List<String> =
+        BRACKETED.findAll(title).map { it.value.drop(1).dropLast(1).trim() }
+            .filter { it.length >= 2 && !CREDIT.containsMatchIn(it) && !VERSION.containsMatchIn(it) }
+            .toList()
 
     /** [theirs] names a version (in brackets or after a dash) that [ours] doesn't. */
     private fun otherVersion(theirs: String, ours: String): Boolean {
@@ -249,13 +261,17 @@ internal class GeniusSongPages(
     }
 
     private fun artistOf(hit: JsonObject) = hit.getAsJsonObject("primary_artist")?.str("name").orEmpty()
+    // Hiragana folded into katakana: a title is written either way ("ヤラララ", Genius's "やラララ").
     private fun norm(s: String) = SpotifyTrackMatcher.normalize(s).replace(" ", "")
+        .map { if (it in 'ぁ'..'ゖ') it + 0x60 else it }.joinToString("")
     private fun JsonObject.str(name: String): String = get(name)?.takeIf { it.isJsonPrimitive }?.asString.orEmpty()
 
     private companion object {
         const val MAX_ANSWERS = 64
         /** Artist records asked for alternate names per lookup: the first title matches are the likely ones. */
         const val MAX_ALIAS_LOOKUPS = 2
+        /** A credit in a title's brackets, not another name for it. */
+        val CREDIT = Regex("""^(?:feat\.?|ft\.?|with|prod\.?|from)\b""", RegexOption.IGNORE_CASE)
         /** What names another version of a song in its title. */
         val VERSION = Regex("""\b(?:ver(?:sion)?\b\.?|remix|live|acoustic|instrumental|inst\.|sped up|slowed|tv size|demo)""", RegexOption.IGNORE_CASE)
         /** Long enough for one song's lookups to share; short enough that an edited page shows up. */

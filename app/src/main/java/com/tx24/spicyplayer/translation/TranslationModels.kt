@@ -107,7 +107,7 @@ data class TranslationKey(
     ) + ".json"
 }
 
-const val TRANSLATION_CACHE_VERSION = 7
+const val TRANSLATION_CACHE_VERSION = 8
 
 data class TranslationResult(
     val key: TranslationKey,
