@@ -55,12 +55,14 @@ fun LegacyBackground(
     modifier: Modifier = Modifier,
     /** False holds the loop's first frame (low performance mode). */
     animate: Boolean = true,
+    /** The layers' CSS blur(), in dp. */
+    blurDp: Int = LEGACY_BLUR_DP,
 ) {
     BoxWithConstraints(modifier.clipToBounds()) {
         val w = constraints.maxWidth
         val h = constraints.maxHeight
         if (w <= 0 || h <= 0) return@BoxWithConstraints
-        val blurPx = LEGACY_BLUR_DP * LocalDensity.current.density
+        val blurPx = blurDp.coerceAtLeast(0) * LocalDensity.current.density
         val layers by produceState<List<LegacyLayerImage>?>(null, coverArtBitmap, w, h, blurPx) {
             // Keep the old layers up until the new ones are ready.
             val cover = coverArtBitmap ?: return@produceState
@@ -234,5 +236,6 @@ private val LegacyFilter = ColorFilter.colorMatrix(
 )
 
 private const val LEGACY_LOOP_MS = 45_000L
-private const val LEGACY_BLUR_DP = 40f
+/** The layers' blur(40px). */
+const val LEGACY_BLUR_DP = 40
 private const val LAYER_HEIGHT_PX = 128f

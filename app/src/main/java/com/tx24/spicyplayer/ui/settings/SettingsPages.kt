@@ -1,5 +1,6 @@
 package com.tx24.spicyplayer.ui.settings
 
+import com.tx24.spicyplayer.ui.background.LEGACY_BLUR_DP
 import com.tx24.spicyplayer.ui.components.ChromeTheme
 import androidx.compose.material.icons.rounded.Apps
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
@@ -454,20 +455,39 @@ internal fun BackgroundContent(settings: AppSettings) {
             onChange = { settings.backgroundType = BackgroundType.valueOf(it) },
         )
     }
-    if (type.image) {
+    // Each background keeps its own blur: they're measured differently and start from different looks.
+    if (type != BackgroundType.Color) {
         SettingRow(
             label = "Background Blur",
-            description = "Soften the static background image.",
+            description = if (type.image) "Soften the static background image." else "How soft the moving cover is.",
             icon = Icons.Rounded.BlurLinear,
             stacked = true,
         ) {
-            SpicyBipolarSlider(
-                value = settings.backgroundBlur,
-                range = 0..MAX_BACKGROUND_BLUR,
-                step = 1,
-                onValueChange = { settings.backgroundBlur = it },
-                unit = "dp",
-            )
+            when (type) {
+                BackgroundType.Default -> SpicyBipolarSlider(
+                    value = settings.dynamicBackgroundBlur,
+                    range = 0..100,
+                    step = 1,
+                    onValueChange = { settings.dynamicBackgroundBlur = it },
+                    default = DEFAULT_DYNAMIC_BLUR,
+                    unit = "%",
+                )
+                BackgroundType.Legacy -> SpicyBipolarSlider(
+                    value = settings.legacyBackgroundBlur,
+                    range = 0..MAX_BACKGROUND_BLUR,
+                    step = 1,
+                    onValueChange = { settings.legacyBackgroundBlur = it },
+                    default = LEGACY_BLUR_DP,
+                    unit = "dp",
+                )
+                else -> SpicyBipolarSlider(
+                    value = settings.backgroundBlur,
+                    range = 0..MAX_BACKGROUND_BLUR,
+                    step = 1,
+                    onValueChange = { settings.backgroundBlur = it },
+                    unit = "dp",
+                )
+            }
         }
     }
     if (type == BackgroundType.CoverArt) {

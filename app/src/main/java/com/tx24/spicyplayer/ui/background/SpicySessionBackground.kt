@@ -31,6 +31,10 @@ fun SpicySessionBackground(
     type: BackgroundType = BackgroundType.Default,
     /** False holds the moving backgrounds still (low performance mode, or the setting). */
     animate: Boolean = true,
+    /**
+     * How blurred: for [BackgroundType.Default] a strength in percent (60 is the reference's),
+     * for the others in dp. [BackgroundType.Color] has nothing to blur.
+     */
     blurDp: Int = 0,
     artistHeaderUrl: String? = null,
     artistHeaderPending: Boolean = false,
@@ -45,21 +49,21 @@ fun SpicySessionBackground(
         BackgroundType.Default, BackgroundType.Legacy -> {
             val softwareArtwork = rememberSessionArtwork(artwork, artworkUri, maxDimension = 256, hasSession = hasSession)?.bitmap
             if (type == BackgroundType.Legacy) {
-                LegacyBackground(coverArtBitmap = softwareArtwork, modifier = modifier, animate = animate)
+                LegacyBackground(coverArtBitmap = softwareArtwork, modifier = modifier, animate = animate, blurDp = blurDp)
             } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 KawarpBackground(
                     coverArtBitmap = softwareArtwork,
                     modifier = modifier,
                     isPlaying = isPlaying,
                     animate = animate,
-                    blurIntensity = 60,
+                    blurIntensity = blurDp,
                     speed = speed,
                 )
             } else {
                 DynamicBackgroundView(
                     coverArtBitmap = softwareArtwork,
                     modifier = modifier,
-                    blurIntensity = 60,
+                    blurIntensity = blurDp,
                     animate = animate,
                 )
             }

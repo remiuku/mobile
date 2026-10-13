@@ -778,7 +778,7 @@ private fun LyricsApp(
                         modifier = Modifier.fillMaxSize(),
                         type = backgroundType,
                         animate = !lowPerformance && !settings.staticBackground,
-                        blurDp = settings.backgroundBlur,
+                        blurDp = settings.backgroundBlurFor(backgroundType),
                         artistHeaderUrl = state.artistHeaderUrl,
                         artistHeaderPending = state.artistHeaderPending,
                         speed = if (beatReactive) viewModel::backgroundSpeed else null,
@@ -1136,7 +1136,7 @@ private fun PipLyrics(
             modifier = Modifier.fillMaxSize(),
             type = settings.backgroundType,
             animate = !lowPerformance && !settings.staticBackground,
-            blurDp = settings.backgroundBlur,
+            blurDp = settings.backgroundBlurFor(settings.backgroundType),
             artistHeaderUrl = state.artistHeaderUrl,
             artistHeaderPending = state.artistHeaderPending,
         )

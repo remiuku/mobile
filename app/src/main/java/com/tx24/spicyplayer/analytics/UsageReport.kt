@@ -87,6 +87,8 @@ fun configSnapshot(settings: AppSettings): Map<String, Any> = with(settings) {
         "ui_animations" to uiAnimations,
         "background" to backgroundType.name,
         "background_blur" to backgroundBlur,
+        "dynamic_background_blur" to dynamicBackgroundBlur,
+        "legacy_background_blur" to legacyBackgroundBlur,
         "beat_reactive_background" to beatReactiveBackground,
         "static_background" to staticBackground,
         "release_year" to releaseYearPosition.name,

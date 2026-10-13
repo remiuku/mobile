@@ -1,5 +1,6 @@
 package com.tx24.spicyplayer.ui.settings
 
+import com.tx24.spicyplayer.ui.background.LEGACY_BLUR_DP
 import android.content.SharedPreferences
 import android.os.Build
 import androidx.compose.runtime.getValue
@@ -80,7 +81,19 @@ class AppSettings(private val prefs: SharedPreferences) {
         if (read { prefs.getBoolean("legacyBackground", false) } == true) BackgroundType.Legacy else BackgroundType.Default,
     )
     /** How much the image backgrounds ([BackgroundType.image]) are blurred, in dp (0..67). */
+    /** The still image backgrounds' blur, in dp. */
     var backgroundBlur by int("backgroundBlur", 0, 0..MAX_BACKGROUND_BLUR)
+    /** The moving cover's (Default) blur strength, in percent. */
+    var dynamicBackgroundBlur by int("dynamicBackgroundBlur", DEFAULT_DYNAMIC_BLUR, 0..100)
+    /** The Legacy background's blur, in dp. */
+    var legacyBackgroundBlur by int("legacyBackgroundBlur", LEGACY_BLUR_DP, 0..MAX_BACKGROUND_BLUR)
+
+    /** The blur [SpicySessionBackground] takes for [type]: percent for Default, dp for the rest. */
+    fun backgroundBlurFor(type: BackgroundType): Int = when (type) {
+        BackgroundType.Default -> dynamicBackgroundBlur
+        BackgroundType.Legacy -> legacyBackgroundBlur
+        else -> backgroundBlur
+    }
     /** The moving background speeds up and slows down with the song's tempo, loudness and beats. */
     var beatReactiveBackground by boolean("beatReactiveBackground", true)
     /** Holds the moving backgrounds (Default, Legacy) still. */
@@ -218,6 +231,9 @@ enum class BackgroundType(val label: String) {
 
 /** The strongest [AppSettings.backgroundBlur]. */
 const val MAX_BACKGROUND_BLUR = 67
+
+/** The moving cover's blur by default: the reference's. */
+const val DEFAULT_DYNAMIC_BLUR = 60
 
 /** How long the controls stay after the last touch before they fade. */
 enum class ControlsHideDelay(val label: String, val millis: Long) {
