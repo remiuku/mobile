@@ -61,6 +61,11 @@ internal class ScrollPolicyController {
          *   before the line [PIN_LOOKAHEAD] real lines further down starts; otherwise the first
          *   active line if the active ones are adjacent, else the last.
          *
+         * Two departures, both for background vocals: a line "starts" here when its own words do,
+         * not when a background vocal sung ahead of them does (its group starts then, which made
+         * the top line give up the view early); and lines are adjacent with no real line between
+         * them, background lines not counting (they did, so the view skipped to the lower line).
+         *
          * One addition: once an interlude's dots start closing, the line after it is the target,
          * so the scroll and the closing gap move together.
          */
@@ -95,12 +100,17 @@ internal class ScrollPolicyController {
             var groupEnd = lines[anchor].endMs
             var k = anchor + 1
             while (k < lines.size && isBg(k)) groupEnd = maxOf(groupEnd, lines[k++].endMs)
-            if (lookahead == null || groupEnd <= lines[lookahead].startMs) return anchor
+            if (lookahead == null || groupEnd <= sungFrom(lines[lookahead])) return anchor
 
             val first = activeLeads.first()
             val last = activeLeads.last()
-            return if (last - first <= 1) first else last
+            val adjacent = (first + 1 until last).none { !isBg(it) }
+            return if (adjacent) first else last
         }
+
+        /** When [line]'s own words start: its group may start earlier, with a background vocal. */
+        private fun sungFrom(line: Line): Long =
+            line.words.firstOrNull { it.text.isNotBlank() }?.startMs?.coerceAtLeast(line.startMs) ?: line.startMs
 
         /** The last line that has started: where a seek into a gap between lines lands. */
         fun lastStartedIndex(lines: List<Line>, timeMs: Long): Int? =
