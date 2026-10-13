@@ -33,6 +33,17 @@ class ScrollPolicyControllerTest {
         assertEquals(3, target(lines, 2_500))
     }
 
+    @Test fun aBackgroundTailAloneInAGapDoesNotMoveTheView() {
+        // Line 1's background vocal outlives it, past line 0, into the gap before line 3: the
+        // view stays where it was instead of stopping at line 1's finished group on the way.
+        val lines = listOf(lead(0, 2_000), lead(500, 1_500), bg(1_000, 2_400), lead(2_500, 3_500))
+        assertNull(target(lines, 2_200))
+        assertEquals(3, target(lines, 2_600))
+        val policy = ScrollPolicyController()
+        assertEquals(0, policy.decide(lines, 1_800).targetIndex)
+        assertEquals(ScrollDecision(0, ScrollMotion.NONE), policy.decide(lines, 2_200))
+    }
+
     @Test fun aBackgroundLineLeadingIntoItsOwnLineCounts() {
         val lines = listOf(lead(0, 1_000), lead(2_000, 3_000), bg(1_500, 2_500))
         // The background vocal (belonging to line 1) starts first: it pulls toward line 1.

@@ -57,6 +57,9 @@ internal class ScrollPolicyController {
          * - Background lines belong to the lead line above them.
          * - A background line still active under a later active line is the tail of a line
          *   already passed, so it is ignored rather than dragging the view back up.
+         * - So is one whose own lead line has already ended, even with nothing below it active
+         *   yet: in the gap before the next line it would move the view to a group that's done,
+         *   then on again a moment later. One whose lead is still to come leads into it, and counts.
          * - The top active line keeps the view as long as it (and its background lines) ends
          *   before the line [PIN_LOOKAHEAD] real lines further down starts; otherwise the first
          *   active line if the active ones are adjacent, else the last.
@@ -86,9 +89,10 @@ internal class ScrollPolicyController {
 
             val frontLead = active.maxOf(::leadOf)
             val activeLeads = active
-                .filterNot { isBg(it) && leadOf(it) < frontLead }
+                .filterNot { isBg(it) && (leadOf(it) < frontLead || timeMs > lines[leadOf(it)].endMs) }
                 .map(::leadOf)
                 .distinct()
+            if (activeLeads.isEmpty()) return null
 
             val anchor = activeLeads.first()
             val lookahead = (anchor + 1 until lines.size).filterNot(::isBg).drop(PIN_LOOKAHEAD - 1).firstOrNull()
