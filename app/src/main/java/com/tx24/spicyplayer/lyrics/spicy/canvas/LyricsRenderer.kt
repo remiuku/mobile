@@ -349,9 +349,11 @@ internal fun DrawScope.drawStandardLine(
     val sourceWords = layout.line.words
     layout.words.forEach { wLayout ->
         val wordAnim = lineAnim.wordStates.getOrNull(wLayout.sourceWordIndex) ?: return@forEach
+        // As laid out: romaji spaced from its neighbour is a word of its own, grown from its centre.
+        fun glued(index: Int) = layout.gluedToPrevious?.getOrNull(index) ?: (sourceWords.getOrNull(index)?.isPartOfWord == true)
         val anchor = scaleAnchor(
-            gluedBefore = wLayout.sourceWordIndex > 0 && sourceWords.getOrNull(wLayout.sourceWordIndex)?.isPartOfWord == true,
-            gluedAfter = sourceWords.getOrNull(wLayout.sourceWordIndex + 1)?.isPartOfWord == true,
+            gluedBefore = wLayout.sourceWordIndex > 0 && glued(wLayout.sourceWordIndex),
+            gluedAfter = glued(wLayout.sourceWordIndex + 1),
             rtl = rtl,
         )
         val xPos = lineStartX + wLayout.relativeOffset.x

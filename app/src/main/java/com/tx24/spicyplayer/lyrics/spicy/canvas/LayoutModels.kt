@@ -52,6 +52,11 @@ internal data class LineLayout(
     val contentWidth: Float = 0f,
     val supplements: List<SupplementLayout> = emptyList(),
     val lyricHeight: Float? = null,
+    /**
+     * Per source word, whether it's laid out glued to the one before. Usually the word's own
+     * flag, but romaji spaced from its neighbour starts a word although its syllable was glued.
+     */
+    val gluedToPrevious: List<Boolean>? = null,
 )
 
 internal data class SupplementLayout(

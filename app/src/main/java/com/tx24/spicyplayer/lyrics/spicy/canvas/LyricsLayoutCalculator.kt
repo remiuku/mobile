@@ -389,6 +389,7 @@ internal object LyricsLayoutCalculator {
             )
 
             val pieces = mutableListOf<Piece>()
+            val gluedToPrevious = BooleanArray(line.words.size)
             for (wIdx in line.words.indices) {
                 val word = line.words[wIdx]
                 val style = TextStyle(
@@ -423,6 +424,7 @@ internal object LyricsLayoutCalculator {
                 // not "kon nichi wa"), and only tokens that had real whitespace in the source get a gap.
                 // A blank piece (the other view's half of a line-timed romanization) takes no room.
                 val effectiveIsPartOfWord = (word.isPartOfWord && !romajiStartsWord) || text.isEmpty()
+                gluedToPrevious[wIdx] = word.isPartOfWord && !romajiStartsWord
 
                 if (word.isLetterGroup) {
                     var currentX = 0f
@@ -568,7 +570,7 @@ internal object LyricsLayoutCalculator {
 
             layouts.add(LineLayout(line, wordLayouts, drawY, totalHeight, totalWidth, maxRowWidth, false, isBg,
                 line.oppositeAligned, line.isSongwriter, lineIsRtl, isRightAligned,
-                contentSlot.startPx, contentSlot.widthPx))
+                contentSlot.startPx, contentSlot.widthPx, gluedToPrevious = gluedToPrevious.toList()))
             
             val bottomY = drawY + totalHeight
             currentY = maxOf(currentY, bottomY + lineSpacing)
