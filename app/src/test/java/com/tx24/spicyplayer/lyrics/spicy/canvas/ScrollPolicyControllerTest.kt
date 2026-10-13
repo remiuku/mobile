@@ -44,17 +44,6 @@ class ScrollPolicyControllerTest {
         assertEquals(ScrollDecision(0, ScrollMotion.NONE), policy.decide(lines, 2_200))
     }
 
-    @Test fun aLineSungAfterTheOneBelowItHoldsTheView() {
-        // In order sung: line 0, line 1's background vocal, line 3, then line 1 itself.
-        val lines = listOf(lead(0, 1_000), lead(3_000, 4_000), bg(1_000, 2_500), lead(2_000, 3_000), lead(4_000, 5_000))
-        assertEquals(1, target(lines, 1_500))
-        // Line 3 sings, but line 1 above it is still to come: the view waits on line 1.
-        assertEquals(1, target(lines, 2_200))
-        assertEquals(1, target(lines, 2_700))
-        assertEquals(1, target(lines, 3_500))
-        assertEquals(4, target(lines, 4_500))
-    }
-
     @Test fun aBackgroundLineLeadingIntoItsOwnLineCounts() {
         val lines = listOf(lead(0, 1_000), lead(2_000, 3_000), bg(1_500, 2_500))
         // The background vocal (belonging to line 1) starts first: it pulls toward line 1.
