@@ -78,8 +78,10 @@ internal object LyricsLayoutCalculator {
                     isRtl = rtl, isRightAligned = right, contentStartX = slot.startPx, contentWidth = slot.widthPx)
             }
             if (!line.isInterlude) {
-                val romanization = if (romanize && romanizationMode == RomanizationMode.UnderLine && lyricsType == LyricsType.Syllable)
-                    romanizationNote(originals[index]) else null
+                // Word by word only where the line is: a line-timed line in word-synced lyrics has
+                // no word states, so its note is plain text that follows the line, as in line-synced lyrics.
+                val romanization = if (romanize && romanizationMode == RomanizationMode.UnderLine && lyricsType == LyricsType.Syllable &&
+                    !originals[index].lineTimed) romanizationNote(originals[index]) else null
                 val supplements = presentationSupplements(originals[index], romanize, romanizationMode,
                     presentation?.texts?.getOrNull(index), presentation?.mode).map {
                     measure(it, 0.6f, layout.contentWidth / ACTIVE_LINE_SCALE, layout.isRightAligned)
