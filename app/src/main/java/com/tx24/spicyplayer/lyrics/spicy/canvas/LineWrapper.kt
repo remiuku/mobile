@@ -3,10 +3,10 @@ package com.tx24.spicyplayer.lyrics.spicy.canvas
 /**
  * Where a lyric line wraps, matching how a browser lays out the same line.
  *
- * Word-synced lines are a `flex-wrap: wrap` row of word elements. Syllables written without a
- * space between them sit in a `.word-group` (`white-space: nowrap`), so a group moves to the next
- * row whole. Only a group wider than a whole row breaks inside itself; it then starts on its own
- * row, and whatever follows starts a new row too, since the group takes the full width.
+ * Word-synced lines are a row of word elements that wraps. Syllables written without a space
+ * between them form a group that moves to the next row whole. Only a group wider than a whole
+ * row breaks inside itself, where it fills a row; the words around it flow on in the room left,
+ * as text does. A piece of a broken word isn't left alone on the last row.
  *
  * Line-synced and static lines are plain text ([textMode]): breaks at spaces and between CJK
  * characters, but not before closing punctuation or after opening brackets.
@@ -55,35 +55,41 @@ internal object LineWrapper {
 
         fun endsRun(idx: Int) = idx == n - 1 || !pieces[idx + 1].gluedToPrevious
 
+        /** Not before closing punctuation, nor after an opening bracket. */
+        fun punctuationAllows(idx: Int): Boolean {
+            val prev = pieces[idx - 1].text.lastOrNull() ?: return true
+            val cur = pieces[idx].text.firstOrNull() ?: return true
+            return cur !in NO_BREAK_BEFORE && prev !in NO_BREAK_AFTER
+        }
+
         fun textBreakBefore(idx: Int): Boolean {
             val piece = pieces[idx]
             if (!piece.gluedToPrevious) return true
+            if (!punctuationAllows(idx)) return false
             val prev = pieces[idx - 1].text.lastOrNull() ?: return true
             val cur = piece.text.firstOrNull() ?: return true
-            if (cur in NO_BREAK_BEFORE || prev in NO_BREAK_AFTER) return false
             // A Latin word longer than a row breaks anywhere rather than running off-screen.
             return LyricsLayoutCalculator.isCjk(prev) || LyricsLayoutCalculator.isCjk(cur) || !runFits[idx]
         }
 
+        // Between words; inside a group only when the group is wider than a row, and then not
+        // against punctuation.
+        fun canBreakBefore(idx: Int): Boolean = when {
+            idx == 0 -> true
+            textMode -> textBreakBefore(idx)
+            !pieces[idx].gluedToPrevious -> true
+            else -> !runFits[idx] && punctuationAllows(idx)
+        }
+
+        // Greedy: as much on each row as fits. A group wider than a row breaks where it fills one,
+        // and what follows carries on in the room left on its last row.
         var rowWidth = 0f
         var lastBreakCandidate = 0
         var i = 0
         while (i < n) {
             val piece = pieces[i]
-            val startsRun = i == 0 || !piece.gluedToPrevious
-            val oversizedRunStarts = !textMode && startsRun && !runFits[i]
-            val oversizedRunEnded = !textMode && startsRun && i > 0 && !runFits[i - 1]
-            if (rowWidth > 0f && (oversizedRunStarts || oversizedRunEnded)) {
-                lineBreaks.add(i)
-                lastBreakCandidate = i
-                rowWidth = 0f
-                continue
-            }
-
             val gap = if (rowWidth > 0f && !piece.gluedToPrevious) wordGap else 0f
-            // Inside a group that fits a row, no break; inside an oversized one, anywhere.
-            val breakable = if (textMode) i == 0 || textBreakBefore(i) else startsRun || !runFits[i]
-            if (breakable) lastBreakCandidate = i
+            if (canBreakBefore(i)) lastBreakCandidate = i
             val trailing = if (endsRun(i) && i < n - 1) trailingGap else 0f
 
             if (rowWidth + gap + piece.width + trailing > maxWidth && rowWidth > 0f) {
@@ -94,6 +100,19 @@ internal object LineWrapper {
             } else {
                 rowWidth += gap + piece.width
                 i++
+            }
+        }
+
+        // A word broken so that one piece of it (a character, a syllable) is left alone on the
+        // last row takes one more piece down with it, when the row above keeps two and it fits.
+        if (lineBreaks.size >= 2) {
+            val lastStart = lineBreaks.last()
+            val prevStart = lineBreaks[lineBreaks.size - 2]
+            val moved = lastStart - 1
+            if (n - lastStart == 1 && pieces[lastStart].gluedToPrevious && moved - prevStart >= 2 && canBreakBefore(moved)) {
+                var width = 0f
+                for (k in moved until n) width += pieces[k].width + if (k > moved && !pieces[k].gluedToPrevious) wordGap else 0f
+                if (width <= maxWidth) lineBreaks[lineBreaks.size - 1] = moved
             }
         }
         lineBreaks.add(n)

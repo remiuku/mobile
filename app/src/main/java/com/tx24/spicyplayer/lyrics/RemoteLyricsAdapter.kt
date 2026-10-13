@@ -134,7 +134,7 @@ internal object RemoteLyricsAdapter {
                     start = i
                 }
             }
-            runs.mapIndexed { runIdx, run -> run to if (runIdx > 0) true else tokenIdx == 0 && attached }
+            runs.mapIndexed { runIdx, run -> run to if (runIdx > 0) true else tokenIdx == 0 && attached && !text.first().isWhitespace() }
         }
 
     private fun staticLines(plain: String?): List<TimedLine> = plain.orEmpty().lines()

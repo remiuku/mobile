@@ -21,6 +21,9 @@ object Romanizers {
  * Japanese song is read as Japanese, never pinyin), then each text is run through every
  * present-script romanizer whose characters it contains, in priority order. Japanese is read
  * with its whole line as context, since syllable splits cut words apart.
+ *
+ * A romanization starting with a space starts a word of its own: the original's syllables are
+ * often glued (Chinese and Japanese are written without spaces), while the romaji isn't.
  */
 object RomanizationService {
 
@@ -33,6 +36,9 @@ object RomanizationService {
             val staged = if (japanese != null && Script.JAPANESE in songScripts &&
                 line.any { ScriptDetector.contains(Script.JAPANESE, it) }
             ) japanese.romanizeLine(line) else line
+            // Pinyin spaces its syllables (as the note under the line does), so each Chinese
+            // syllable after the first starts a word of its own.
+            val chinese = Script.JAPANESE !in songScripts && line.any { it.any(ScriptDetector::hasHan) }
             line.indices.map { i ->
                 var romanized = staged[i]
                 for (script in songScripts) {
@@ -40,7 +46,10 @@ object RomanizationService {
                     val romanizer = Romanizers.forScript(script) ?: continue
                     if (romanizer.isAvailable()) romanized = romanizer.romanize(romanized)
                 }
-                romanized.takeIf { it != line[i] && it.isNotBlank() }
+                if (chinese && i > 0 && line[i].firstOrNull()?.let(ScriptDetector::hasHan) == true && !romanized.startsWith(' ')) {
+                    romanized = " $romanized"
+                }
+                romanized.takeIf { it.trim() != line[i].trim() && it.isNotBlank() }
             }
         }
     }

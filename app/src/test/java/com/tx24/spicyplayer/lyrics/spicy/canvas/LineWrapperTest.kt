@@ -23,10 +23,27 @@ class LineWrapperTest {
         assertEquals(listOf(0, 4, 16), syllable(pieces, max = 300f))
     }
 
-    @Test fun aGroupWiderThanARowTakesItsOwnRowsAndSoDoesWhatFollows() {
+    @Test fun aGroupWiderThanARowBreaksWhereItFillsAndTheNextWordCarriesOn() {
         val pieces = listOf(word(40f)) + group("abcdef", charWidth = 40f) + listOf(word(20f))
-        // "a" | group from a fresh row, broken where it fills | the next word on a fresh row.
-        assertEquals(listOf(0, 1, 3, 5, 7, 8), syllable(pieces, max = 100f))
+        // "a" and the group's start | its middle | its end and the next word in the room left.
+        assertEquals(listOf(0, 2, 4, 6, 8), syllable(pieces, max = 100f))
+    }
+
+    @Test fun aBrokenWordLeavesNoLonePieceOnTheLastRow() {
+        // あいうえ fills the first row; お alone would follow, so え comes down with it.
+        assertEquals(listOf(0, 3, 5), syllable(group("あいうえお"), max = 80f))
+        assertEquals(listOf(0, 3, 5), text(group("あいうえお"), max = 80f))
+    }
+
+    @Test fun aWholeWordMayStillEndALineOnItsOwn() {
+        val pieces = listOf(word(40f), word(40f), word(10f))
+        assertEquals(listOf(0, 2, 3), syllable(pieces, max = 90f, trailing = 0f))
+    }
+
+    @Test fun aGroupBrokenInsideStillKeepsPunctuationWithItsCharacter() {
+        // う、 fills past the row; 、 may not start the next one, so う moves down with it.
+        val pieces = group("あいう、えおかきくけこ")
+        assertEquals(2, syllable(pieces, max = 70f)[1])
     }
 
     @Test fun leftAlignedWordsNeedRoomForTheirTrailingSpace() {

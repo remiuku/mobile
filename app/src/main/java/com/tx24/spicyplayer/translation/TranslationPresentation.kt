@@ -16,9 +16,14 @@ internal fun romanizationNote(original: Line): RomanizationNote? {
     val chinese = original.words.any { word -> word.text.any(ScriptDetector::hasHan) } &&
         original.words.none { word -> word.text.any(ScriptDetector::hasKana) }
     val text = StringBuilder()
+    var spaceAfter = false
     val pieces = original.words.mapIndexed { index, word ->
-        if (text.isNotEmpty() && (!word.isPartOfWord || chinese)) text.append(' ')
-        val piece = word.romanizedText ?: word.text
+        val raw = word.romanizedText ?: word.text
+        // Romaji spaced from its neighbour starts a word even where the syllables were glued.
+        val startsWord = !word.isPartOfWord || chinese || spaceAfter || raw.firstOrNull()?.isWhitespace() == true
+        spaceAfter = raw.lastOrNull()?.isWhitespace() == true
+        val piece = raw.trim()
+        if (text.isNotEmpty() && startsWord && piece.isNotEmpty()) text.append(' ')
         RomanizationPiece(word, index, piece, text.length).also { text.append(piece) }
     }
     return RomanizationNote(text.toString(), pieces).takeIf { it.text.isNotBlank() }

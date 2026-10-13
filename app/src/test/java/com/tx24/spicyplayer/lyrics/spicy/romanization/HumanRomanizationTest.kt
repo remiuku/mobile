@@ -38,9 +38,10 @@ class HumanRomanizationTest {
             background = listOf(false, true, false),
             groups = listOf(0, 0, 1),
         )
-        assertEquals(listOf("Kimi", "ga", "suki"), cuts[0])
+        // A syllable that starts a word carries a leading space: the romaji wraps between words.
+        assertEquals(listOf("Kimi", " ga", " suki"), cuts[0])
         assertEquals(listOf("suki da yo"), cuts[1])
-        assertEquals(listOf("Mata", "ashita"), cuts[2])
+        assertEquals(listOf("Mata", " ashita"), cuts[2])
     }
 
     @Test fun unrelatedLinesAreLeftAlone() {
@@ -53,7 +54,7 @@ class HumanRomanizationTest {
         // 響い / て / いる sung apart, "hibiiteiru" written as one word.
         assertEquals(listOf("hibii", "te", "iru"), HumanRomanization.retime(listOf("hibii", "te", "iru"), "hibiiteiru"))
         // Human reading where the machine's differs: 運命 sung "sadame".
-        assertEquals(listOf("sadame", "no", "hi"), HumanRomanization.retime(listOf("unmei", "no", "hi"), "sadame no hi"))
+        assertEquals(listOf("sadame", " no", " hi"), HumanRomanization.retime(listOf("unmei", "no", "hi"), "sadame no hi"))
     }
 
     @Test fun cleanLinesDropsHeadersNotesAndEmbedTail() {

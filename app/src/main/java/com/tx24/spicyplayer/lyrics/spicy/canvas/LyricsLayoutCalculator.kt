@@ -406,7 +406,12 @@ internal object LyricsLayoutCalculator {
                     letterSpacing = (System.identityHashCode(word) % 1000 * 0.0000001f).sp
                 )
                 
-                val text = displayText(word, romanizeLine)
+                val shown = displayText(word, romanizeLine)
+                // Romaji spaced from its neighbour starts a word of its own, although the original
+                // syllables were glued (Chinese and Japanese are written without spaces).
+                val romajiStartsWord = romanizeLine && (shown.firstOrNull()?.isWhitespace() == true ||
+                    line.words.getOrNull(wIdx - 1)?.let { displayText(it, true).lastOrNull()?.isWhitespace() } == true)
+                val text = if (romanizeLine) shown.trim() else shown
                 val fullResult = textMeasurer.measure(text, style)
                 val fullW = fullResult.size.width.toFloat()
 
@@ -417,7 +422,7 @@ internal object LyricsLayoutCalculator {
                 // its neighbour in the original script stays glued when romanized (こんにちは → "konnichiwa",
                 // not "kon nichi wa"), and only tokens that had real whitespace in the source get a gap.
                 // A blank piece (the other view's half of a line-timed romanization) takes no room.
-                val effectiveIsPartOfWord = word.isPartOfWord || text.isEmpty()
+                val effectiveIsPartOfWord = (word.isPartOfWord && !romajiStartsWord) || text.isEmpty()
 
                 if (word.isLetterGroup) {
                     var currentX = 0f

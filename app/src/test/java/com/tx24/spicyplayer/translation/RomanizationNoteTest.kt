@@ -30,6 +30,12 @@ class RomanizationNoteTest {
         assertEquals(listOf(1000L, 1500L, 2000L), romanizationNote(line)!!.pieces.map { it.word.startMs })
     }
 
+    @Test fun `Glued syllables whose romaji starts a word are spaced`() {
+        // あなた の: written glued, romanized " no" since の is a word of its own.
+        val line = Line(listOf(word("あ", "a", 1000), word("な", "na", 1500, true), word("た", "ta", 2000, true), word("の", " no", 2500, true)), 1000)
+        assertMapping(line, "anata no", listOf("a", "na", "ta", "no"), listOf(0, 1, 3, 6))
+    }
+
     @Test fun `Japanese multi-syllable words keep their glued pieces and original timing`() {
         val line = Line(listOf(word("ちょう", "chou", 1000), word("だい", "dai", 1500, true), word("ビーム", "biimu", 2000)), 1000)
         assertMapping(line, "choudai biimu", listOf("chou", "dai", "biimu"), listOf(0, 4, 8))

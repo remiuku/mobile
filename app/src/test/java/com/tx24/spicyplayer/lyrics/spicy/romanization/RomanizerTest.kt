@@ -43,7 +43,8 @@ class RomanizerTest {
         // Some lyrics split 段々堕ちてく one character per syllable; read alone, 々 and 堕 stay unromanized.
         val syllables = listOf("段", "々", "堕", "ち", "て", "く", "I", "Q", "ク", "ソ", "ワ", "ロ")
         val out = RomanizationService.romanize(listOf(syllables)).single()
-        assertEquals(listOf("dan", "dan", "o", "chi", "te", "ku"), out.take(6))
+        // 段々 / 堕ち / て / く: a syllable that starts a word carries a leading space.
+        assertEquals(listOf("dan", "dan", " o", "chi", " te", " ku"), out.take(6))
         assertTrue(out.none { it != null && it.any { c -> c in '぀'..'鿿' } })
     }
 

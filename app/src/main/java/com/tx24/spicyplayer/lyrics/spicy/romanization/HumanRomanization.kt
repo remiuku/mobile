@@ -251,6 +251,7 @@ object HumanRomanization {
         for (c in owner.indices.reversed()) { if (owner[c] == null) owner[c] = next else next = owner[c] }
 
         val out = List(base.size) { StringBuilder() }
+        val firstWordIn = IntArray(base.size) { -1 }
         val lastWordIn = IntArray(base.size) { -1 }
         var c = 0
         words.forEachIndexed { w, word ->
@@ -258,7 +259,7 @@ object HumanRomanization {
             if (n == 0) {
                 // Punctuation alone: it rides with the syllable the previous letter went to.
                 val target = (if (c > 0) owner[c - 1] else owner.firstOrNull()) ?: 0
-                put(out, lastWordIn, target, w, word)
+                put(out, firstWordIn, lastWordIn, target, w, word)
                 return@forEachIndexed
             }
             val starts = mutableListOf(0)
@@ -267,16 +268,25 @@ object HumanRomanization {
                 val lo = if (d != 0) gChar[c + d] else 0
                 val hi = if (j + 1 < starts.size) gChar[c + starts[j + 1]] else word.length
                 val frag = word.substring(lo, hi)
-                if (frag.isNotEmpty()) put(out, lastWordIn, owner[c + d] ?: 0, w, frag)
+                if (frag.isNotEmpty()) put(out, firstWordIn, lastWordIn, owner[c + d] ?: 0, w, frag)
             }
             c += n
         }
-        return out.map { it.toString() }
+        // A syllable whose first piece starts a different word than the syllable before ended
+        // with gets a leading space: the romaji wraps between words, not inside them.
+        var previousWord = -1
+        return out.mapIndexed { i, sb ->
+            if (sb.isEmpty()) return@mapIndexed ""
+            val spaced = previousWord >= 0 && firstWordIn[i] != previousWord
+            previousWord = lastWordIn[i]
+            if (spaced) " $sb" else sb.toString()
+        }
     }
 
     /** Adds [frag] (from Genius word [w]) to syllable [target], spaced from another word's piece. */
-    private fun put(out: List<StringBuilder>, lastWordIn: IntArray, target: Int, w: Int, frag: String) {
+    private fun put(out: List<StringBuilder>, firstWordIn: IntArray, lastWordIn: IntArray, target: Int, w: Int, frag: String) {
         val sb = out[target]
+        if (sb.isEmpty()) firstWordIn[target] = w
         if (sb.isNotEmpty() && lastWordIn[target] != w) sb.append(' ')
         sb.append(frag)
         lastWordIn[target] = w

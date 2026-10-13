@@ -32,13 +32,22 @@ object JapaneseRomanizer : Romanizer {
      * entry per syllable. (Romanizing each syllable alone loses readings when a word is
      * split across syllables: 段|々 → "dan" + "々", 堕|ち → "堕" + "chi".) Here 段々 reads だんだん and the
      * reading is shared back out to the syllables it spans.
+     *
+     * A syllable that starts a new word (a token of its own) gets a leading space, so the romaji
+     * reads and wraps by word ("anata no koto") although the syllables were written glued.
      */
     fun romanizeLine(syllables: List<String>): List<String> {
         val tk = tokenizer ?: return syllables.map(KanaRomanizer::romanize)
         val owner = syllables.flatMapIndexed { index, text -> List(text.length) { index } }
         val kana = List(syllables.size) { mutableListOf<String>() }
+        val startsAt = syllables.runningFold(0) { at, text -> at + text.length }
+        val startsWord = BooleanArray(syllables.size)
         return try {
             for (token in tokens(tk, syllables.joinToString(""))) {
+                if (token.surface.isNotBlank()) {
+                    val syllable = startsAt.indexOf(token.position)
+                    if (syllable > 0 && syllable < syllables.size) startsWord[syllable] = true
+                }
                 val readings = if (hasJapanese(token.surface)) charReadings(token.surface, token.pronunciation ?: token.reading)
                 else token.surface.map(Char::toString)
                 val bySyllable = readings.indices.groupBy { owner[token.position + it] }.toSortedMap()
@@ -56,7 +65,10 @@ object JapaneseRomanizer : Romanizer {
                     if (piece.isNotBlank()) kana[syllable] += piece
                 }
             }
-            kana.map { pieces -> pieces.joinToString(" ") { KanaRomanizer.romanize(it).trim() }.trim() }
+            kana.mapIndexed { i, pieces ->
+                val romaji = pieces.joinToString(" ") { KanaRomanizer.romanize(it).trim() }.trim()
+                if (startsWord[i] && romaji.isNotEmpty()) " $romaji" else romaji
+            }
         } catch (t: Throwable) {
             syllables.map(KanaRomanizer::romanize)
         }
