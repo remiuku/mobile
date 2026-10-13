@@ -64,8 +64,11 @@ internal class ScrollPolicyController {
          *   before the line [PIN_LOOKAHEAD] real lines further down starts; otherwise the first
          *   active line if the active ones are adjacent, else the last.
          *
-         * One addition: once an interlude's dots start closing, the line after it is the target,
-         * so the scroll and the closing gap move together.
+         * Additions: once an interlude's dots start closing, the line after it is the target,
+         * so the scroll and the closing gap move together. And the view never passes a line
+         * above the target that is still to be sung (lyrics where a line comes in after the one
+         * below it): it waits there, with the target just below in view, rather than going on
+         * and coming back up.
          */
         fun selectTargetIndex(lines: List<Line>, timeMs: Long): Int? {
             if (lines.isEmpty()) return null
@@ -99,11 +102,23 @@ internal class ScrollPolicyController {
             var groupEnd = lines[anchor].endMs
             var k = anchor + 1
             while (k < lines.size && isBg(k)) groupEnd = maxOf(groupEnd, lines[k++].endMs)
-            if (lookahead == null || groupEnd <= lines[lookahead].startMs) return anchor
+            val picked = if (lookahead == null || groupEnd <= lines[lookahead].startMs) anchor else {
+                val first = activeLeads.first()
+                val last = activeLeads.last()
+                if (last - first <= 1) first else last
+            }
+            return waitForLaterLinesAbove(lines, picked, timeMs, ::isBg)
+        }
 
-            val first = activeLeads.first()
-            val last = activeLeads.last()
-            return if (last - first <= 1) first else last
+        /** [target], or the line just above it while that one is yet to start (sung after it). */
+        private fun waitForLaterLinesAbove(lines: List<Line>, target: Int, timeMs: Long, isBg: (Int) -> Boolean): Int {
+            var result = target
+            repeat(PIN_LOOKAHEAD) {
+                val above = (result - 1 downTo 0).firstOrNull { !isBg(it) && lines[it].role == LineRole.LEAD } ?: return result
+                if (lines[above].startMs <= timeMs) return result
+                result = above
+            }
+            return result
         }
 
         /** The last line that has started: where a seek into a gap between lines lands. */
