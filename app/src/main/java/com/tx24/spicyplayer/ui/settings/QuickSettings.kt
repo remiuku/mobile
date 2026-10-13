@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.LibraryMusic
+import androidx.compose.material.icons.rounded.Source
 import androidx.compose.material.icons.rounded.Timer
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -18,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.tx24.spicyplayer.analytics.UsageCounter
 import com.tx24.spicyplayer.analytics.UsageStats
+import com.tx24.spicyplayer.lyrics.LyricsState
 import com.tx24.spicyplayer.playback.ExternalPlaybackViewModel
 import com.tx24.spicyplayer.playback.PlayerUiState
 import com.tx24.spicyplayer.ui.components.LocalUiAnimations
@@ -30,7 +32,7 @@ import com.tx24.spicyplayer.ui.lyricsmanager.LyricsManagerContent
 import com.tx24.spicyplayer.ui.theme.SpicySpacing
 import dev.chrisbanes.haze.HazeState
 
-private enum class QuickScreen { Main, Queue, LyricsManager }
+private enum class QuickScreen { Main, Queue, LyricsManager, Source }
 
 /**
  * The quick settings pop-up, from its floating button: the player's queue (when it shares one)
@@ -76,6 +78,7 @@ fun QuickSettingsModal(
             QuickScreen.Main -> "Quick settings"
             QuickScreen.Queue -> "Queue"
             QuickScreen.LyricsManager -> if (uploading) "Upload TTML" else "Local Lyrics DB"
+            QuickScreen.Source -> "Lyrics source"
         },
         skeleton = { SettingsSkeleton(rows = if (state.queue.isNotEmpty()) 5 else 4) },
         // The header's back arrow (and Back) step out of a screen before Back closes the pop-up.
@@ -97,6 +100,7 @@ fun QuickSettingsModal(
                     // Its own height: the list scrolls inside the pop-up's body.
                     QuickScreen.Queue -> QueueList(state, viewModel, onJumped = onDismiss, modifier = Modifier.height(QUEUE_HEIGHT))
                     QuickScreen.LyricsManager -> LyricsManagerContent(state, viewModel, settings, uploading, { uploading = it }, onDismiss)
+                    QuickScreen.Source -> SourceList(state, viewModel, onChosen = { screen = QuickScreen.Main }, modifier = Modifier.height(QUEUE_HEIGHT))
                 }
             }
         }
@@ -120,6 +124,21 @@ private fun MainScreen(state: PlayerUiState, viewModel: ExternalPlaybackViewMode
         icon = Icons.Rounded.LibraryMusic,
     ) {
         SpicyButton("Open", onClick = { open(QuickScreen.LyricsManager) })
+    }
+    if (state.localLyricsKey != null && state.lyrics !is LyricsState.Idle) {
+        val chosen = state.sourceOverride?.let { id -> state.sourceDescriptors.firstOrNull { it.id == id }?.displayName ?: id }
+        val showing = (state.lyrics as? LyricsState.Ready)?.provider
+        SettingRow(
+            label = "Lyrics source",
+            description = when {
+                chosen != null -> "$chosen, chosen for this song."
+                showing != null -> "Automatic, showing $showing. Choose another source for this song."
+                else -> "Automatic. Choose a source for this song."
+            },
+            icon = Icons.Rounded.Source,
+        ) {
+            SpicyButton("Change", onClick = { open(QuickScreen.Source) })
+        }
     }
     LyricsLanguageRow(state, viewModel)
     SongDelayRow(state, viewModel)

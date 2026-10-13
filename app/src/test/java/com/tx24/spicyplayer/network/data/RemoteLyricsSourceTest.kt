@@ -32,6 +32,23 @@ class RemoteLyricsSourceTest {
     }
 
     @Test
+    fun `a source chosen for one song is asked alone and wins over a better answer already known`() = runBlocking {
+        val calls = mutableListOf<String>()
+        val source = source(
+            provider("preferred", 10, calls, ProviderResult.Hit(wordTtml("preferred"))),
+            provider("chosen", 100, calls, ProviderResult.Hit(plain("chosen"))),
+        )
+        val known = mutableMapOf<String, ProviderResult>()
+        source.resolveLyrics(request, known = known)
+        assertEquals(listOf("preferred"), calls)
+        // The way a song's chosen source is asked: every other source switched off for the walk.
+        val only = RemoteLyricsPolicy(disabledSourceIds = setOf("preferred"))
+        val result = source.resolveLyrics(request, only, known = known) as RemoteLyricsResolution.Found
+        assertEquals("chosen", result.selection.source.id)
+        assertEquals(listOf("preferred", "chosen"), calls)
+    }
+
+    @Test
     fun `Spicy Lyrics relaying Apple Music ranks in Apple Music's place`() = runBlocking {
         val relayed = wordTtml("relayed").copy(attribution = LyricsAttribution("Spicy Lyrics", originName = "Apple Music"))
         val source = source(

@@ -65,6 +65,17 @@ internal class NextLyricsBackend(context: Context, clientKey: String) {
     ): RemoteLyricsResolution = source.resolveLyrics(request, policy(), known = known, onUpdate = onUpdate)
 
     /**
+     * [request]'s lyrics from [sourceId] alone (a source chosen for one song), asked now if it
+     * wasn't yet. Only a source the user has on: one switched off was never agreed to.
+     */
+    suspend fun resolveFrom(request: LyricsLookupRequest, sourceId: String, known: MutableMap<String, ProviderResult>): RemoteLyricsResolution? {
+        val policy = policy()
+        if (sourceId in policy.disabledSourceIds || descriptors.none { it.id == sourceId }) return null
+        val only = policy.copy(disabledSourceIds = descriptors.map { it.id }.filterTo(mutableSetOf()) { it != sourceId }, enabledBlendIds = emptySet())
+        return source.resolveLyrics(request, only, known = known)
+    }
+
+    /**
      * A stored pick. [settled] is false when a source ranked above it had no real answer (an error,
      * or no Spotify match for a request without a length): the pick shows at once, but those
      * sources are asked again. [answers] are what may be reused without asking.

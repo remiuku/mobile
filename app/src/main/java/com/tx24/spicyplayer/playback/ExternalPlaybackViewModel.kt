@@ -40,6 +40,7 @@ import com.tx24.spicyplayer.network.data.ProviderResult
 import com.tx24.spicyplayer.network.data.RemoteLyricsResolution
 import com.tx24.spicyplayer.network.data.RemoteLyricsSelection
 import com.tx24.spicyplayer.network.data.TrackNameCleaner
+import com.tx24.spicyplayer.network.data.measuredQuality
 import com.tx24.spicyplayer.network.data.SpicyLyricsKey
 import com.tx24.spicyplayer.translation.*
 import com.tx24.spicyplayer.network.data.RemoteLyricsSource
@@ -89,6 +90,9 @@ private const val FETCH_AHEAD = 3
 private const val SKIP_DIRECTION_WINDOW_MS = 3_000L
 private const val SYNC_TAG = "SpicySync"
 private const val TRANSLATE_TAG = "SpicyTranslate"
+
+/** A source the user can choose for one song: what it had, whether it can be picked, whether it's up. */
+data class SourceChoice(val id: String, val name: String, val status: String, val available: Boolean, val shown: Boolean)
 private const val SPOTIFY_PACKAGE = "com.spotify.music"
 /** How long a skip may take before Spotify is taken to have refused it. */
 private const val SKIP_REFUSED_AFTER_MS = 2_500L
@@ -176,6 +180,8 @@ data class PlayerUiState(
     val localLyrics: List<LocalLyricsStore.Entry> = emptyList(),
     /** The playing song's key in the Lyrics Manager, saved there or not. */
     val localLyricsKey: String? = null,
+    /** The source chosen for this song, over the automatic pick; null when the pick is automatic. */
+    val sourceOverride: String? = null,
     /** The user's own sources, in the order they were added; their place in the lookup is in [sourceOrder]. */
     val customSources: List<CustomLyricsSource> = emptyList(),
     /** The player's queue, when it shares one; empty otherwise. */
@@ -221,6 +227,8 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
     private var runtimeApiKey: String = keyStore.getString("key", null).orEmpty()
     private var lyricsBackend = NextLyricsBackend(application, runtimeApiKey.ifBlank { BuildConfig.SPICY_LYRICS_CLIENT_KEY })
     private val overrideStore = application.getSharedPreferences("spotify_id_overrides", 0)
+    /** The lyrics source chosen per song (by [LocalLyricsStore.keyOf]), over the automatic pick. */
+    private val sourceOverrides = application.getSharedPreferences("source_overrides", 0)
     private val outputProfiles = AudioOutputProfiles(application)
     private val songDelays = SongDelays(application)
     private val translationStore = TranslationSettingsStore(application)
@@ -1225,6 +1233,47 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
      * change). A song that simply ends and hands over is asked for at once. [force] drops this
      * track's cached source results, e.g. for Retry.
      */
+    /**
+     * Uses [sourceId]'s lyrics for this song from now on, or the automatic pick again for null.
+     * Kept per song, so the song plays with them every time.
+     */
+    fun useSource(sourceId: String?) {
+        val key = mutableState.value.localLyricsKey ?: return
+        sourceOverrides.edit().apply { if (sourceId == null) remove(key) else putString(key, sourceId) }.apply()
+        mutableState.value = mutableState.value.copy(sourceOverride = sourceId)
+        loadLyrics()
+    }
+
+    /** The sources that could be chosen for this song, in the user's order, with what each had. */
+    fun sourceChoices(): List<SourceChoice> {
+        val state = mutableState.value
+        val known = lookedUp?.let { lookupCache[it] }.orEmpty()
+        val shown = shownSelection?.source?.id
+        return state.sourceOrder.filter { it !in state.disabledSourceIds }
+            .mapNotNull { id -> lyricsBackend.descriptors.firstOrNull { it.id == id } }
+            .map { source ->
+                val result = known[source.id]
+                SourceChoice(
+                    id = source.id,
+                    name = source.displayName,
+                    status = when (result) {
+                        is ProviderResult.Hit -> when (result.payload.measuredQuality()) {
+                            RemoteLyricsQuality.WORD_SYNCED -> "Word-synced"
+                            RemoteLyricsQuality.LINE_SYNCED -> "Line-synced"
+                            RemoteLyricsQuality.PLAIN -> "Not synced"
+                            RemoteLyricsQuality.NONE -> "No usable lyrics"
+                        }
+                        ProviderResult.Miss -> "No lyrics for this song"
+                        ProviderResult.NeedsMatch -> "Needs a Spotify link"
+                        null -> "Not asked yet"
+                        else -> "Unavailable right now"
+                    },
+                    available = result == null || result is ProviderResult.Hit && result.payload.measuredQuality() != RemoteLyricsQuality.NONE,
+                    shown = source.id == shown,
+                )
+            }
+    }
+
     fun loadLyrics(spotifyIdInput: String? = null, settle: Boolean = false, force: Boolean = false) {
         val metadata = controller?.metadata ?: return
         val identity = metadata.lyricsKey()
@@ -1253,6 +1302,19 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
             withContext(Dispatchers.IO) { localLyricsFor(identity, request) }?.let { local ->
                 publish(local, identity, request, final = true)
                 return@launch
+            }
+            // A source chosen for this song comes next; if it has nothing, the usual pick follows.
+            mutableState.value.sourceOverride?.let { chosen ->
+                val picked = runCatching { withContext(Dispatchers.IO) { lyricsBackend.resolveFrom(request, chosen, known) } }
+                    .onFailure { if (it is CancellationException) throw it }
+                    .getOrNull()
+                val found = (picked as? RemoteLyricsResolution.Found)?.takeIf { it.selection.source.id == chosen }
+                if (found != null) {
+                    publish(found, identity, request, final = true)
+                    return@launch
+                }
+                val name = lyricsBackend.descriptors.firstOrNull { it.id == chosen }?.displayName ?: chosen
+                showMessage("$name has no lyrics for this song, so the usual pick is shown.")
             }
             // The disk cache is keyed on title + artist; a manual Spotify ID asks the sources afresh.
             val freshLookup = known.isEmpty()
@@ -1672,6 +1734,7 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
             lyricsLanguage = if (lyricsChanged) null else mutableState.value.lyricsLanguage,
             humanRomanizedLines = if (lyricsChanged) 0 else mutableState.value.humanRomanizedLines,
             lyricsLanguageOverride = if (lyricsChanged) translationStore.language(localKey) else mutableState.value.lyricsLanguageOverride,
+            sourceOverride = if (lyricsChanged) localKey?.let { sourceOverrides.getString(it, null) } else mutableState.value.sourceOverride,
             translationEnabled = mutableState.value.translationEnabled || (lyricsChanged && mutableState.value.translationPreferences.automatic),
             lookupStatus = if (lyricsChanged) null else mutableState.value.lookupStatus,
             lastCommandLatencyMs = latency ?: mutableState.value.lastCommandLatencyMs,
