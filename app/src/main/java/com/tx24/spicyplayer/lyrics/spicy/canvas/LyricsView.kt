@@ -432,13 +432,27 @@ fun LyricsView(
                         val totalContentHeight = (lastLayout?.yOffset ?: 0f) + (lastLayout?.height ?: 0f) + accumulatedY +
                             footerHeightUpdated
 
-                        // Static lyrics have no timing to follow: leave scrolling entirely to the user.
-                        if (isStatic) targetY = null
+                        // Static lyrics have no timing to follow: their scrolling is the user's, or with
+                        // auto-scroll, they move through at the song's pace, the point reached by the
+                        // song's progress held at the focus point. The line there stands in as the
+                        // target, so a hand scroll hands back once it changes.
+                        var scrollIndex = targetIndex
+                        var scrollVisiblePx = targetVisiblePx
+                        if (isStatic) {
+                            targetY = null
+                            val songMs = scrollConfigUpdated.staticSongMs
+                            if (songMs > 0L && currentLayouts.isNotEmpty()) {
+                                val reached = (currentTime.toFloat() / songMs).coerceIn(0f, 1f) * (totalContentHeight - footerHeightUpdated)
+                                targetY = -reached
+                                scrollIndex = currentLayouts.indices.lastOrNull { settledYScratch[it] <= reached } ?: 0
+                                scrollVisiblePx = Float.POSITIVE_INFINITY
+                            }
+                        }
                         contentHeightForDrag[0] = totalContentHeight
                         scrollManager.updateScroll(
-                            deltaTime, totalContentHeight, targetIndex.takeIf { targetY != null }, targetY,
+                            deltaTime, totalContentHeight, scrollIndex.takeIf { targetY != null }, targetY,
                             snap = decision.motion == ScrollMotion.SNAP,
-                            targetVisiblePx = targetVisiblePx,
+                            targetVisiblePx = scrollVisiblePx,
                         )
                         if (appleMusicUpdated) {
                             targetIndex?.let { scrollTrail.reference = it }

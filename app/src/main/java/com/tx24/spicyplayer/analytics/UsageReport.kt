@@ -80,6 +80,7 @@ fun configSnapshot(settings: AppSettings): Map<String, Any> = with(settings) {
         "syllable_merge" to syllableMerge.name,
         "scroll_lead" to scrollLeadEnabled,
         "smooth_scrolling" to smoothScrolling,
+        "static_auto_scroll" to staticAutoScroll,
         "distance_blur" to distanceBlur,
         "glow" to glow,
         "low_performance" to lowPerformance,

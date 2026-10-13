@@ -84,6 +84,7 @@ import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.KeyboardDoubleArrowUp
+import androidx.compose.material.icons.rounded.SwapVert
 import androidx.compose.material.icons.rounded.Waves
 import androidx.compose.material.icons.rounded.FastRewind
 import androidx.compose.material3.Icon
@@ -427,6 +428,13 @@ internal fun ScrollSyncContent(state: PlayerUiState, viewModel: ExternalPlayback
             onCheckedChange = { settings.smoothScrolling = it },
             description = "Makes the lyrics scroll smoothly.",
             icon = Icons.Rounded.Waves,
+        )
+        ToggleRow(
+            label = "Auto-scroll Unsynced Lyrics",
+            checked = settings.staticAutoScroll,
+            onCheckedChange = { settings.staticAutoScroll = it },
+            description = "Lyrics without timing scroll through at the song's pace, from top to bottom.",
+            icon = Icons.Rounded.SwapVert,
         )
     }
 }

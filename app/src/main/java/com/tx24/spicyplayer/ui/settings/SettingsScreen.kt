@@ -422,7 +422,7 @@ private fun PageSkeleton(page: SettingsPage) {
         }
         SettingsPage.Lyrics -> SettingsSkeleton(rows = 12)
         SettingsPage.Translation -> SettingsSkeleton(rows = 11)
-        SettingsPage.ScrollSync -> SettingsSkeleton(rows = 6)
+        SettingsPage.ScrollSync -> SettingsSkeleton(rows = 7)
         SettingsPage.Background -> SettingsSkeleton(rows = 3)
         SettingsPage.NowPlaying -> SettingsSkeleton(rows = 8)
         SettingsPage.Controls -> SettingsSkeleton(rows = 10)

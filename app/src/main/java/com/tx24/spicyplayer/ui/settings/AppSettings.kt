@@ -63,6 +63,8 @@ class AppSettings(private val prefs: SharedPreferences) {
     var scrollLeadEnabled by boolean("scrollLeadEnabled", false)
     var scrollLeadMs by int("scrollLeadMs", 250, 0..800)
     var smoothScrolling by boolean("smoothScrolling", false)
+    /** Unsynced lyrics scroll through at the song's pace, top to bottom over its length. */
+    var staticAutoScroll by boolean("staticAutoScroll", true)
     var seekFadeCompensation by boolean("seekFadeCompensation", true)
 
     var distanceBlur by boolean("distanceBlur", true)

@@ -525,6 +525,7 @@ private fun LyricsApp(
             leadMs = if (settings.scrollLeadEnabled) settings.scrollLeadMs.coerceAtLeast(0).toLong() else 0L,
             smooth = settings.smoothScrolling,
             seekFadeCompensation = settings.seekFadeCompensation,
+            staticSongMs = if (settings.staticAutoScroll) state.durationMs else 0L,
         ),
     )
     var showSettings by remember { mutableStateOf(false) }
