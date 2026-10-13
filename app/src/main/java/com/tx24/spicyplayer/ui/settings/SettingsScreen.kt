@@ -274,7 +274,7 @@ fun SettingsScreen(
                     },
             )
         }
-        CompositionLocalProvider(LocalSpicyPalette provides palette) {
+        CompositionLocalProvider(LocalSpicyPalette provides palette, LocalSettingsBackdrop provides backdrop) {
         BoxWithConstraints(
             Modifier
                 .fillMaxSize()
@@ -730,7 +730,10 @@ internal fun Int.signed(): String = if (this > 0) "+$this" else toString()
 internal fun Long.signed(): String = if (this > 0) "+$this" else toString()
 
 /** Behind settings, the page dims to 45% black over a strong blur of the lyrics. */
-private val SettingsBackdrop = HazeStyle(
+/** What the settings pages are over: the lyrics, blurred as [SettingsBackdrop]. Null without blur. */
+internal val LocalSettingsBackdrop = staticCompositionLocalOf<HazeState?> { null }
+
+internal val SettingsBackdrop = HazeStyle(
     backgroundColor = Color.Black,
     tints = listOf(HazeTint(Color.Black.copy(alpha = 0.45f))),
     blurRadius = 32.dp,
@@ -738,7 +741,7 @@ private val SettingsBackdrop = HazeStyle(
     fallbackTint = HazeTint(Color.Black.copy(alpha = 0.8f)),
 )
 
-private const val BACKDROP_INPUT_SCALE = 1f / 3f
+internal const val BACKDROP_INPUT_SCALE = 1f / 3f
 
 /** The scale a pop-up opens from and closes to. */
 private const val MODAL_CLOSED_SCALE = 0.96f

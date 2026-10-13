@@ -1,5 +1,11 @@
 package com.tx24.spicyplayer.ui.settings
 
+import com.tx24.spicyplayer.ui.components.drawBrandRamp
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import dev.chrisbanes.haze.HazeInputScale
+import dev.chrisbanes.haze.hazeEffect
 import com.tx24.spicyplayer.ui.theme.SpicyRadii
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.gestures.scrollBy
@@ -1075,8 +1081,25 @@ private fun SourceCard(
         if (animate) tween(SpicyMotion.FAST_MS, easing = SpicyMotion.Standard) else snap(),
         label = "sourceChevron",
     )
-    // Dragged, the card is solid: its usual tint would let the cards it passes show through it.
-    val lifted = if (dragged) Modifier.background(SpicyColors.BgElevated.copy(alpha = 1f), RoundedCornerShape(SpicyRadii.Lg)) else Modifier
+    // Dragged, the card is solid, or the cards it passes would show through its tint: it carries
+    // the page's own backdrop (the blurred lyrics and the theme's wash), so it looks the same.
+    val backdrop = LocalSettingsBackdrop.current
+    val brand = SpicyColors.brand
+    val lifted = if (!dragged) Modifier else Modifier
+        .clip(RoundedCornerShape(SpicyRadii.Lg))
+        .then(
+            if (backdrop != null) {
+                Modifier.hazeEffect(backdrop, SettingsBackdrop) { inputScale = HazeInputScale.Fixed(BACKDROP_INPUT_SCALE) }
+            } else {
+                Modifier.background(Color.Black.copy(alpha = 0.97f))
+            },
+        )
+        .drawBehind {
+            if (brand != null) {
+                drawRect(brand.fieldDeep.copy(alpha = 0.14f))
+                drawBrandRamp(brand, fromAlpha = 0.26f, toAlpha = 0.4f)
+            }
+        }
     Column(modifier.fillMaxWidth().then(lifted).outlinedCard(tinted = true)) {
         Row(
             Modifier
