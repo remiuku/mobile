@@ -328,9 +328,12 @@ internal class NextLyricsBackend(context: Context, clientKey: String) {
         get() = preferences.getBoolean("humanRomanizations", false)
         set(value) = preferences.edit().putBoolean("humanRomanizations", value).apply()
 
-    private val geniusRomanization = GeniusRomanizationSource(client, gson)
+    // One set of Genius pages for both, so a song's romanization and translation lookups share
+    // their requests.
+    private val geniusPages = GeniusSongPages(client, gson)
+    private val geniusRomanization = GeniusRomanizationSource(geniusPages)
     private val romanCache = File(context.cacheDir, "genius-roman")
-    private val geniusTranslation = GeniusTranslationSource(client, gson)
+    private val geniusTranslation = GeniusTranslationSource(geniusPages)
     private val humanTranslationCache = com.tx24.spicyplayer.translation.DiskGeniusTranslationCache(File(context.cacheDir, "genius-translations"))
 
     suspend fun humanTranslation(title: String, artist: String, target: String): com.tx24.spicyplayer.translation.GeniusTranslationPair? =
@@ -338,7 +341,8 @@ internal class NextLyricsBackend(context: Context, clientKey: String) {
 
     /**
      * Genius's romanization of the song as lyric lines, or null when it has none. Kept on disk a
-     * week when found and a day when not, so a replayed song asks once.
+     * week when found and a day when not, so a replayed song asks once. A lookup that failed
+     * throws and isn't kept, so the next play asks again.
      */
     suspend fun humanRomanization(title: String, artist: String): List<String>? {
         val file = File(romanCache, cacheKey(title, artist) + ".json")

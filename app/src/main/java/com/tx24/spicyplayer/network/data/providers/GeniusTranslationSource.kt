@@ -7,8 +7,8 @@ import com.tx24.spicyplayer.translation.TranslationLanguages
 import com.tx24.spicyplayer.translation.languageCode
 import okhttp3.OkHttpClient
 
-internal class GeniusTranslationSource(client: OkHttpClient, gson: Gson) {
-    private val pages = GeniusSongPages(client, gson)
+internal class GeniusTranslationSource(private val pages: GeniusSongPages) {
+    constructor(client: OkHttpClient, gson: Gson) : this(GeniusSongPages(client, gson))
 
     /**
      * The song's translation into [target], or null when Genius has none that pairs. A lookup
