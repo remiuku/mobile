@@ -15,7 +15,7 @@ import com.tx24.spicyplayer.lyrics.spicy.models.LyricsType
 internal object RemoteLyricsAdapter {
     private val lrcStamp = Regex("\\[(\\d{1,3}):(\\d{2})(?:[.:](\\d{1,3}))?]")
 
-    fun render(selection: RemoteLyricsSelection, durationMs: Long): LyricsState.Ready {
+    fun render(selection: RemoteLyricsSelection, durationMs: Long, splitBackgroundVocals: Boolean = true): LyricsState.Ready {
         val payload = selection.payload
         val attribution = payload.attribution
         val parsedTtml = payload.ttmlLyrics?.takeIf(String::isNotBlank)?.let { ttml ->
@@ -38,7 +38,10 @@ internal object RemoteLyricsAdapter {
         }
         // Plain text becomes untimed lines, rendered by the lyrics view's static mode like the
         // reference, so it gets the same layout, romanization and credits as synced lyrics.
-        val parsed = (ttmlLines ?: parseLrc(payload.syncedLyrics, durationMs)).ifEmpty { staticLines(payload.plainLyrics) }
+        val read = (ttmlLines ?: parseLrc(payload.syncedLyrics, durationMs)).ifEmpty { staticLines(payload.plainLyrics) }
+        // Background vocals written in brackets at a synced line's ends get lines of their own.
+        val synced = selection.quality == RemoteLyricsQuality.WORD_SYNCED || selection.quality == RemoteLyricsQuality.LINE_SYNCED
+        val parsed = if (synced && splitBackgroundVocals) BackgroundVocals.split(read) else read
         // Word-synced text is already split per syllable; line-timed text can arrive as one
         // word per line, which the layout (it wraps between words only) can never wrap.
         val unromanized = if (selection.quality == RemoteLyricsQuality.WORD_SYNCED) parsed else parsed.map(::wrappable)

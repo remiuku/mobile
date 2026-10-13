@@ -275,7 +275,7 @@ internal class NextLyricsBackend(context: Context, clientKey: String) {
         private val ORIGIN = Regex("^[a-zA-Z][a-zA-Z0-9+.-]*://[^/?#]*")
 
         /** Bump when payload conversion changes, so stale conversions are refetched. */
-        private const val CACHE_VERSION = 22
+        private const val CACHE_VERSION = 23
         /** Outcomes that are no answer at all: a later lookup may get one. */
         private val UNANSWERED = setOf(
             ProviderAttemptOutcome.UNAVAILABLE,
@@ -333,6 +333,11 @@ internal class NextLyricsBackend(context: Context, clientKey: String) {
     fun dismissSwitchedOff() {
         preferences.edit().remove(SWITCHED_OFF).apply()
     }
+
+    /** Brackets at a synced line's start or end read as its background vocals ([BackgroundVocals]). */
+    var splitBackgroundVocals: Boolean
+        get() = preferences.getBoolean("splitBackgroundVocals", true)
+        set(value) = preferences.edit().putBoolean("splitBackgroundVocals", value).apply()
 
     /** Human-written romanizations from Genius over the on-device ones (off until asked for: it asks Genius). */
     var humanRomanizations: Boolean

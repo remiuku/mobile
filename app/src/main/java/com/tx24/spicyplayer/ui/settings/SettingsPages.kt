@@ -72,6 +72,7 @@ import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Timer
 import androidx.compose.material.icons.rounded.CallMerge
+import androidx.compose.material.icons.rounded.RecordVoiceOver
 import androidx.compose.material.icons.rounded.Key
 import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.Insights
@@ -775,6 +776,15 @@ internal fun SourcesContent(state: PlayerUiState, viewModel: ExternalPlaybackVie
         }
     }
     CustomSourcesSection(state, viewModel)
+    SettingsSection("Reading lyrics") {
+        ToggleRow(
+            label = "Background vocals in brackets",
+            description = "A \"(…)\" at the start or end of a synced line is shown as its background vocals.",
+            checked = state.splitBackgroundVocals,
+            onCheckedChange = viewModel::setSplitBackgroundVocals,
+            icon = Icons.Rounded.RecordVoiceOver,
+        )
+    }
     SettingsSection("Blends") {
         Searchable("Blends", "Word timing", *state.blendDescriptors.map { it.displayName }.toTypedArray()) {
             Text(

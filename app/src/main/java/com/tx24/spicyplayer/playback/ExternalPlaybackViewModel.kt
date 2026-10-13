@@ -182,6 +182,8 @@ data class PlayerUiState(
     val localLyricsKey: String? = null,
     /** The source chosen for this song, over the automatic pick; null when the pick is automatic. */
     val sourceOverride: String? = null,
+    /** Brackets at a synced line's ends shown as background vocals. */
+    val splitBackgroundVocals: Boolean = true,
     /** The user's own sources, in the order they were added; their place in the lookup is in [sourceOrder]. */
     val customSources: List<CustomLyricsSource> = emptyList(),
     /** The player's queue, when it shares one; empty otherwise. */
@@ -256,6 +258,7 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
         blendDescriptors = lyricsBackend.blendDescriptors,
         enabledBlendIds = lyricsBackend.policy().enabledBlendIds,
         humanRomanizations = lyricsBackend.humanRomanizations,
+        splitBackgroundVocals = lyricsBackend.splitBackgroundVocals,
         switchedOffSources = lyricsBackend.switchedOffSources,
         ownKeyHint = runtimeApiKey.takeIf { it.isNotBlank() }?.let(SpicyLyricsKey::hint),
     ))
@@ -1111,6 +1114,7 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
             lyricDelayMs = outputProfiles.delayMs(outputRoute),
             songDelayMs = songDelays.delayMs(mutableState.value.localLyricsKey),
             humanRomanizations = lyricsBackend.humanRomanizations,
+            splitBackgroundVocals = lyricsBackend.splitBackgroundVocals,
             switchedOffSources = lyricsBackend.switchedOffSources,
         )
         // The playing song's Spotify link may have come or gone: look it up again if so.
@@ -1488,7 +1492,7 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
         synchronized(renderedCache) { renderedCache[selection] }
             ?.takeIf { !usesDuration || it.durationMs == durationMs }
             ?.let { return it.lyrics }
-        val lyrics = RemoteLyricsAdapter.render(selection, durationMs)
+        val lyrics = RemoteLyricsAdapter.render(selection, durationMs, lyricsBackend.splitBackgroundVocals)
         synchronized(renderedCache) { renderedCache[selection] = RenderedLyrics(durationMs, lyrics) }
         return lyrics
     }
@@ -1517,6 +1521,19 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
             Log.d("LyricsProviders", "Genius romanization laid over $laid lines")
             mutableState.value = mutableState.value.copy(lyrics = human, humanRomanizedLines = laid)
         }
+    }
+
+    fun setSplitBackgroundVocals(enabled: Boolean) {
+        lyricsBackend.splitBackgroundVocals = enabled
+        mutableState.value = mutableState.value.copy(splitBackgroundVocals = enabled)
+        // Every rendered copy was cut (or not) the old way.
+        synchronized(renderedCache) { renderedCache.clear() }
+        synchronized(humanCache) { humanCache.clear() }
+        val selection = shownSelection ?: return
+        val request = shownRequest ?: return
+        val lyrics = runCatching { rendered(selection, request.durationSeconds * 1_000L) }.getOrNull() ?: return
+        mutableState.value = mutableState.value.copy(lyrics = lyrics)
+        if (lyricsBackend.humanRomanizations) humanize(selection, lyrics, currentLyricsKey, request)
     }
 
     fun setHumanRomanizations(enabled: Boolean) {
@@ -1612,6 +1629,7 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
                 translationEnabled = kept.translationEnabled,
                 deepLKeyPresent = kept.deepLKeyPresent,
                 humanRomanizations = kept.humanRomanizations,
+                splitBackgroundVocals = kept.splitBackgroundVocals,
                 sourceDisclosure = kept.sourceDisclosure,
                 switchedOffSources = kept.switchedOffSources,
                 ownKeyHint = kept.ownKeyHint,
