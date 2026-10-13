@@ -1100,7 +1100,12 @@ private fun PipLyrics(
     BoxWithConstraints(Modifier.fillMaxSize()) {
         // A short window fits few rows, so the height limits the text as much as the width does.
         val windowScale = minOf(maxWidth.value / 300f, maxHeight.value / 190f).coerceIn(0.4f, 1f)
-        val fontScale = windowScale * settings.lyricsSize.scale
+        // Unsynced lyrics are drawn smaller to fit a page of text, which in a window this small
+        // leaves them unreadable: they get the synced lyrics' size here.
+        val staticBoost = if ((state.lyrics as? LyricsState.Ready)?.lyricsType == LyricsType.Static)
+            LyricsLayoutMetrics.baseFontSizeSp(LyricsType.Syllable, maxWidth.value) / LyricsLayoutMetrics.baseFontSizeSp(LyricsType.Static, maxWidth.value)
+            else 1f
+        val fontScale = windowScale * settings.lyricsSize.scale * staticBoost
         SpicySessionBackground(
             artwork = state.artwork,
             artworkUri = state.artworkUri,

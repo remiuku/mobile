@@ -395,7 +395,10 @@ fun LyricsView(
                             val half = when {
                                 alignTopUpdated -> if (currentLayouts[index].isInterlude) -interludeCentre else 0f
                                 currentLayouts[index].isInterlude -> 0f
-                                else -> currentLayouts[index].height / 2f
+                                // A line whose translation or romanization rows make it taller
+                                // than the room above the focus point (a small window) keeps its
+                                // own text in view: its top stops a line gap below the edge.
+                                else -> minOf(currentLayouts[index].height / 2f, (centerYUpdated - lineGapUpdated).coerceAtLeast(0f))
                             }
                             -(settledYScratch[index] + half)
                         }

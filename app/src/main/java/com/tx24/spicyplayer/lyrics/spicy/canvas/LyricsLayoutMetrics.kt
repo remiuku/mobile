@@ -11,10 +11,15 @@ internal data class LyricsLayoutMetrics(
     val appFontScale: Float,
 ) {
     val viewportWidthDp = viewportWidthPx / density.coerceAtLeast(0.01f)
-    val baseFontSizeSp = when (lyricsType) {
-        LyricsType.Static -> (viewportWidthDp * 0.05f).coerceIn(12.8f, 40f)
-        else -> (viewportWidthDp * 0.07f).coerceIn(29.6f, 56f)
-    } * appFontScale
+    val baseFontSizeSp = baseFontSizeSp(lyricsType, viewportWidthDp) * appFontScale
+
+    companion object {
+        /** The lyric text size at [widthDp] wide, before the app's own text size. */
+        fun baseFontSizeSp(lyricsType: LyricsType, widthDp: Float): Float = when (lyricsType) {
+            LyricsType.Static -> (widthDp * 0.05f).coerceIn(12.8f, 40f)
+            else -> (widthDp * 0.07f).coerceIn(29.6f, 56f)
+        }
+    }
     /**
      * The space between two lyric lines, on top of the row height. It follows the text size so a
      * new line always reads as further away than a wrapped row of the same line; a width-based
