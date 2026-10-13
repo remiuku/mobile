@@ -49,7 +49,7 @@ class AllSourcesLiveCheckTest {
             println("── $id")
             results.forEachIndexed { i, (result, ms) ->
                 val text = when (result) {
-                    is ProviderResult.Hit -> "HIT ${result.payload.measuredQuality()}"
+                    is ProviderResult.Hit -> "HIT ${result.payload.measuredQuality()}" + (result.payload.attribution?.originName?.let { " from $it" } ?: "")
                     null -> "TIMEOUT"
                     is ProviderResult.Unavailable -> "UNAVAILABLE ${result.category} ${result.message.orEmpty().take(120)}"
                     else -> result.toString()
