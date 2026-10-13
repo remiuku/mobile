@@ -16,6 +16,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.foundation.Image
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.material.icons.rounded.ArrowOutward
@@ -321,7 +322,15 @@ fun SpicyToggle(checked: Boolean, modifier: Modifier = Modifier, onCheckedChange
         )
         val knobR = 10.dp.toPx()
         val knob = Offset(2.dp.toPx() + knobR + progress * 18.dp.toPx(), r)
-        drawCircle(Color.Black.copy(alpha = 0.22f), knobR + 1.5f * px, knob.copy(y = knob.y + 1.5f * px))
+        // A soft shadow all round, a touch lower: a hard ring set off below read as a second circle.
+        val shadowAt = knob.copy(y = knob.y + 0.75f * px)
+        val shadowR = knobR + 2.5f * px
+        val shadow = Color.Black.copy(alpha = 0.24f)
+        drawCircle(
+            Brush.radialGradient(0f to shadow, (knobR - px) / shadowR to shadow, 1f to Color.Transparent, center = shadowAt, radius = shadowR),
+            shadowR,
+            shadowAt,
+        )
         drawCircle(lerp(ToggleKnobOff, Color.White, progress), knobR, knob)
     }
 }

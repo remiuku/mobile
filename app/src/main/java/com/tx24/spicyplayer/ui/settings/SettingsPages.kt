@@ -1,5 +1,7 @@
 package com.tx24.spicyplayer.ui.settings
 
+import com.tx24.spicyplayer.ui.theme.SpicyRadii
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
@@ -1014,6 +1016,9 @@ private fun SourceList(ranking: SourceRanking, names: Map<String, String>, viewM
                                     translationY = dragOffset
                                     scaleX = DRAGGED_SCALE
                                     scaleY = DRAGGED_SCALE
+                                    // Lifted off the list: a shadow under it.
+                                    shadowElevation = DRAGGED_ELEVATION.toPx()
+                                    shape = RoundedCornerShape(SpicyRadii.Lg)
                                 }
                             },
                     )
@@ -1070,7 +1075,9 @@ private fun SourceCard(
         if (animate) tween(SpicyMotion.FAST_MS, easing = SpicyMotion.Standard) else snap(),
         label = "sourceChevron",
     )
-    Column(modifier.fillMaxWidth().outlinedCard(tinted = true).alpha(if (dragged) DRAGGED_ALPHA else 1f)) {
+    // Dragged, the card is solid: its usual tint would let the cards it passes show through it.
+    val lifted = if (dragged) Modifier.background(SpicyColors.BgElevated.copy(alpha = 1f), RoundedCornerShape(SpicyRadii.Lg)) else Modifier
+    Column(modifier.fillMaxWidth().then(lifted).outlinedCard(tinted = true)) {
         Row(
             Modifier
                 .fillMaxWidth()
@@ -1143,7 +1150,7 @@ private val DRAG_EDGE = 72.dp
 /** The page's fastest scroll under a dragged card, per frame. */
 private const val DRAG_SCROLL_PX = 18f
 private const val DRAGGED_SCALE = 1.02f
-private const val DRAGGED_ALPHA = 0.92f
+private val DRAGGED_ELEVATION = 12.dp
 
 /** The rank ring's fill. */
 private val RankFill = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.09f)
@@ -1364,7 +1371,7 @@ private fun RemoteLyricsQuality.label() = when (this) {
 /** The source, and for a source passing on another's lyrics, where they came from: "Spicy Lyrics (Apple Music)". */
 private fun lyricsFrom(lyrics: LyricsState.Ready): String {
     val origin = lyrics.source?.takeIf { it.isNotBlank() && it != lyrics.provider } ?: return lyrics.provider
-    return "${lyrics.provider} (${if (origin == "Spicy Lyrics Community") "community" else origin})"
+    return "${lyrics.provider} (${origin})"
 }
 
 /** One line on where the current lyrics stand. */

@@ -17,6 +17,8 @@ data class LyricsOrigin(
      * for a provider that serves several sources.
      */
     val originNames: Set<String> = emptySet(),
+    /** How lyrics from it are credited, whichever provider brought them. */
+    val credit: String = displayName,
 )
 
 /** One provider's switch within one source. */
@@ -71,17 +73,18 @@ object LyricsOrigins {
     /** Every built-in source, in the order a fresh install has them. */
     val BUILT_IN: List<LyricsOrigin> = listOf(
         LyricsOrigin(SPICY_COMMUNITY, "Spicy Lyrics community", listOf(SPICY, RMM), ALL_TYPES,
-            RemoteLyricsSource.SPICY_OWN_ORIGINS),
+            RemoteLyricsSource.SPICY_OWN_ORIGINS, credit = "Spicy Lyrics"),
         LyricsOrigin(AMLL, "AMLL TTML DB", listOf(AMLL), ALL_TYPES),
         LyricsOrigin(APPLE_MUSIC, "Apple Music", listOf(SPICY, RMM, LRC_RED, BINI), ALL_TYPES, setOf("Apple Music")),
         LyricsOrigin(UNISON, "Unison", listOf(UNISON), ALL_TYPES),
-        LyricsOrigin(SPOTIFY, "Spotify", listOf(SPICY, RMM), ALL_TYPES, setOf("Spotify")),
+        // Spotify's lyrics are Musixmatch's, and line synced at best.
+        LyricsOrigin(SPOTIFY, "Spotify (Musixmatch)", listOf(SPICY, RMM), LINE_PLAIN, setOf("Spotify"), credit = "Musixmatch"),
         LyricsOrigin(KUGOU, "KuGou", blendsTimedBy(KUGOU) + KUGOU + LRCMUX, ALL_TYPES, setOf("KuGou")),
         LyricsOrigin(NETEASE, "NetEase", blendsTimedBy(NETEASE) + NETEASE, ALL_TYPES),
         LyricsOrigin(QQ_MUSIC, "QQ Music", blendsTimedBy(QQ_MUSIC) + QQ_MUSIC, ALL_TYPES),
         LyricsOrigin(KUWO, "Kuwo", listOf(KUWO), LINE_PLAIN),
         LyricsOrigin(LRCLIB, "LRCLIB", listOf(LRCLIB, LRCMUX), LINE_PLAIN, setOf("LRCLIB")),
-        LyricsOrigin(LRC_RED_AI, "lrc.red AI syncs", listOf(LRC_RED, BINI), ALL_TYPES, setOf(LRC_RED_AI_NAME)),
+        LyricsOrigin(LRC_RED_AI, "lrc.red AI syncs", listOf(LRC_RED, BINI), ALL_TYPES, setOf(LRC_RED_AI_NAME), credit = "lrc.red (AI sync)"),
         LyricsOrigin(GENIUS, "Genius", listOf(GENIUS, LRCMUX), listOf(RemoteLyricsQuality.PLAIN), setOf("Genius")),
         LyricsOrigin(YOUTUBE, "YouTube", listOf("youtube_transcript", LRCMUX), LINE_PLAIN, setOf("YouTube Music")),
     )

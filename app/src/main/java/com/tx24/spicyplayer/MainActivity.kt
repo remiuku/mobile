@@ -1587,7 +1587,8 @@ private fun LyricsPanelContent(
                         songwriters = lyrics.songwriters,
                         translationCredit = translation?.credit(),
                         // "Lyrics: Spicy Lyrics • Apple Music" when a provider syndicates another catalogue.
-                        provenance = LyricsProvenance(lyrics.provider, lyrics.source?.takeIf { it != lyrics.provider }),
+                        // The source alone: Apple Music's lyrics read the same from every service that fetches them.
+                        provenance = LyricsProvenance(lyrics.source ?: lyrics.provider),
                         maker = lyrics.maker?.let { LyricsCredit(it.username, it.profileUrl, it.avatarUrl) },
                         uploader = lyrics.uploader?.let { LyricsCredit(it.username, it.profileUrl, it.avatarUrl) },
                     )

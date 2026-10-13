@@ -6,6 +6,8 @@ import com.tx24.spicyplayer.lyrics.spicy.romanization.HumanRomanization
 import com.tx24.spicyplayer.lyrics.spicy.romanization.RomanizationService
 import com.tx24.spicyplayer.lyrics.spicy.romanization.Script
 import com.tx24.spicyplayer.lyrics.spicy.romanization.ScriptDetector
+import com.tx24.spicyplayer.network.data.LyricsBlends
+import com.tx24.spicyplayer.network.data.LyricsOrigins
 import com.tx24.spicyplayer.network.data.RemoteLyricsSelection
 import com.tx24.spicyplayer.network.data.RemoteLyricsQuality
 import com.tx24.spicyplayer.lyrics.spicy.models.LineRole
@@ -59,7 +61,10 @@ internal object RemoteLyricsAdapter {
         return LyricsState.Ready(
             lines = lines,
             provider = attribution?.providerName ?: selection.source.displayName,
-            source = attribution?.originName ?: selection.source.displayName,
+            // Credited by where the lyrics come from, the same whichever service fetched them.
+            source = LyricsOrigins.originOf(LyricsOrigins.BUILT_IN, selection.source.id, attribution?.originName)
+                ?.takeIf { LyricsBlends.byId(selection.source.id) == null }?.credit
+                ?: attribution?.originName ?: selection.source.displayName,
             maker = attribution?.maker,
             uploader = attribution?.uploader,
             songwriters = (attribution?.songwriters.orEmpty() + parsedTtml?.songwriters.orEmpty())
