@@ -129,6 +129,7 @@ import com.tx24.spicyplayer.ui.theme.SpicyMotion
 import com.tx24.spicyplayer.ui.theme.SpicySpacing
 import dev.chrisbanes.haze.HazeProgressive
 import dev.chrisbanes.haze.HazeTint
+import dev.chrisbanes.haze.HazeInputScale
 import dev.chrisbanes.haze.hazeEffect
 import kotlinx.coroutines.launch
 
@@ -211,6 +212,8 @@ fun LyricsControls(
                         Modifier.hazeEffect(it) {
                             backgroundColor = Color.Black
                             blurRadius = SHADE_BLUR
+                            // Half-size: the shade spans the screen's width under moving lyrics.
+                            inputScale = HazeInputScale.Auto
                             noiseFactor = 0f
                             tints = emptyList()
                             fallbackTint = HazeTint(Color.Black.copy(alpha = 0.25f))

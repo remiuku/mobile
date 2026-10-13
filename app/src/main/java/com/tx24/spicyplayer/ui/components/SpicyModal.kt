@@ -107,6 +107,7 @@ import com.tx24.spicyplayer.ui.theme.SpicyType
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.HazeStyle
 import dev.chrisbanes.haze.HazeTint
+import dev.chrisbanes.haze.HazeInputScale
 import dev.chrisbanes.haze.hazeEffect
 
 /*
@@ -243,7 +244,7 @@ fun SpicyModal(
                             )
                         }
                     } else {
-                        (backdrop?.let { Modifier.hazeEffect(it, PlateMaterial) } ?: Modifier.background(palette.BgElevated))
+                        (backdrop?.let { Modifier.hazeEffect(it, PlateMaterial) { inputScale = HazeInputScale.Auto } } ?: Modifier.background(palette.BgElevated))
                             .background(PLATE_FILL)
                     },
                 )

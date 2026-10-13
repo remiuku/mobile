@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.tx24.spicyplayer.ui.theme.SpicyGlass
 import com.tx24.spicyplayer.ui.theme.SpicyMotion
+import dev.chrisbanes.haze.HazeInputScale
 import dev.chrisbanes.haze.hazeEffect
 import kotlinx.coroutines.launch
 
@@ -119,7 +120,11 @@ fun GlassButton(
                 backdrop?.let {
                     Modifier
                         .clip(CircleShape)
-                        .hazeEffect(it, SpicyGlass.material)
+                        .hazeEffect(it, SpicyGlass.material) {
+                            // A third-size copy, like every glass surface: after a 12px blur it
+                            // looks the same, and each button re-renders what's behind it every frame.
+                            inputScale = HazeInputScale.Auto
+                        }
                 } ?: Modifier,
             )
             .glassCircle { fill }
