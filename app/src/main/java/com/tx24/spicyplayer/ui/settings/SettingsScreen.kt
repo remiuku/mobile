@@ -550,8 +550,9 @@ private fun HomeGroups(state: PlayerUiState, settings: AppSettings, updater: Upd
     AboutCard(state, updater, settings)
 }
 
+/** A row of a grouped card that opens a page: glyph, name, a one-line summary and a chevron. */
 @Composable
-private fun GroupRow(
+internal fun GroupRow(
     icon: ImageVector,
     label: String,
     summary: String,
@@ -584,7 +585,7 @@ private fun GroupRow(
 }
 
 @Composable
-private fun GroupDivider() {
+internal fun GroupDivider() {
     Box(Modifier.fillMaxWidth().height(1.dp).background(SpicyColors.Hairline))
 }
 
