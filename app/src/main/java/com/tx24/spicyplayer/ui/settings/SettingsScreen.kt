@@ -190,7 +190,7 @@ fun SettingsScreen(
         }
     }
     fun show(target: SettingsPage) {
-        if (target != SettingsPage.Translation) UsageStats.count(UsageCounter.page(target.name))
+        UsageStats.count(UsageCounter.page(target.name))
         page = target
         pageReady = false
         scope.launch {

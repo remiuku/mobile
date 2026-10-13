@@ -16,6 +16,7 @@ object UsageCounter {
     const val LYRICS_MANAGER = "lyrics_manager_opened"
     const val SPOTIFY_SEARCH = "spotify_search_opened"
     const val ROMANIZE = "romanize_toggled"
+    const val TRANSLATE = "translate_toggled"
     const val RESYNC = "resync"
     const val CALIBRATION = "delay_calibration"
     const val BACKUP_EXPORT = "backup_exported"
@@ -72,6 +73,7 @@ fun configSnapshot(settings: AppSettings): Map<String, Any> = with(settings) {
         // Default, System or Custom; a custom font's own name stays on the phone.
         "font" to lyricsFont.name,
         "romanize" to romanize,
+        "translation_mode" to translationMode.name,
         "scroll_to_active" to showScrollToActive,
         "pinned_footer" to pinnedFooter.name,
         "profiles_in_browser" to profilesInBrowser,

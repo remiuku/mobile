@@ -350,6 +350,14 @@ private fun lookupSnapshot(state: PlayerUiState): Map<String, Any> = buildMap {
     put("sources_off", state.disabledSourceIds.size)
     put("blends_on", state.enabledBlendIds.size)
     put("human_romanizations", state.humanRomanizations)
+    // Which translation is set up; never what was translated.
+    state.translationPreferences.let { translation ->
+        put("translate_automatically", translation.automatic)
+        put("translation_provider", translation.provider.name)
+        put("translation_target", translation.targetLanguage)
+        put("human_translations", translation.humanTranslations)
+        put("translation_excluded", translation.excludedLanguages.size)
+    }
     put("own_key", state.ownKeyHint != null)
     put("custom_sources", state.customSources.size)
 }
@@ -1548,7 +1556,7 @@ private fun LyricsPanelContent(
                 footer = remember(lyrics, translation) {
                     LyricsFooter(
                         songwriters = lyrics.songwriters,
-                        translationCredit = translation?.geniusCredit(),
+                        translationCredit = translation?.credit(),
                         // "Lyrics: Spicy Lyrics • Apple Music" when a provider syndicates another catalogue.
                         provenance = LyricsProvenance(lyrics.provider, lyrics.source?.takeIf { it != lyrics.provider }),
                         maker = lyrics.maker?.let { LyricsCredit(it.username, it.profileUrl, it.avatarUrl) },
