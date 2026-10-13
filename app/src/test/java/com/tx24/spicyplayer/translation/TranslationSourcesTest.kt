@@ -150,18 +150,26 @@ class TranslationSourcesTest {
         assertFalse(SourceDisclosures.translation(TranslationProvider.Google, false).description.contains("Genius"))
     }
 
-    @Test fun `Genius pages pair section by section where translators merged lines`() {
-        val original = "[Verse 1]\nどんなに今日を生き抜いても\n報われぬ every day\n[Chorus]\n夜が来る\n星が光る\n[Bridge]\n声が響く"
-        val translation = "[Verse 1]\nHowever you survive today, it's unrewarding every day\n[Chorus]\nNight comes\nStars shine\n[Bridge]\nVoices echo"
+    @Test fun `two sung lines merged into one translated line both get it`() {
+        val original = "[Verse 1]\nどんなに今日を生き抜いても\n報われぬ毎日の中で\n[Chorus]\n夜が来る\n星が光る\n[Bridge]\n声が響く"
+        val translation = "[Verse 1]\nHowever hard I survive today, it goes unrewarded every single day\n[Chorus]\nNight comes\nStars shine\n[Bridge]\nVoices echo"
         val pair = GeniusTranslationPair.fromText(original, translation, "ja")!!
-        assertEquals(listOf("夜が来る", "星が光る", "声が響く"), pair.originals)
-        assertEquals(listOf("Night comes", "Stars shine", "Voices echo"), pair.translations)
+        assertEquals(listOf("どんなに今日を生き抜いても", "報われぬ毎日の中で", "夜が来る", "星が光る", "声が響く"), pair.originals)
+        assertEquals("However hard I survive today, it goes unrewarded every single day", pair.translations[0])
+        assertEquals(pair.translations[0], pair.translations[1])
+        assertEquals(listOf("Night comes", "Stars shine", "Voices echo"), pair.translations.drop(2))
     }
 
-    @Test fun `Genius page pairs strip headers equally and refuse unequal counts`() {
+    @Test fun `one line split in two gets both, and an extra title block or section doesn't sink the page`() {
+        val original = "[Song title 歌詞]\n\n[Intro]\n雨の日も風の日もずっとあなたのそばにいたい\n[Verse]\n夜が来る\n星が光る\n[Outro]\n声が響く"
+        val translation = "[Intro]\nOn rainy days and windy days\nI want to stay by your side forever\n[Verse]\nNight comes\nStars shine\n[Outro]\nVoices echo"
+        val pair = GeniusTranslationPair.fromText(original, translation, "ja")!!
+        assertEquals(listOf("雨の日も風の日もずっとあなたのそばにいたい", "夜が来る", "星が光る", "声が響く"), pair.originals)
+        assertEquals("On rainy days and windy days I want to stay by your side forever", pair.translations[0])
+    }
+
+    @Test fun `Genius page pairs strip headers equally`() {
         val original = geniusLyricsText("""<div data-lyrics-container="true">[Verse 1]<br/>夜が来る<br/><br/>星が光る</div>""")
-        val translated = geniusLyricsText("""<div data-lyrics-container="true">[Verse]<br/>Night comes<br/>Stars shine<br/>Extra line</div>""")
-        assertNull(GeniusTranslationPair.fromText(original, translated))
         val pair = GeniusTranslationPair.fromText(original, "[Verse]\nNight comes\n\nStars shine", "ja")!!
         assertEquals(listOf("夜が来る", "星が光る"), pair.originals)
         assertEquals(listOf("Night comes", "Stars shine"), pair.translations)

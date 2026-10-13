@@ -214,7 +214,7 @@ class TranslationTest {
         assertNotEquals(key.fileName(), key.copy(provider = TranslationProvider.DeepL).fileName())
         assertNotEquals(key.fileName(), key.copy(sourceLanguage = "ru").fileName())
         assertNotEquals(key.fileName(), key.fileName(TRANSLATION_CACHE_VERSION + 1))
-        assertEquals(5, TRANSLATION_CACHE_VERSION)
+        assertEquals(6, TRANSLATION_CACHE_VERSION)
     }
 
     @Test fun `wrong cache version and malformed entries are ignored`() {

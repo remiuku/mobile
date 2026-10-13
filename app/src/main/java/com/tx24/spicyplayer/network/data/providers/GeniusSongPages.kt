@@ -51,12 +51,16 @@ internal class GeniusSongPages(
     suspend fun search(title: String, artist: String, romanizations: Boolean = true, strict: Boolean = false): List<JsonObject> {
         val cleanTitle = title.replace(BRACKETED, "").trim()
         val cleanArtist = artist.replace(BRACKETED, "").trim()
-        val queries = if (romanizations) listOf(
+        // Several credited artists ("ROSÉ, Bruno Mars") can bury the song under its translation
+        // pages; the first artist alone finds it.
+        val firstArtist = artist.split(ARTIST_SEPARATOR).first().trim().takeIf { it.isNotEmpty() && it != artist.trim() }
+        val queries = if (romanizations) listOfNotNull(
             "$title $artist",
+            firstArtist?.let { "$cleanTitle $it" },
             "$cleanTitle $cleanArtist Romanized",
             "$cleanTitle Romanized",
             "$title Genius Romanizations",
-        ) else listOf("$title $artist", "$cleanTitle $cleanArtist")
+        ) else listOfNotNull("$title $artist", "$cleanTitle $cleanArtist", firstArtist?.let { "$cleanTitle $it" })
         val hits = mutableListOf<JsonObject>()
         val seen = mutableSetOf<Long>()
         var failure: Exception? = null
