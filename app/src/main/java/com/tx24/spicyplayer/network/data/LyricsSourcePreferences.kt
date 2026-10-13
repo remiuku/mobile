@@ -5,8 +5,28 @@ data class NormalizedLyricsSourcePreferences(
     val disabledSourceIds: Set<String>,
 )
 
-/** Pure migration logic shared by DataStore and tests. */
+/**
+ * The old per-provider source preferences brought up to date with the providers there are:
+ * read once more when they're moved to sources ([LyricsSourceSettings.migrate]).
+ */
 object LyricsSourcePreferenceNormalizer {
+    /**
+     * [stored] without unknown or repeated IDs, with every ID of [defaults] it lacks inserted
+     * after its nearest default neighbour above (first when none is there): new entries slot in
+     * by the default order without undoing the user's moves. Null [stored] is the default order.
+     */
+    fun order(stored: List<String>?, defaults: List<String>): List<String> {
+        if (stored == null) return defaults
+        val known = defaults.toSet()
+        return stored.filter(known::contains).distinct().toMutableList().apply {
+            defaults.forEachIndexed { defaultIndex, id ->
+                if (id in this) return@forEachIndexed
+                val preceding = defaults.subList(0, defaultIndex).asReversed().firstOrNull { it in this }
+                add(preceding?.let { indexOf(it) + 1 } ?: 0, id)
+            }
+        }
+    }
+
     fun normalize(
         storedOrder: List<String>?,
         storedDisabledSourceIds: Set<String>,
@@ -20,26 +40,7 @@ object LyricsSourcePreferenceNormalizer {
             ?.filter(knownById::containsKey)
             ?.distinct()
             ?.toList()
-
-        val order = if (storedOrder == null) {
-            defaults.map(LyricsSourceDescriptor::id).toMutableList()
-        } else {
-            originallyKnown.orEmpty().toMutableList().apply {
-                for (descriptor in defaults) {
-                    if (descriptor.id in this) continue
-                    val defaultIndex = defaults.indexOf(descriptor)
-                    val precedingId = defaults
-                        .subList(0, defaultIndex)
-                        .asReversed()
-                        .firstOrNull { it.id in this }
-                        ?.id
-                    val insertionIndex = precedingId
-                        ?.let { indexOf(it) + 1 }
-                        ?: 0
-                    add(insertionIndex, descriptor.id)
-                }
-            }
-        }
+        val order = order(storedOrder, defaults.map(LyricsSourceDescriptor::id))
 
         val newDefaultDisabled = defaults
             .asSequence()

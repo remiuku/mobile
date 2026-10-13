@@ -50,11 +50,9 @@ class RemoteLyricsSourceTest {
 
     @Test
     fun `Spicy Lyrics relaying Apple Music ranks in Apple Music's place`() = runBlocking {
-        val relayed = wordTtml("relayed").copy(attribution = LyricsAttribution("Spicy Lyrics", originName = "Apple Music"))
         val source = source(
-            provider("spicy_lyrics", 1, result = ProviderResult.Hit(relayed)),
+            provider("spicy_lyrics", 1, result = ProviderResult.Hit(from("Apple Music"))),
             provider("amll_ttml_db", 2, result = ProviderResult.Hit(wordTtml("amll"))),
-            provider("apple_music", 3, result = ProviderResult.Hit(wordTtml("apple"))),
         )
 
         val result = source.resolveLyrics(request) as RemoteLyricsResolution.Found
@@ -63,12 +61,10 @@ class RemoteLyricsSourceTest {
     }
 
     @Test
-    fun `Spicy Lyrics relaying Spotify ranks in the Spotify slot's place`() = runBlocking {
-        val relayed = wordTtml("relayed").copy(attribution = LyricsAttribution("Spicy Lyrics", originName = "Spotify"))
+    fun `Spicy Lyrics relaying Spotify ranks in Spotify's place`() = runBlocking {
         val source = source(
-            provider("spicy_lyrics", 1, result = ProviderResult.Hit(relayed)),
+            provider("spicy_lyrics", 1, result = ProviderResult.Hit(from("Spotify"))),
             provider("amll_ttml_db", 2, result = ProviderResult.Hit(wordTtml("amll"))),
-            slot("spotify", 3),
         )
 
         val result = source.resolveLyrics(request) as RemoteLyricsResolution.Found
@@ -77,95 +73,141 @@ class RemoteLyricsSourceTest {
     }
 
     @Test
-    fun `relayed Spotify lyrics beat a source ranked below the Spotify slot`() = runBlocking {
-        val relayed = wordTtml("relayed").copy(attribution = LyricsAttribution("Spicy Lyrics", originName = "Spotify"))
+    fun `relayed Spotify lyrics beat a source ordered below Spotify`() = runBlocking {
         val source = source(
-            provider("spicy_lyrics", 1, result = ProviderResult.Hit(relayed)),
-            slot("spotify", 2),
-            provider("amll_ttml_db", 3, result = ProviderResult.Hit(wordTtml("amll"))),
+            provider("spicy_lyrics", 1, result = ProviderResult.Hit(from("Spotify"))),
+            provider("amll_ttml_db", 2, result = ProviderResult.Hit(wordTtml("amll"))),
         )
+        val order = RemoteLyricsPolicy(sourceOrder = listOf(LyricsOrigins.SPOTIFY, LyricsOrigins.AMLL))
 
-        val result = source.resolveLyrics(request) as RemoteLyricsResolution.Found
+        val result = source.resolveLyrics(request, order) as RemoteLyricsResolution.Found
 
         assertEquals("spicy_lyrics", result.selection.source.id)
     }
 
     @Test
-    fun `LRCMux relaying KuGou ranks in Kugou's place`() = runBlocking {
-        val relayed = wordTtml("relayed").copy(attribution = LyricsAttribution("LRCMux", originName = "KuGou"))
+    fun `LRCMux relaying KuGou ranks in Chinese services' place`() = runBlocking {
         val source = source(
             provider("kugou", 1, result = ProviderResult.Miss),
             provider("amll_ttml_db", 2, result = ProviderResult.Hit(wordTtml("amll"))),
-            provider("lrcmux", 3, result = ProviderResult.Hit(relayed)),
+            provider("lrcmux", 3, result = ProviderResult.Hit(from("KuGou", by = "LRCMux"))),
         )
+        val order = RemoteLyricsPolicy(sourceOrder = listOf(LyricsOrigins.CHINESE, LyricsOrigins.AMLL))
 
-        val result = source.resolveLyrics(request) as RemoteLyricsResolution.Found
+        val result = source.resolveLyrics(request, order) as RemoteLyricsResolution.Found
 
         assertEquals("lrcmux", result.selection.source.id)
     }
 
     @Test
-    fun `LRCMux relaying a switched-off source ranks after every source`() = runBlocking {
-        val relayed = wordTtml("relayed").copy(attribution = LyricsAttribution("LRCMux", originName = "KuGou"))
+    fun `an answer from a switched-off source doesn't count`() = runBlocking {
         val source = source(
-            provider("lrcmux", 1, result = ProviderResult.Hit(relayed)),
+            provider("lrcmux", 1, result = ProviderResult.Hit(from("KuGou", by = "LRCMux"))),
             provider("kugou", 2, result = ProviderResult.Miss),
-            provider("amll_ttml_db", 3, result = ProviderResult.Hit(wordTtml("amll"))),
+            provider("amll_ttml_db", 3, result = ProviderResult.Hit(synced("amll"))),
+        )
+        val policy = RemoteLyricsPolicy(
+            sourceOrder = listOf(LyricsOrigins.CHINESE, LyricsOrigins.AMLL),
+            disabledSourceIds = setOf(LyricsOrigins.CHINESE),
         )
 
-        val result = source.resolveLyrics(request, RemoteLyricsPolicy(disabledSourceIds = setOf("kugou"))) as RemoteLyricsResolution.Found
+        val result = source.resolveLyrics(request, policy) as RemoteLyricsResolution.Found
 
         assertEquals("amll_ttml_db", result.selection.source.id)
+        val lrcmux = result.attempts.single { it.sourceId == "lrcmux" }
+        assertEquals(ProviderAttemptOutcome.FILTERED, lrcmux.outcome)
+        assertEquals("Switched off for Chinese services", lrcmux.message)
+        // Chinese services is off, so Kugou is not asked at all.
+        assertEquals(ProviderAttemptOutcome.DISABLED, result.attempts.single { it.sourceId == "kugou" }.outcome)
     }
 
     @Test
-    fun `LRCMux relaying a source it doesn't name keeps its own place`() = runBlocking {
-        val relayed = wordTtml("relayed").copy(attribution = LyricsAttribution("LRCMux", originName = "Somewhere new"))
+    fun `a provider switched off for one source still counts for another`() = runBlocking {
+        val calls = mutableListOf<String>()
+        // Spicy Lyrics is off for Apple Music but on for its community syncs.
+        val policy = RemoteLyricsPolicy(pairs = mapOf(SourcePair(LyricsOrigins.APPLE_MUSIC, "spicy_lyrics").key to false))
+        fun lookup(answer: RemoteLyricsPayload) = runBlocking {
+            source(
+                provider("spicy_lyrics", 1, calls, ProviderResult.Hit(answer)),
+                provider("lrclib", 2, calls, ProviderResult.Hit(synced("lrclib"))),
+            ).resolveLyrics(request, policy) as RemoteLyricsResolution.Found
+        }
+
+        val apple = lookup(from("Apple Music"))
+        assertEquals("lrclib", apple.selection.source.id)
+        assertEquals(ProviderAttemptOutcome.FILTERED, apple.attempts.single { it.sourceId == "spicy_lyrics" }.outcome)
+        assertEquals("Switched off for Apple Music", apple.attempts.single { it.sourceId == "spicy_lyrics" }.message)
+
+        val community = lookup(from("Spicy Lyrics Community"))
+        assertEquals("spicy_lyrics", community.selection.source.id)
+    }
+
+    @Test
+    fun `an answer in a sync type its source has off doesn't count`() = runBlocking {
+        val lineSynced = synced("apple").copy(attribution = LyricsAttribution("lrc.red", originName = "Apple Music"))
         val source = source(
-            provider("lrcmux", 1, result = ProviderResult.Hit(relayed)),
-            provider("amll_ttml_db", 2, result = ProviderResult.Hit(wordTtml("amll"))),
+            provider("lrc_red", 1, result = ProviderResult.Hit(lineSynced)),
+            provider("lrclib", 2, result = ProviderResult.Hit(plain("lrclib"))),
+        )
+        val wordOnly = RemoteLyricsPolicy(
+            syncTypesOff = mapOf(LyricsOrigins.APPLE_MUSIC to setOf(RemoteLyricsQuality.LINE_SYNCED, RemoteLyricsQuality.PLAIN)),
+        )
+
+        val result = source.resolveLyrics(request, wordOnly) as RemoteLyricsResolution.Found
+
+        assertEquals("lrclib", result.selection.source.id)
+        val lrcRed = result.attempts.single { it.sourceId == "lrc_red" }
+        assertEquals(ProviderAttemptOutcome.FILTERED, lrcRed.outcome)
+        assertEquals(RemoteLyricsQuality.LINE_SYNCED, lrcRed.quality)
+        assertEquals("Line sync is off for Apple Music", lrcRed.message)
+    }
+
+    @Test
+    fun `lrc red's own syncs rank as lrc red AI syncs, after LRCLIB by default`() = runBlocking {
+        val ai = wordTtml("ai").copy(attribution = LyricsAttribution("lrc.red", originName = LyricsOrigins.LRC_RED_AI_NAME))
+        val source = source(
+            provider("lrc_red", 1, result = ProviderResult.Hit(ai)),
+            provider("lrclib", 2, result = ProviderResult.Hit(wordTtml("lrclib"))),
         )
 
         val result = source.resolveLyrics(request) as RemoteLyricsResolution.Found
-
-        assertEquals("lrcmux", result.selection.source.id)
-    }
-
-    @Test
-    fun `a slot is never asked and stays out of the attempts`() = runBlocking {
-        val source = source(
-            slot("apple_music", 1),
-            provider("amll_ttml_db", 2, result = ProviderResult.Hit(wordTtml("amll"))),
-        )
-
-        val result = source.resolveLyrics(request) as RemoteLyricsResolution.Found
-
-        assertEquals("amll_ttml_db", result.selection.source.id)
-        assertEquals(listOf("amll_ttml_db"), result.attempts.map { it.sourceId })
-    }
-
-    @Test
-    fun `a switched off slot sends its relayed lyrics after every source`() = runBlocking {
-        val relayed = wordTtml("relayed").copy(attribution = LyricsAttribution("Spicy Lyrics", originName = "Apple Music"))
-        val source = source(
-            slot("apple_music", 1),
-            provider("spicy_lyrics", 2, result = ProviderResult.Hit(relayed)),
-            provider("lrclib", 3, result = ProviderResult.Hit(wordTtml("lrclib"))),
-        )
-
-        val result = source.resolveLyrics(
-            request,
-            RemoteLyricsPolicy(disabledSourceIds = setOf("apple_music")),
-        ) as RemoteLyricsResolution.Found
 
         assertEquals("lrclib", result.selection.source.id)
     }
 
     @Test
-    fun `Spicy Lyrics community syncs keep its place`() = runBlocking {
-        val community = wordTtml("community").copy(attribution = LyricsAttribution("Spicy Lyrics", originName = "Spicy Lyrics Community"))
+    fun `a provider serving several sources is asked once`() = runBlocking {
+        val calls = mutableListOf<String>()
         val source = source(
-            provider("spicy_lyrics", 1, result = ProviderResult.Hit(community)),
+            provider("spicy_lyrics", 1, calls, ProviderResult.Hit(synced("spotify").copy(attribution = LyricsAttribution("Spicy Lyrics", originName = "Spotify")))),
+            provider("lrcmux", 2, calls, ProviderResult.Hit(from("LRCLIB", by = "LRCMux"))),
+            provider("lrclib", 3, calls, ProviderResult.Miss),
+            provider("genius", 4, calls, ProviderResult.Miss),
+        )
+
+        val result = source.resolveLyrics(request) as RemoteLyricsResolution.Found
+
+        assertEquals(listOf("genius", "lrclib", "lrcmux", "spicy_lyrics"), calls.sorted())
+        assertEquals(1, result.attempts.count { it.sourceId == "lrcmux" })
+        assertEquals(1, result.attempts.count { it.sourceId == "spicy_lyrics" })
+    }
+
+    @Test
+    fun `an answer from a source the provider doesn't list ranks after every source but counts`() = runBlocking {
+        val source = source(
+            provider("lrcmux", 1, result = ProviderResult.Hit(from("Somewhere new", by = "LRCMux"))),
+            provider("amll_ttml_db", 2, result = ProviderResult.Hit(wordTtml("amll"))),
+        )
+        assertEquals("amll_ttml_db", (source.resolveLyrics(request) as RemoteLyricsResolution.Found).selection.source.id)
+
+        val alone = source(provider("lrcmux", 1, result = ProviderResult.Hit(from("Somewhere new", by = "LRCMux"))))
+        assertEquals("lrcmux", (alone.resolveLyrics(request) as RemoteLyricsResolution.Found).selection.source.id)
+    }
+
+    @Test
+    fun `Spicy Lyrics community syncs keep its place`() = runBlocking {
+        val source = source(
+            provider("spicy_lyrics", 1, result = ProviderResult.Hit(from("Spicy Lyrics Community"))),
             provider("amll_ttml_db", 2, result = ProviderResult.Hit(wordTtml("amll"))),
         )
 
@@ -176,13 +218,10 @@ class RemoteLyricsSourceTest {
 
     @Test
     fun `RMM Revival's Apple Music copy ranks with Apple Music, behind Spicy Lyrics' copy`() = runBlocking {
-        fun apple(by: String) = wordTtml(by).copy(attribution = LyricsAttribution(by, originName = "Apple Music"))
-        // RMM Revival ordered above Apple Music: its copy must still not jump Spicy Lyrics' own.
         val source = source(
-            provider("spicy_lyrics", 1, result = ProviderResult.Hit(apple("Spicy Lyrics"))),
+            provider("spicy_lyrics", 1, result = ProviderResult.Hit(from("Apple Music", by = "Spicy Lyrics"))),
             provider("amll_ttml_db", 2, result = ProviderResult.Miss),
-            provider("rmm_revival", 3, result = ProviderResult.Hit(apple("RMM Revival"))),
-            provider("apple_music", 4, result = ProviderResult.Miss),
+            provider("rmm_revival", 3, result = ProviderResult.Hit(from("Apple Music", by = "RMM Revival"))),
         )
 
         val result = source.resolveLyrics(request) as RemoteLyricsResolution.Found
@@ -192,12 +231,11 @@ class RemoteLyricsSourceTest {
 
     @Test
     fun `RMM Revival's copy of a Spicy Lyrics sync ranks in Spicy Lyrics' place`() = runBlocking {
-        val community = wordTtml("community").copy(attribution = LyricsAttribution("RMM Revival", originName = "Spicy Lyrics Community"))
         val slowRmm = object : RemoteLyricsProvider {
             override val descriptor = descriptor("rmm_revival", 3)
             override suspend fun fetch(request: LyricsLookupRequest): ProviderResult {
                 kotlinx.coroutines.delay(100)
-                return ProviderResult.Hit(community)
+                return ProviderResult.Hit(from("Spicy Lyrics Community", by = "RMM Revival"))
             }
         }
         // No Spotify match for Spicy Lyrics; AMLL answers first, but the relay is waited for.
@@ -214,12 +252,10 @@ class RemoteLyricsSourceTest {
 
     @Test
     fun `a relay is not waited for once Spicy Lyrics has answered`() = runBlocking {
-        val relayed = wordTtml("relayed").copy(attribution = LyricsAttribution("Spicy Lyrics", originName = "Apple Music"))
         val source = source(
-            provider("spicy_lyrics", 1, result = ProviderResult.Hit(relayed)),
+            provider("spicy_lyrics", 1, result = ProviderResult.Hit(from("Apple Music"))),
             provider("amll_ttml_db", 2, result = ProviderResult.Hit(wordTtml("amll"))),
             hanging("rmm_revival", 3),
-            provider("apple_music", 4, result = ProviderResult.Miss),
         )
 
         val result = withTimeout(2_000) { source.resolveLyrics(request) } as RemoteLyricsResolution.Found
@@ -625,8 +661,9 @@ class RemoteLyricsSourceTest {
         }
     }
 
-    private fun slot(id: String, priority: Int) =
-        com.tx24.spicyplayer.network.data.providers.RelayedOriginSlot(descriptor(id, priority).copy(rankOnly = true))
+    /** Word-synced lyrics [by] a relay, from [origin]. */
+    private fun from(origin: String, by: String = "Spicy Lyrics") =
+        wordTtml(origin).copy(attribution = LyricsAttribution(by, originName = origin))
 
     private fun hanging(id: String, priority: Int) = object : RemoteLyricsProvider {
         override val descriptor = descriptor(id, priority)

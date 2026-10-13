@@ -42,20 +42,16 @@ object LyricsBlends {
     )
 
     /**
-     * The walk's running order with each live blend placed immediately above the highest-ranked
-     * source it borrows from: above its donors, since it is their
-     * clock plus something they lack, and below everything that lent it nothing. A blend is live
-     * when switched on and every donor is too. Blends sharing a home go in `blend_rank` order.
+     * [providerOrder] with each of [blends] placed immediately above the highest-ranked provider
+     * it borrows from: above its donors, since it is their clock plus something they lack, and
+     * below everything that lent it nothing. Blends sharing a home go in `blend_rank` order. This
+     * is where the blends stand among Chinese services' providers ([LyricsOrigins]).
      */
-    fun chain(providerOrder: List<String>, live: List<LyricsBlendDefinition>): List<String> {
-        val homes = live.sortedWith(rankComparator(providerOrder))
+    fun chain(providerOrder: List<String>, blends: List<LyricsBlendDefinition>): List<String> {
+        val homes = blends.sortedWith(rankComparator(providerOrder))
             .groupBy { blend -> blend.donorIds.minBy(providerOrder::indexOf) }
         return providerOrder.flatMap { id -> homes[id].orEmpty().map(LyricsBlendDefinition::id) + id }
     }
-
-    /** The switched-on blends whose donors are all switched on too. */
-    fun live(enabledProviderIds: Set<String>, enabledBlendIds: Set<String>): List<LyricsBlendDefinition> =
-        ALL.filter { it.id in enabledBlendIds && it.donorIds.all(enabledProviderIds::contains) }
 
     /** (timing donor's rank, a blend with a filler first, the filler's rank): `blend_rank`. */
     private fun rankComparator(order: List<String>) = compareBy<LyricsBlendDefinition>(

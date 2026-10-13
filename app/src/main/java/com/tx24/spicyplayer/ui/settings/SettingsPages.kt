@@ -4,6 +4,7 @@ import com.tx24.spicyplayer.ui.background.LEGACY_BLUR_DP
 import com.tx24.spicyplayer.ui.components.ChromeTheme
 import androidx.compose.material.icons.rounded.Apps
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
+import androidx.compose.material.icons.automirrored.rounded.CallMerge
 
 import androidx.compose.material.icons.rounded.PauseCircle
 import androidx.compose.material.icons.rounded.Widgets
@@ -32,7 +33,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoFixOff
@@ -108,12 +108,19 @@ import com.tx24.spicyplayer.lyrics.LyricsState
 import com.tx24.spicyplayer.lyrics.spicy.SimpleAnimationStyle
 import com.tx24.spicyplayer.lyrics.spicy.SyllableMerge
 import com.tx24.spicyplayer.lyrics.spicy.models.LyricsType
-import com.tx24.spicyplayer.network.data.LyricsCapability
-import com.tx24.spicyplayer.network.data.LyricsSourceDescriptor
+import androidx.compose.foundation.clickable
+import androidx.compose.material.icons.rounded.Cloud
+import androidx.compose.material.icons.rounded.ExpandLess
+import androidx.compose.material.icons.rounded.ExpandMore
+import com.tx24.spicyplayer.network.data.LyricsBlends
+import com.tx24.spicyplayer.network.data.LyricsOrigin
+import com.tx24.spicyplayer.network.data.LyricsOrigins
+import com.tx24.spicyplayer.network.data.LyricsSourceSettings
+import com.tx24.spicyplayer.network.data.SourceRanking
+import com.tx24.spicyplayer.ui.components.SpicyMultiSelect
 import com.tx24.spicyplayer.network.data.ProviderAttempt
 import com.tx24.spicyplayer.network.data.ProviderAttemptOutcome
 import com.tx24.spicyplayer.network.data.RemoteLyricsQuality
-import com.tx24.spicyplayer.network.data.SourceReleaseChannel
 import com.tx24.spicyplayer.playback.ExternalPlaybackViewModel
 import com.tx24.spicyplayer.playback.LOCAL_SOURCE
 import com.tx24.spicyplayer.playback.UPLOADED_SOURCE
@@ -786,27 +793,36 @@ internal fun DeviceContent(settings: AppSettings) {
 @Composable
 internal fun SourcesContent(state: PlayerUiState, viewModel: ExternalPlaybackViewModel) {
     var clientKey by remember { mutableStateOf("") }
-    Searchable("Sources", "Priority", "Order", *state.sourceOrder.mapNotNull { id -> state.sourceDescriptors.firstOrNull { it.id == id }?.displayName }.toTypedArray()) {
+    val ranking = state.sourceRanking
+    val names = state.sourceDescriptors.associate { it.id to it.displayName }
+    Searchable("Sources", "Priority", "Order", "Providers", *ranking.origins.map { it.displayName }.toTypedArray()) {
         Text(
-            "Higher sources are asked first. Switched-off sources are skipped. Spicy Lyrics stands here for its community syncs; " +
-                "the Apple Music and Spotify lyrics it serves rank as Apple Music and Spotify. Spicy Lyrics and the services that say any app " +
-                "may use them are on to start; the others haven't said so, so each says what it sends before it's switched on.",
+            "Each source is where lyrics come from; higher sources win when the timing is as good. Tap one to pick the services " +
+                "that fetch it and the sync types it may give. Services that haven't said any app may use them say what they send " +
+                "before they're switched on.",
             style = DescriptionStyle,
             modifier = Modifier.padding(start = 2.dp, end = 2.dp, bottom = SpicySpacing.S3),
         )
     }
+    var expanded by remember { mutableStateOf(emptySet<String>()) }
     Column(verticalArrangement = Arrangement.spacedBy(SpicySpacing.S2)) {
-        state.sourceOrder.forEachIndexed { index, id ->
-            val source = state.sourceDescriptors.firstOrNull { it.id == id } ?: return@forEachIndexed
-            Searchable("Sources", source.displayName, source.summary()) {
+        ranking.origins.forEachIndexed { index, origin ->
+            val summary = origin.summary(ranking)
+            Searchable("Sources", origin.displayName, summary, *origin.providerIds.map { names[it] ?: it }.toTypedArray()) {
                 SourceCard(
                     rank = index + 1,
-                    source = source,
-                    enabled = id !in state.disabledSourceIds,
+                    origin = origin,
+                    summary = summary,
+                    ranking = ranking,
+                    providerName = { names[it] ?: it },
+                    expanded = origin.id in expanded,
                     canMoveUp = index > 0,
-                    canMoveDown = index < state.sourceOrder.lastIndex,
-                    onEnabledChange = { viewModel.setSourceEnabled(id, it) },
-                    onMove = { viewModel.moveSource(id, it) },
+                    canMoveDown = index < ranking.origins.lastIndex,
+                    onExpand = { expanded = if (origin.id in expanded) expanded - origin.id else expanded + origin.id },
+                    onEnabledChange = { viewModel.setSourceEnabled(origin.id, it) },
+                    onProviderChange = { provider, on -> viewModel.setProviderEnabled(origin.id, provider, on) },
+                    onSyncTypesChange = { viewModel.setSourceSyncTypes(origin.id, it) },
+                    onMove = { viewModel.moveSource(origin.id, it) },
                 )
             }
         }
@@ -820,24 +836,6 @@ internal fun SourcesContent(state: PlayerUiState, viewModel: ExternalPlaybackVie
             onCheckedChange = viewModel::setSplitBackgroundVocals,
             icon = Icons.Rounded.RecordVoiceOver,
         )
-    }
-    SettingsSection("Blends") {
-        Searchable("Blends", "Word timing", *state.blendDescriptors.map { it.displayName }.toTypedArray()) {
-            Text(
-                "Lines from the best source above, word timing from the donors. Each ranks just above its donors " +
-                    "and only runs while every donor is switched on.",
-                style = DescriptionStyle,
-                modifier = Modifier.padding(horizontal = 2.dp).padding(bottom = SpicySpacing.S1),
-            )
-        }
-        state.blendDescriptors.forEach { blend ->
-            ToggleRow(
-                label = blend.displayName,
-                checked = blend.id in state.enabledBlendIds,
-                onCheckedChange = { viewModel.setBlendEnabled(blend.id, it) },
-                icon = Icons.Rounded.CallMerge,
-            )
-        }
     }
     SettingsSection("Spicy Lyrics key") {
         val context = LocalContext.current
@@ -880,64 +878,127 @@ internal fun SourcesContent(state: PlayerUiState, viewModel: ExternalPlaybackVie
 }
 
 /**
- * A source's card: the rank in a ring, the name and what it gives, then up, down and
- * the switch. Tapping the card flips the switch; a switched-off source dims.
+ * A source's card: the rank in a ring, the name and what it gives, then up, down and the switch.
+ * Tapping the card opens it to the providers that fetch the source, each with its own switch, and
+ * the sync types it may give. A switched-off source dims.
  */
 @Composable
 private fun SourceCard(
     rank: Int,
-    source: LyricsSourceDescriptor,
-    enabled: Boolean,
+    origin: LyricsOrigin,
+    summary: String,
+    ranking: SourceRanking,
+    providerName: (String) -> String,
+    expanded: Boolean,
     canMoveUp: Boolean,
     canMoveDown: Boolean,
+    onExpand: () -> Unit,
     onEnabledChange: (Boolean) -> Unit,
+    onProviderChange: (String, Boolean) -> Unit,
+    onSyncTypesChange: (Set<RemoteLyricsQuality>) -> Unit,
     onMove: (Int) -> Unit,
 ) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .outlinedCard(tinted = true)
-            .toggleable(enabled, remember { MutableInteractionSource() }, indication = null, role = Role.Switch, onValueChange = onEnabledChange)
-            .padding(SpicySpacing.S3),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(SpicySpacing.S2),
-    ) {
-        Box(
+    val enabled = LyricsSourceSettings.isOn(ranking, origin.id)
+    Column(Modifier.fillMaxWidth().outlinedCard(tinted = true)) {
+        Row(
             Modifier
-                .size(28.dp)
-                .background(RankFill, CircleShape)
-                .border(1.dp, SpicyColors.Hairline, CircleShape),
-            contentAlignment = Alignment.Center,
+                .fillMaxWidth()
+                .clickable(remember { MutableInteractionSource() }, indication = null, role = Role.Button, onClick = onExpand)
+                .padding(SpicySpacing.S3),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(SpicySpacing.S2),
         ) {
-            Text("$rank", style = SpicyType.Caption.copy(fontWeight = FontWeight.SemiBold, fontFeatureSettings = "tnum"))
+            Box(
+                Modifier
+                    .size(28.dp)
+                    .background(RankFill, CircleShape)
+                    .border(1.dp, SpicyColors.Hairline, CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text("$rank", style = SpicyType.Caption.copy(fontWeight = FontWeight.SemiBold, fontFeatureSettings = "tnum"))
+            }
+            RowLabel(origin.displayName, summary, Modifier.weight(1f).alpha(if (enabled) 1f else DISABLED_ALPHA))
+            Icon(
+                if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                if (expanded) "Close ${origin.displayName}" else "Open ${origin.displayName}",
+                tint = SpicyColors.TextSecondary,
+                modifier = Modifier.size(20.dp),
+            )
+            SpicyIconButton(onClick = { onMove(-1) }, enabled = canMoveUp) {
+                Icon(Icons.Rounded.KeyboardArrowUp, "Move ${origin.displayName} up", tint = SpicyColors.TextPrimary, modifier = Modifier.size(20.dp))
+            }
+            SpicyIconButton(onClick = { onMove(1) }, enabled = canMoveDown) {
+                Icon(Icons.Rounded.KeyboardArrowDown, "Move ${origin.displayName} down", tint = SpicyColors.TextPrimary, modifier = Modifier.size(20.dp))
+            }
+            Spacer(Modifier.width(2.dp))
+            SpicyToggle(enabled, onCheckedChange = onEnabledChange)
         }
-        RowLabel(source.displayName, source.summary(), Modifier.weight(1f).alpha(if (enabled) 1f else DISABLED_ALPHA))
-        SpicyIconButton(onClick = { onMove(-1) }, enabled = canMoveUp) {
-            Icon(Icons.Rounded.KeyboardArrowUp, "Move ${source.displayName} up", tint = SpicyColors.TextPrimary, modifier = Modifier.size(20.dp))
+        if (expanded) {
+            Column(
+                Modifier.fillMaxWidth().padding(start = SpicySpacing.S3, end = SpicySpacing.S3, bottom = SpicySpacing.S3),
+                verticalArrangement = Arrangement.spacedBy(SpicySpacing.S3),
+            ) {
+                origin.providerIds.forEach { provider ->
+                    val on = ranking.pairOn(origin.id, provider)
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(SpicySpacing.S2)) {
+                        RowLabel(
+                            providerName(provider),
+                            providerNote(origin, provider),
+                            Modifier.weight(1f).alpha(if (on && ranking.sourceOn(origin.id)) 1f else DISABLED_ALPHA),
+                            icon = if (LyricsBlends.byId(provider) != null) Icons.AutoMirrored.Rounded.CallMerge else Icons.Rounded.Cloud,
+                        )
+                        SpicyToggle(on, onCheckedChange = { onProviderChange(provider, it) })
+                    }
+                }
+                if (origin.qualities.size > 1) {
+                    val off = ranking.policy.syncTypesOff[origin.id].orEmpty()
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(SpicySpacing.S2)) {
+                        RowLabel("Sync types", "Answers in a type left out don't count.", Modifier.weight(1f), icon = Icons.Rounded.Sync)
+                        SpicyMultiSelect(
+                            selected = origin.qualities.filter { it !in off }.map { it.name }.toSet(),
+                            options = origin.qualities.map { it.name },
+                            labels = origin.qualities.map { it.typeLabel() },
+                            onChange = { picked -> onSyncTypesChange(picked.map(RemoteLyricsQuality::valueOf).toSet()) },
+                        )
+                    }
+                }
+            }
         }
-        SpicyIconButton(onClick = { onMove(1) }, enabled = canMoveDown) {
-            Icon(Icons.Rounded.KeyboardArrowDown, "Move ${source.displayName} down", tint = SpicyColors.TextPrimary, modifier = Modifier.size(20.dp))
-        }
-        Spacer(Modifier.width(2.dp))
-        SpicyToggle(enabled)
     }
 }
 
 /** The rank ring's fill. */
 private val RankFill = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.09f)
 
-private fun LyricsSourceDescriptor.summary(): String = buildList {
-    if (rankOnly) return "Word and line synced"
-    add(
-        when {
-            LyricsCapability.WORD_SYNC in capabilities -> "Word synced"
-            LyricsCapability.LINE_SYNC in capabilities -> "Line synced"
-            else -> "Unsynced"
-        },
-    )
-    if (LyricsCapability.TRANSLATION in capabilities) add("translations")
-    if (releaseChannel == SourceReleaseChannel.EXPERIMENTAL) add("experimental")
-}.joinToString(" · ")
+/** What a source gives (the sync types it has on) and, when several can fetch it, how many do. */
+private fun LyricsOrigin.summary(ranking: SourceRanking): String {
+    val off = ranking.policy.syncTypesOff[id].orEmpty()
+    val types = qualities.filter { it !in off }
+    val synced = types.filter { it != RemoteLyricsQuality.PLAIN }.map { if (it == RemoteLyricsQuality.WORD_SYNCED) "word" else "line" }
+    val gives = listOfNotNull(
+        synced.takeIf { it.isNotEmpty() }?.joinToString(" and ", postfix = " synced"),
+        "unsynced".takeIf { RemoteLyricsQuality.PLAIN in types },
+    ).joinToString(", ").replaceFirstChar { it.uppercase() }.ifEmpty { "No sync type on" }
+    if (providerIds.size <= 1) return gives
+    return "$gives · ${providerIds.count { ranking.pairOn(id, it) }} of ${providerIds.size} on"
+}
+
+private fun RemoteLyricsQuality.typeLabel() = when (this) {
+    RemoteLyricsQuality.WORD_SYNCED -> "Word"
+    RemoteLyricsQuality.LINE_SYNCED -> "Line"
+    else -> "Unsynced"
+}
+
+/** A short line on how [provider] gets [origin]'s lyrics, where that isn't plain from its name. */
+private fun providerNote(origin: LyricsOrigin, provider: String): String? = when {
+    LyricsBlends.byId(provider) != null -> "Lines from the sources above, word timing from its donors."
+    provider == "rmm_revival" -> "Relays Spicy Lyrics' API by Apple Music ID."
+    provider == "spicy_lyrics" && origin.id != LyricsOrigins.SPICY_COMMUNITY -> "Passed on by Spicy Lyrics' API."
+    provider == "lrc_red" && origin.id == LyricsOrigins.APPLE_MUSIC -> "Serves Apple Music's lyrics by ISRC."
+    provider == "bini_lyrics" -> "Serves lrc.red's lyrics."
+    provider == "lrcmux" -> "Passes on what it finds at ${origin.displayName}."
+    else -> null
+}
 
 @Composable
 internal fun AdvancedContent(state: PlayerUiState, viewModel: ExternalPlaybackViewModel, updater: UpdateViewModel, settings: AppSettings) {
@@ -1063,6 +1124,7 @@ internal fun ProviderAttemptOutcome.label(): String = when (this) {
     ProviderAttemptOutcome.COOLING_DOWN -> "Resting after errors"
     ProviderAttemptOutcome.QUEUED, ProviderAttemptOutcome.PENDING -> "Asking…"
     ProviderAttemptOutcome.SKIPPED -> "Skipped"
+    ProviderAttemptOutcome.FILTERED -> "Not counted"
     ProviderAttemptOutcome.UNAVAILABLE, ProviderAttemptOutcome.MALFORMED_HIT -> "Failed"
 }
 
@@ -1096,7 +1158,8 @@ private fun AttemptLine(attempt: ProviderAttempt, state: PlayerUiState) {
         ProviderAttemptOutcome.NEEDS_MATCH, ProviderAttemptOutcome.COOLING_DOWN -> SpicyColors.StatusWarning
         ProviderAttemptOutcome.QUEUED, ProviderAttemptOutcome.PENDING -> SpicyColors.StatusInfo
         ProviderAttemptOutcome.UNAVAILABLE, ProviderAttemptOutcome.MALFORMED_HIT -> SpicyColors.StatusDanger
-        ProviderAttemptOutcome.MISS, ProviderAttemptOutcome.DISABLED, ProviderAttemptOutcome.SKIPPED -> SpicyColors.TextTertiary
+        ProviderAttemptOutcome.MISS, ProviderAttemptOutcome.DISABLED, ProviderAttemptOutcome.SKIPPED,
+        ProviderAttemptOutcome.FILTERED -> SpicyColors.TextTertiary
     }
     val context = LocalContext.current
     val locale = androidx.compose.ui.platform.LocalLocale.current.platformLocale

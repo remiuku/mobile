@@ -52,7 +52,7 @@ internal class NextLyricsBackend(context: Context, clientKey: String) {
         // Left by the Musixmatch source, which is gone.
         File(context.cacheDir, "musixmatch-token.txt").delete()
     }
-    /** Blends are switched on and off apart from the ordered sources; their rank follows their donors. */
+    /** Blends are switched on in Chinese services, just above their donors; built, never asked. */
     val blendDescriptors: List<LyricsSourceDescriptor> = LyricsBlends.ALL.map(LyricsBlendDefinition::descriptor)
 
     /** Readies every source's tokens; failures are left for the real lookup to report. */
@@ -69,13 +69,19 @@ internal class NextLyricsBackend(context: Context, clientKey: String) {
     ): RemoteLyricsResolution = source.resolveLyrics(request, policy(), known = known, onUpdate = onUpdate)
 
     /**
-     * [request]'s lyrics from [sourceId] alone (a source chosen for one song), asked now if it
-     * wasn't yet. Only a source the user has on: one switched off was never agreed to.
+     * [request]'s lyrics from provider [sourceId] alone (chosen for one song), asked now if it
+     * wasn't yet, whichever source its answer is from. Only a provider the user has on somewhere:
+     * one switched off everywhere was never agreed to.
      */
     suspend fun resolveFrom(request: LyricsLookupRequest, sourceId: String, known: MutableMap<String, ProviderResult>): RemoteLyricsResolution? {
-        val policy = policy()
-        if (sourceId in policy.disabledSourceIds || descriptors.none { it.id == sourceId }) return null
-        val only = policy.copy(disabledSourceIds = descriptors.map { it.id }.filterTo(mutableSetOf()) { it != sourceId }, enabledBlendIds = emptySet())
+        val ranking = ranking()
+        if (!ranking.asked(sourceId)) return null
+        val only = RemoteLyricsPolicy(
+            sourceOrder = ranking.origins.map { it.id },
+            pairs = ranking.origins.flatMap { origin ->
+                origin.providerIds.map { SourcePair(origin.id, it).key to (it == sourceId) }
+            }.toMap(),
+        )
         return source.resolveLyrics(request, only, known = known)
     }
 
@@ -96,8 +102,8 @@ internal class NextLyricsBackend(context: Context, clientKey: String) {
 
     /**
      * The last final pick for [request]: kept [CACHE_DAYS] days,
-     * "no lyrics" included, errors never. Only reused while the enabled source order is the one it
-     * was picked under, since another order could pick differently.
+     * "no lyrics" included, errors never. Only reused while the sources, their order, switches and
+     * sync types are the ones it was picked under, since others could pick differently.
      */
     fun cachedResolution(request: LyricsLookupRequest): CachedPick? {
         val stored = runCatching { gson.fromJson(cacheFile(request).readText(), StoredPick::class.java) }.getOrNull()
@@ -142,9 +148,15 @@ internal class NextLyricsBackend(context: Context, clientKey: String) {
         humanTranslationCache.clear()
     }
 
-    private fun enabledOrder(): List<String> = policy().let { p ->
+    /** Each source with a live provider, in order, with those providers and the sync types it has off. */
+    private fun enabledOrder(): List<String> = ranking().let { ranking ->
         val revisions = providers.mapNotNull { (it as? CustomLyricsProvider)?.source }.associate { it.id to it.revision }
-        p.sourceOrder.filter { it !in p.disabledSourceIds }.map { id -> revisions[id]?.let { "$id@$it" } ?: id } + p.enabledBlendIds.sorted()
+        ranking.origins.mapNotNull { origin ->
+            val live = origin.providerIds.filter { ranking.live(origin, it) }.ifEmpty { return@mapNotNull null }
+                .map { id -> revisions[id]?.let { "$id@$it" } ?: id }
+            val off = ranking.policy.syncTypesOff[origin.id].orEmpty().map { it.name }.sorted()
+            "${origin.id}:${live.joinToString("+")}" + if (off.isEmpty()) "" else ":-${off.joinToString("+")}"
+        }
     }
 
     private fun cacheFile(request: LyricsLookupRequest): File {
@@ -261,7 +273,6 @@ internal class NextLyricsBackend(context: Context, clientKey: String) {
                 SpicyLyricsProvider(client, gson, spotifyResolver, clientKey),
                 AmllLyricsProvider(client, gson),
                 UnisonLyricsProvider(client, gson),
-                RelayedOriginSlot.APPLE_MUSIC,
                 RmmRevivalLyricsProvider(client, gson),
                 LrcRedLyricsProvider(client, gson),
                 BiniLyricsProvider(client, gson),
@@ -270,7 +281,6 @@ internal class NextLyricsBackend(context: Context, clientKey: String) {
                 KuwoLyricsProvider(client),
                 NetEaseLyricsProvider(client, gson),
                 LyricsSource(lrclib),
-                RelayedOriginSlot.SPOTIFY,
                 LrcMuxLyricsProvider(client, gson),
                 GeniusLyricsProvider(geniusPages),
                 YouTubeTranscriptLyricsProvider(client, gson),
@@ -280,7 +290,7 @@ internal class NextLyricsBackend(context: Context, clientKey: String) {
         private val ORIGIN = Regex("^[a-zA-Z][a-zA-Z0-9+.-]*://[^/?#]*")
 
         /** Bump when payload conversion changes, so stale conversions are refetched. */
-        private const val CACHE_VERSION = 23
+        private const val CACHE_VERSION = 24
         /** Outcomes that are no answer at all: a later lookup may get one. */
         private val UNANSWERED = setOf(
             ProviderAttemptOutcome.UNAVAILABLE,
@@ -300,26 +310,75 @@ internal class NextLyricsBackend(context: Context, clientKey: String) {
         private const val CUSTOM_PRIORITY = 1_000
         internal const val SWITCHED_OFF = "switchedOff"
         private const val DISCLOSED = "disclosed"
+
+        // Sources and their switches ([RemoteLyricsPolicy]). The per-provider "order", "disabled"
+        // and "blends" they replace are read once more, to move them over ([LyricsSourceSettings.migrate]).
+        internal const val SOURCE_ORDER = "sourceOrder"
+        internal const val SOURCES_OFF = "sourcesOff"
+        internal const val PAIRS_ON = "pairsOn"
+        internal const val PAIRS_OFF = "pairsOff"
+        internal const val SYNC_TYPES_OFF = "syncTypesOff"
+        private val LEGACY_KEYS = listOf("order", "disabled", "blends")
+
+        /**
+         * The stored source preferences for [providers], moving the old per-provider ones over
+         * the first time (also when a restored older backup brought them back). A fresh install
+         * has the default sources and switches.
+         */
+        internal fun readPolicy(preferences: SharedPreferences, providers: Collection<LyricsSourceDescriptor>): RemoteLyricsPolicy {
+            val order = preferences.getString(SOURCE_ORDER, null)
+            if (order == null) {
+                if (LEGACY_KEYS.none(preferences::contains)) return LyricsSourceSettings.normalized(RemoteLyricsPolicy(), providers)
+                val migrated = LyricsSourceSettings.migrate(
+                    preferences.getString("order", null)?.split(',')?.filter(String::isNotBlank),
+                    preferences.getStringSet("disabled", emptySet()).orEmpty(),
+                    preferences.getStringSet("blends", emptySet()).orEmpty(),
+                    providers,
+                )
+                writePolicy(preferences, migrated)
+                return migrated
+            }
+            val pairs = preferences.getStringSet(PAIRS_OFF, emptySet()).orEmpty().associateWith { false } +
+                preferences.getStringSet(PAIRS_ON, emptySet()).orEmpty().associateWith { true }
+            val syncOff = preferences.getStringSet(SYNC_TYPES_OFF, emptySet()).orEmpty().mapNotNull { entry ->
+                val pair = SourcePair.parse(entry) ?: return@mapNotNull null
+                runCatching { pair.originId to RemoteLyricsQuality.valueOf(pair.providerId) }.getOrNull()
+            }.groupBy({ it.first }, { it.second }).mapValues { it.value.toSet() }
+            return LyricsSourceSettings.normalized(
+                RemoteLyricsPolicy(
+                    sourceOrder = order.split(',').filter(String::isNotBlank),
+                    disabledSourceIds = preferences.getStringSet(SOURCES_OFF, emptySet()).orEmpty(),
+                    pairs = pairs,
+                    syncTypesOff = syncOff,
+                ),
+                providers,
+            )
+        }
+
+        internal fun writePolicy(preferences: SharedPreferences, policy: RemoteLyricsPolicy) {
+            preferences.edit()
+                .putString(SOURCE_ORDER, policy.sourceOrder.joinToString(","))
+                .putStringSet(SOURCES_OFF, policy.disabledSourceIds)
+                .putStringSet(PAIRS_ON, policy.pairs.filterValues { it }.keys)
+                .putStringSet(PAIRS_OFF, policy.pairs.filterValues { !it }.keys)
+                .putStringSet(SYNC_TYPES_OFF, policy.syncTypesOff.flatMapTo(mutableSetOf()) { (origin, types) -> types.map { "$origin/${it.name}" } })
+                .apply()
+        }
     }
 
     /** Run on every read, so a restored old backup can't switch the old sources back on either. */
     private fun migrateDefaults() = migrateSourceDefaults(preferences)
 
+    /** The sources in order, with every switch spelled out. */
     fun policy(): RemoteLyricsPolicy {
         migrateDefaults()
-        val order = preferences.getString("order", null)?.split(',')?.filter(String::isNotBlank)
-        val disabled = preferences.getStringSet("disabled", emptySet()).orEmpty()
-        val normalized = LyricsSourcePreferenceNormalizer.normalize(order, disabled, descriptors)
-        val blends = preferences.getStringSet("blends", emptySet()).orEmpty()
-            .filterTo(mutableSetOf()) { LyricsBlends.byId(it) != null }
-        return RemoteLyricsPolicy(normalized.order, normalized.disabledSourceIds, blends)
+        return readPolicy(preferences, descriptors)
     }
 
-    fun setBlendEnabled(id: String, enabled: Boolean) {
-        val blends = policy().enabledBlendIds.toMutableSet()
-        if (enabled) blends += id else blends -= id
-        preferences.edit().putStringSet("blends", blends).apply()
-    }
+    fun ranking(): SourceRanking = SourceRanking(descriptors, policy())
+
+    /** Stores [policy], as [LyricsSourceSettings] changed it. */
+    fun savePolicy(policy: RemoteLyricsPolicy) = writePolicy(preferences, LyricsSourceSettings.normalized(policy, descriptors))
 
     /** Whether what [id] sends ([SourceDisclosures]) has been shown and agreed to. */
     fun isDisclosed(id: String): Boolean = id in preferences.getStringSet(DISCLOSED, emptySet()).orEmpty()
@@ -466,11 +525,4 @@ internal class NextLyricsBackend(context: Context, clientKey: String) {
             .sortedWith(compareBy<LyricsSourceDescriptor> { it.defaultPriority }.thenBy { it.id })
     }
 
-    fun setPolicy(order: List<String>, disabledSourceIds: Set<String>) {
-        val normalized = LyricsSourcePreferenceNormalizer.normalize(order, disabledSourceIds, descriptors)
-        preferences.edit()
-            .putString("order", normalized.order.joinToString(","))
-            .putStringSet("disabled", normalized.disabledSourceIds)
-            .apply()
-    }
 }

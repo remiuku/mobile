@@ -47,6 +47,8 @@ internal fun rmmPayload(data: JsonObject): ProviderResult? {
         ?.let(::spicyOriginName)
         // RMM Revival says "spicy_lyrics" for Apple Music's lyrics too; only community syncs name an uploader.
         ?.let { if (it in RemoteLyricsSource.SPICY_OWN_ORIGINS && upload == null) "Apple Music" else it }
+        // Unlabelled answers come from the other Apple Music relay it uses now and then.
+        ?: "Apple Music"
     return ProviderResult.Hit(hit.payload.copy(attribution = LyricsAttribution(
         providerName = "RMM Revival",
         originName = origin,
@@ -57,6 +59,11 @@ internal fun rmmPayload(data: JsonObject): ProviderResult? {
     )))
 }
 
+/**
+ * BiniLyrics fronts lrc.red (its answers say `"source": "HIT-LRC-RED"` and point at
+ * `lrc.red/s/<ISRC>.ttml`), so its TTML is lrc.red's: Apple Music's or lrc.red's own sync,
+ * told apart and renamed as [LrcRedLyricsProvider] does.
+ */
 @Singleton
 class BiniLyricsProvider @Inject constructor(private val client: OkHttpClient, private val gson: Gson) : RemoteLyricsProvider {
     override val descriptor = LyricsSourceDescriptor(
@@ -75,16 +82,27 @@ class BiniLyricsProvider @Inject constructor(private val client: OkHttpClient, p
             for (element in candidates) {
                 val item = element.asJsonObject
                 if (!item.matches(request, "track_name", "artist_name")) continue
-                payloadOf(item)?.let { return@guarded it }
+                payloadOf(item)?.let { return@guarded lrcRedPayload(it) }
                 val remote = sequenceOf("lyricsUrl", "ttmlUrl", "url").mapNotNull { item.get(it)?.asString }.firstOrNull()
                 if (remote != null) {
                     val text = client.text(remote)
-                    contentPayload(text)?.let { return@guarded it }
+                    contentPayload(text)?.let { return@guarded lrcRedPayload(it) }
                 }
             }
         }
-        payloadOf(root) ?: ProviderResult.Miss
+        payloadOf(root)?.let(::lrcRedPayload) ?: ProviderResult.Miss
     }
+}
+
+/** A BiniLyrics answer labelled with whose lyrics it is, its TTML read the way lrc.red's is. */
+internal fun lrcRedPayload(result: ProviderResult): ProviderResult {
+    val hit = result as? ProviderResult.Hit ?: return result
+    val ttml = hit.payload.ttmlLyrics
+    // Anything but Apple's TTML (which carries leadingSilence) is lrc.red's own.
+    return ProviderResult.Hit(hit.payload.copy(
+        ttmlLyrics = ttml?.let(LrcRedLyricsProvider::appleTtml),
+        attribution = LyricsAttribution("BiniLyrics", originName = LrcRedLyricsProvider.originOf(ttml.orEmpty())),
+    ))
 }
 
 internal suspend fun <T : ProviderResult> guarded(block: suspend () -> T): ProviderResult = try { block() }

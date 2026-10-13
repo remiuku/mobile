@@ -29,6 +29,11 @@ enum class ProviderAttemptOutcome {
     PENDING,
     /** Never asked or cancelled: a source ranked above it already answered word-synced. */
     SKIPPED,
+    /**
+     * Answered, but for a source it's switched off for, or in a sync type that source has off;
+     * the attempt's message says which.
+     */
+    FILTERED,
 }
 
 data class ProviderAttempt(
@@ -66,7 +71,9 @@ sealed interface RemoteLyricsResolution {
 
 /**
  * Applies source policy and selects the best usable payload: better timing wins, and between
- * equal timing the user's order wins, never whichever server answered first. TTML is parsed
+ * equal timing the user's order wins, never whichever server answered first. The order is of
+ * sources ([LyricsOrigin]): an answer ranks at the place of the source it came from, whichever
+ * provider brought it ([SourceRanking]). TTML is parsed
  * before it can win, so malformed or empty XML never terminates the chain.
  *
  * Fetching walks the ranking: the top-ranked source leads alone, since one request
@@ -93,13 +100,16 @@ class RemoteLyricsSource @Inject constructor(
         known: MutableMap<String, ProviderResult> = mutableMapOf(),
         onUpdate: suspend (RemoteLyricsResolution) -> Unit = {},
     ): RemoteLyricsResolution = coroutineScope {
-        val ordered = orderedProviders(policy)
-        val enabled = ordered.filter { isEnabled(it.descriptor, policy) && !it.descriptor.rankOnly }
-        val cooling = enabled.mapNotNull { provider ->
+        val ranking = SourceRanking(providers.map { it.descriptor }, policy)
+        // Asked once each, however many sources a provider serves; the best-placed leads.
+        val asked = providers.filter { ranking.asked(it.descriptor.id) }
+            .sortedBy { ranking.bestPlace(it.descriptor.id) ?: SourceRanking.AFTER_ALL }
+        val askedIds = asked.map { it.descriptor.id }.toSet()
+        val cooling = asked.mapNotNull { provider ->
             val id = provider.descriptor.id
             if (id in known) null else cooldowns.retryAt(id, now)?.let { id to it }
         }.toMap()
-        val toAsk = enabled.filter { it.descriptor.id !in known && it.descriptor.id !in cooling }
+        val toAsk = asked.filter { it.descriptor.id !in known && it.descriptor.id !in cooling }
         val qualities = mutableMapOf<String, RemoteLyricsQuality>()
         val pending = mutableSetOf<String>()
         val landed = Channel<Pair<String, Result<ProviderResult>>>(Channel.UNLIMITED)
@@ -107,12 +117,13 @@ class RemoteLyricsSource @Inject constructor(
 
         // Blends rank among the providers but are built here, from what the providers answered.
         // Their results stay out of [known]: they depend on the order, which the caller may change.
-        val blends = LyricsBlends.live(enabled.map { it.descriptor.id }.toSet(), policy.enabledBlendIds)
-        val ranked = LyricsBlends.chain(ordered.map { it.descriptor.id }, blends).map { id ->
-            ordered.firstOrNull { it.descriptor.id == id }?.descriptor ?: LyricsBlends.byId(id)!!.descriptor
-        }
+        val blends = ranking.liveBlends
+        val blendIds = blends.map { it.id }.toSet()
+        val descriptors = providers.associate { it.descriptor.id to it.descriptor } + blends.associate { it.id to it.descriptor }
+        // Every provider and live blend, listed by where it could first rank.
+        val entries = descriptors.keys.sortedBy(ranking::homePlace)
         val blendResults = mutableMapOf<String, ProviderResult>()
-        val waiting = blends.map { it.id }.toMutableSet()
+        val waiting = blendIds.toMutableSet()
 
         fun ask(provider: RemoteLyricsProvider) {
             val id = provider.descriptor.id
@@ -127,33 +138,50 @@ class RemoteLyricsSource @Inject constructor(
                 landed.trySend(id to result)
             }
         }
-        fun quality(id: String) = (known[id] as? ProviderResult.Hit)?.let { hit ->
+        fun resultOf(id: String) = known[id] ?: blendResults[id]
+        fun quality(id: String) = (resultOf(id) as? ProviderResult.Hit)?.let { hit ->
             qualities.getOrPut(id) { hit.payload.measuredQuality() }
         } ?: RemoteLyricsQuality.NONE
+        // The quality of the answer where it counts, else none.
+        fun counted(id: String): RemoteLyricsQuality {
+            val hit = resultOf(id) as? ProviderResult.Hit ?: return RemoteLyricsQuality.NONE
+            val quality = quality(id)
+            return if (ranking.filtered(id, hit.payload, quality) == null) quality else RemoteLyricsQuality.NONE
+        }
         fun answered(id: String) = id in known || id in cooling
-        // Relayed lyrics rank where they came from: Spicy Lyrics' Apple Music copy with Apple
-        // Music, RMM Revival's copy of a Spicy Lyrics sync with Spicy Lyrics, LRCMux's KuGou copy with Kugou.
-        fun byOrigin() = rankByOrigin(ranked, known, policy.disabledSourceIds)
+        // An answer ranks at its source's place. One not in yet (or no answer) ranks at the best
+        // place it could still take: a relay still out may yet bring lyrics from a source above.
+        fun place(id: String): Int {
+            if (id !in blendIds && id !in askedIds) return ranking.homePlace(id)
+            val hit = resultOf(id) as? ProviderResult.Hit
+            if (hit != null && quality(id) != RemoteLyricsQuality.NONE) return ranking.answerPlace(id, hit.payload)
+            // RMM Revival relays Spicy Lyrics' API by Apple Music ID: once Spicy Lyrics has really
+            // answered, the relay can't bring a community sync it didn't.
+            val spicyAnswered = known[SPICY_ID].let { it is ProviderResult.Hit || it == ProviderResult.Miss }
+            val except = if (id == RMM_ID && spicyAnswered) setOf(LyricsOrigins.SPICY_COMMUNITY) else emptySet()
+            return ranking.bestPlace(id, except) ?: ranking.bestPlace(id) ?: ranking.homePlace(id)
+        }
+        fun ranked() = entries.sortedBy(::place)
         fun startBlends() {
             for (blend in blends) {
                 if (blend.id !in waiting) continue
-                val order = byOrigin()
-                val above = order.take(order.indexOfFirst { it.id == blend.id })
-                    .filter { source -> enabled.any { it.descriptor == source } }
+                val order = ranked()
+                val above = order.take(order.indexOf(blend.id)).filter { it in askedIds }
                 // Word timing from a source ranked above is what the blend was for (`_outdone`).
-                if (above.any { quality(it.id) == RemoteLyricsQuality.WORD_SYNCED }) { waiting -= blend.id; continue }
-                if (!above.all { answered(it.id) } || !blend.donorIds.all(::answered)) continue
-                val usable = above.filter { quality(it.id) != RemoteLyricsQuality.NONE }
-                val fallback = enabled.firstOrNull { it.descriptor.id == LRCLIB_ID && it.descriptor !in above }
-                if (usable.isEmpty() && fallback != null && !answered(LRCLIB_ID)) continue
+                if (above.any { counted(it) == RemoteLyricsQuality.WORD_SYNCED }) { waiting -= blend.id; continue }
+                if (!above.all(::answered) || !blend.donorIds.all(::answered)) continue
+                val usable = above.filter { counted(it) != RemoteLyricsQuality.NONE }
+                val fallback = LRCLIB_ID.takeIf { it in askedIds && it !in above }
+                if (usable.isEmpty() && fallback != null && !answered(fallback)) continue
                 waiting -= blend.id
                 pending += blend.id
                 // Read here, on the walk's own thread; the build runs on another.
                 val hits = { id: String -> (known[id] as? ProviderResult.Hit)?.payload }
-                val bases = usable.map { it to hits(it.id)!! }
-                val fallbackBase = fallback?.takeIf { usable.isEmpty() }?.let { lr -> hits(LRCLIB_ID)?.let { lr.descriptor to it } }
+                val bases = usable.map { descriptors.getValue(it) to hits(it)!! }
+                val fallbackBase = fallback?.takeIf { usable.isEmpty() && counted(it) != RemoteLyricsQuality.NONE }
+                    ?.let { id -> hits(id)?.let { descriptors.getValue(id) to it } }
                 val donors = blend.donorIds.associateWith(hits)
-                val names = ranked.associate { it.id to it.displayName }
+                val names = descriptors.mapValues { it.value.displayName }
                 jobs[blend.id] = launch(Dispatchers.Default) {
                     val result = try {
                         LyricsBlends.build(blend, request, bases, fallbackBase, donors) { id -> names[id] ?: id }
@@ -166,7 +194,7 @@ class RemoteLyricsSource @Inject constructor(
                 }
             }
         }
-        fun current() = select(byOrigin(), policy, known + blendResults, pending + waiting, cooling, qualities)
+        fun current() = select(ranked().map(descriptors::getValue), ranking, askedIds, known + blendResults, pending + waiting, cooling, qualities)
 
         var resolution = current()
         if (known.isNotEmpty()) onUpdate(resolution)
@@ -175,25 +203,7 @@ class RemoteLyricsSource @Inject constructor(
         startBlends()
         // Not asked yet counts as still out: a relayed answer can land below sources the lead skipped.
         fun outstanding() = pending + waiting + toAsk.map { it.descriptor.id }.filter { it !in known }
-        // A relay still out may yet bring a Spicy Lyrics sync, which ranks in that place, while
-        // Spicy Lyrics itself has no real answer (e.g. no Spotify match; RMM Revival asks by Apple ID).
-        // lrc.red still out may yet bring Apple Music's lyrics, LRCMux its best switched-on upstream's.
-        val lrcMuxBest = LRCMUX_ORIGINS.entries
-            .filter { (_, id) -> id !in policy.disabledSourceIds && ranked.any { it.id == id } }
-            .minByOrNull { (_, id) -> ranked.indexOfFirst { it.id == id } }
-            ?.let { (origin, _) -> ProviderResult.Hit(RemoteLyricsPayload(attribution = LyricsAttribution("", originName = origin))) }
-        fun bestCase(): List<LyricsSourceDescriptor> {
-            val out = outstanding()
-            val standIns = buildMap {
-                if (known[SPICY_ID].let { it !is ProviderResult.Hit && it != ProviderResult.Miss }) {
-                    (out intersect SPICY_RELAY_IDS).forEach { put(it, SPICY_SYNC) }
-                }
-                if (LRC_RED_ID in out) put(LRC_RED_ID, APPLE_LYRICS)
-                if (LRCMUX_ID in out && lrcMuxBest != null) put(LRCMUX_ID, lrcMuxBest)
-            }
-            return rankByOrigin(ranked, known + standIns, policy.disabledSourceIds)
-        }
-        while (!settled(resolution, bestCase(), outstanding())) {
+        while (!settled(resolution, ranked(), outstanding())) {
             if (!fannedOut && pending.isEmpty()) {
                 // The lead answered without settling the song: ask everyone else.
                 toAsk.drop(1).forEach(::ask)
@@ -211,7 +221,7 @@ class RemoteLyricsSource @Inject constructor(
             val (id, outcome) = next
             val result = outcome.getOrThrow()
             pending -= id
-            if (blends.any { it.id == id }) {
+            if (id in blendIds) {
                 blendResults[id] = result
             } else {
                 if (result is ProviderResult.CoolingDown) cooldowns.record(id, result.retryAt, result.reason)
@@ -229,18 +239,19 @@ class RemoteLyricsSource @Inject constructor(
     /** Whether nothing still out could replace the current pick: word timing is the ceiling. */
     private fun settled(
         resolution: RemoteLyricsResolution,
-        ranked: List<LyricsSourceDescriptor>,
+        ranked: List<String>,
         pending: Set<String>,
     ): Boolean {
         val best = (resolution as? RemoteLyricsResolution.Found)?.selection ?: return false
         if (best.quality != RemoteLyricsQuality.WORD_SYNCED) return false
-        val rank = ranked.indexOfFirst { it.id == best.source.id }
-        return ranked.take(rank).none { it.id in pending }
+        val rank = ranked.indexOf(best.source.id)
+        return ranked.take(rank).none { it in pending }
     }
 
     private fun select(
         ranked: List<LyricsSourceDescriptor>,
-        policy: RemoteLyricsPolicy,
+        ranking: SourceRanking,
+        asked: Set<String>,
         known: Map<String, ProviderResult>,
         pending: Set<String>,
         cooling: Map<String, Instant>,
@@ -252,9 +263,8 @@ class RemoteLyricsSource @Inject constructor(
         var earliestRetryAt: Instant? = null
 
         for (source in ranked) {
-            if (source.rankOnly) continue
             // A blend is in the ranking only while it is live.
-            if (source.upstreamFamily != BLEND_FAMILY && !isEnabled(source, policy)) {
+            if (source.upstreamFamily != BLEND_FAMILY && source.id !in asked) {
                 attempts += ProviderAttempt(source.id, ProviderAttemptOutcome.DISABLED)
                 continue
             }
@@ -283,6 +293,11 @@ class RemoteLyricsSource @Inject constructor(
                             failureCategory = ProviderFailureCategory.MALFORMED_RESPONSE,
                         )
                         hadUnavailableProvider = true
+                        continue
+                    }
+                    val filtered = ranking.filtered(source.id, result.payload, quality)
+                    if (filtered != null) {
+                        attempts += ProviderAttempt(source.id, ProviderAttemptOutcome.FILTERED, quality, message = filtered)
                         continue
                     }
                     attempts += ProviderAttempt(source.id, ProviderAttemptOutcome.HIT, quality)
@@ -362,10 +377,6 @@ class RemoteLyricsSource @Inject constructor(
         )
     }
 
-    private fun isEnabled(source: LyricsSourceDescriptor, policy: RemoteLyricsPolicy) =
-        source.id !in policy.disabledSourceIds && (policy.sourceOrder.isNotEmpty() || source.defaultEnabled)
-
-
     /** Compatibility boundary for the existing repository while it migrates to typed outcomes. */
     suspend fun getLyrics(
         request: LyricsLookupRequest,
@@ -402,70 +413,12 @@ class RemoteLyricsSource @Inject constructor(
         val retryAt: Instant?,
     ) : NetworkErrorException("Lyrics sources are temporarily unavailable")
 
-    private fun orderedProviders(policy: RemoteLyricsPolicy): List<RemoteLyricsProvider> {
-        val explicitOrder = policy.sourceOrder
-            .withIndex()
-            .associate { (index, id) -> id to index }
-        return providers.sortedWith(
-            compareBy<RemoteLyricsProvider> {
-                explicitOrder[it.descriptor.id] ?: Int.MAX_VALUE
-            }.thenBy { it.descriptor.defaultPriority }
-                .thenBy { it.descriptor.id }
-        )
-    }
-
     internal companion object {
-        /**
-         * [ranked] with the relays' answers ([RELAY_IDS]) moved to where their lyrics came from:
-         * Spicy Lyrics syncs rank in Spicy Lyrics' place, Apple Music lyrics in the Apple Music
-         * slot's, Spotify's in the Spotify slot's; after every source while that
-         * place is in [disabled]. Any other relayed
-         * catalogue after every source. LRCMux's answers rank in the place of the source it found
-         * them at ([LRCMUX_ORIGINS]), or its own for one it doesn't name. Answers from one place
-         * keep the user's order between them. A relay with no answer yet, or no origin, keeps its
-         * own place.
-         */
-        fun rankByOrigin(
-            ranked: List<LyricsSourceDescriptor>,
-            known: Map<String, ProviderResult>,
-            disabled: Set<String> = emptySet(),
-        ): List<LyricsSourceDescriptor> {
-            val own = ranked.withIndex().associate { (index, source) -> source.id to index }
-            fun slot(id: String) = own[id]?.takeIf { id !in disabled } ?: Int.MAX_VALUE
-            fun place(id: String): Int {
-                val at = own.getValue(id)
-                if (id !in RELAY_IDS) return at
-                val origin = (known[id] as? ProviderResult.Hit)?.payload?.attribution?.originName ?: return at
-                if (id == LRCMUX_ID) return LRCMUX_ORIGINS[origin]?.let(::slot) ?: at
-                return when (origin) {
-                    in SPICY_OWN_ORIGINS -> own[SPICY_ID] ?: at
-                    "Apple Music" -> slot(APPLE_MUSIC_ID)
-                    "Spotify" -> slot(SPOTIFY_ID)
-                    else -> Int.MAX_VALUE
-                }
-            }
-            return ranked.sortedWith(compareBy({ place(it.id) }, { own.getValue(it.id) }))
-        }
-
         const val SPICY_ID = "spicy_lyrics"
-        const val APPLE_MUSIC_ID = "apple_music"
-        const val SPOTIFY_ID = "spotify"
+        /** Relays Spicy Lyrics' API by Apple Music ID. */
+        const val RMM_ID = "rmm_revival"
         const val LRC_RED_ID = "lrc_red"
-        /** Relays of Spicy Lyrics' API (RMM Revival relays it by Apple Music ID). */
-        private val SPICY_RELAY_IDS = setOf(SPICY_ID, "rmm_revival")
         const val LRCMUX_ID = "lrcmux"
-        /** LRCMux's upstreams, by the name its answers give, and the sources they rank as. */
-        val LRCMUX_ORIGINS = mapOf(
-            "KuGou" to "kugou",
-            "LRCLIB" to LRCLIB_ID,
-            "Genius" to "genius",
-            "YouTube Music" to "youtube_transcript",
-        )
-        /** Sources that pass on lyrics from elsewhere and say where from. */
-        val RELAY_IDS = SPICY_RELAY_IDS + LRC_RED_ID + LRCMUX_ID
-        /** Stand in for a relay's answer that isn't in yet, at the highest place it could take. */
-        private val SPICY_SYNC = ProviderResult.Hit(RemoteLyricsPayload(attribution = LyricsAttribution("", originName = "Spicy Lyrics")))
-        private val APPLE_LYRICS = ProviderResult.Hit(RemoteLyricsPayload(attribution = LyricsAttribution("", originName = "Apple Music")))
         /** Origin names (SpicyLyricsProvider.spicyOriginName) for Spicy Lyrics' own syncs. */
         val SPICY_OWN_ORIGINS = setOf("Spicy Lyrics", "Spicy Lyrics Community")
 

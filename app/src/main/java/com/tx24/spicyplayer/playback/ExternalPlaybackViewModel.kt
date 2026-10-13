@@ -51,6 +51,11 @@ import com.tx24.spicyplayer.network.data.RemoteLyricsPayload
 import com.tx24.spicyplayer.network.data.measuredQuality
 import com.tx24.spicyplayer.network.data.SourceDisclosure
 import com.tx24.spicyplayer.network.data.SourceDisclosures
+import com.tx24.spicyplayer.network.data.LyricsSourceSettings
+import com.tx24.spicyplayer.network.data.RemoteLyricsPolicy
+import com.tx24.spicyplayer.network.data.SourcePair
+import com.tx24.spicyplayer.network.data.SourceRanking
+import com.tx24.spicyplayer.network.data.LyricsBlends
 import java.io.File
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -154,10 +159,8 @@ data class PlayerUiState(
     val artwork: Bitmap? = null,
     val artworkUri: String? = null,
     val sourceDescriptors: List<LyricsSourceDescriptor> = emptyList(),
-    val sourceOrder: List<String> = emptyList(),
-    val disabledSourceIds: Set<String> = emptySet(),
-    val blendDescriptors: List<LyricsSourceDescriptor> = emptyList(),
-    val enabledBlendIds: Set<String> = emptySet(),
+    /** The sources in order with every switch spelled out ([LyricsSourceSettings.normalized]). */
+    val sourcePolicy: RemoteLyricsPolicy = RemoteLyricsPolicy(),
     val providerAttempts: List<ProviderAttempt> = emptyList(),
     val lookupStatus: String? = null,
     val humanRomanizations: Boolean = false,
@@ -186,7 +189,7 @@ data class PlayerUiState(
     val sourceOverride: String? = null,
     /** Brackets at a synced line's ends shown as background vocals. */
     val splitBackgroundVocals: Boolean = true,
-    /** The user's own sources, in the order they were added; their place in the lookup is in [sourceOrder]. */
+    /** The user's own sources, in the order they were added; their place in the lookup is in [sourcePolicy]. */
     val customSources: List<CustomLyricsSource> = emptyList(),
     /** The player's queue, when it shares one; empty otherwise. */
     val queue: List<QueueEntry> = emptyList(),
@@ -203,7 +206,11 @@ data class PlayerUiState(
     val lyricsLanguage: String? = null,
     val lyricsLanguageOverride: String? = null,
     val deepLKeyPresent: Boolean = false,
-)
+) {
+    /** [sourcePolicy] read against the providers there are. */
+    val sourceRanking: SourceRanking
+        get() = SourceRanking(sourceDescriptors.filter { LyricsBlends.byId(it.id) == null }, sourcePolicy)
+}
 
 /** One song in the player's queue. */
 data class QueueEntry(
@@ -255,10 +262,7 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
         outputLabel = outputRoute.label,
         lyricDelayMs = outputProfiles.delayMs(outputRoute),
         sourceDescriptors = lyricsBackend.descriptors + lyricsBackend.blendDescriptors,
-        sourceOrder = lyricsBackend.policy().sourceOrder,
-        disabledSourceIds = lyricsBackend.policy().disabledSourceIds,
-        blendDescriptors = lyricsBackend.blendDescriptors,
-        enabledBlendIds = lyricsBackend.policy().enabledBlendIds,
+        sourcePolicy = lyricsBackend.policy(),
         humanRomanizations = lyricsBackend.humanRomanizations,
         splitBackgroundVocals = lyricsBackend.splitBackgroundVocals,
         switchedOffSources = lyricsBackend.switchedOffSources,
@@ -571,10 +575,7 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
                 outputLabel = outputRoute.label,
                 lyricDelayMs = outputProfiles.delayMs(outputRoute),
                 sourceDescriptors = lyricsBackend.descriptors + lyricsBackend.blendDescriptors,
-                sourceOrder = lyricsBackend.policy().sourceOrder,
-                disabledSourceIds = lyricsBackend.policy().disabledSourceIds,
-                blendDescriptors = lyricsBackend.blendDescriptors,
-                enabledBlendIds = lyricsBackend.policy().enabledBlendIds,
+                sourcePolicy = lyricsBackend.policy(),
             )
             return
         }
@@ -1039,14 +1040,48 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
         if (scaled !== artwork) scaled.recycle()
     }
 
+    /**
+     * Switches source [id] on or off. Switching on a source with no provider on switches its first
+     * provider on too, after that provider's disclosure.
+     */
     fun setSourceEnabled(id: String, enabled: Boolean) {
-        if (enabled && askFirst(mutableState.value.sourceDescriptors.firstOrNull { it.id == id }?.let(SourceDisclosures::forSource))) return
-        val disabled = mutableState.value.disabledSourceIds.toMutableSet()
-        if (enabled) disabled.remove(id) else disabled.add(id)
-        lyricsBackend.setPolicy(mutableState.value.sourceOrder, disabled)
+        if (enabled) {
+            val first = LyricsSourceSettings.providerToSwitchOn(lyricsBackend.ranking(), id)
+            if (first != null && askFirst(disclosureFor(first))) {
+                pendingSourceSwitch = { setSourceEnabled(id, true) }
+                return
+            }
+        }
+        changeSources { LyricsSourceSettings.setSourceEnabled(it, lyricsBackend.descriptors, id, enabled) }
+    }
+
+    /** Switches provider [providerId] on or off for source [originId], after its disclosure when it has one. */
+    fun setProviderEnabled(originId: String, providerId: String, enabled: Boolean) {
+        if (enabled && askFirst(disclosureFor(providerId))) {
+            pendingSourceSwitch = { setProviderEnabled(originId, providerId, true) }
+            return
+        }
+        changeSources { LyricsSourceSettings.setPairEnabled(it, lyricsBackend.descriptors, SourcePair(originId, providerId), enabled) }
+    }
+
+    /** Keeps only the [allowed] sync types of source [originId]. */
+    fun setSourceSyncTypes(originId: String, allowed: Set<RemoteLyricsQuality>) =
+        changeSources { LyricsSourceSettings.setSyncTypes(it, lyricsBackend.descriptors, originId, allowed) }
+
+    fun moveSource(id: String, direction: Int) =
+        changeSources { LyricsSourceSettings.move(it, lyricsBackend.descriptors, id, direction) }
+
+    private fun changeSources(change: (RemoteLyricsPolicy) -> RemoteLyricsPolicy) {
+        lyricsBackend.savePolicy(change(lyricsBackend.policy()))
         refreshSourcePolicy()
         loadLyrics()
     }
+
+    private fun disclosureFor(providerId: String): SourceDisclosure? =
+        mutableState.value.sourceDescriptors.firstOrNull { it.id == providerId }?.let(SourceDisclosures::forSource)
+
+    /** The switch waiting on the source disclosure being shown, done once it's agreed to. */
+    private var pendingSourceSwitch: (() -> Unit)? = null
 
     /** Holds [disclosure] for the user's OK when it's not been agreed to yet; true while it waits. */
     private fun askFirst(disclosure: SourceDisclosure?): Boolean {
@@ -1067,7 +1102,8 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
         lyricsBackend.markDisclosed(disclosure.id)
         mutableState.value = mutableState.value.copy(sourceDisclosure = null)
         if (disclosure.id == SourceDisclosures.GENIUS_ROMANIZATION_ID) setHumanRomanizations(true)
-        else setSourceEnabled(disclosure.id, true)
+        else pendingSourceSwitch?.invoke()
+        pendingSourceSwitch = null
         resumeTranslationAction()
     }
 
@@ -1079,29 +1115,13 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
             mutableState.value = mutableState.value.copy(translationEnabled = false)
         }
         mutableState.value = mutableState.value.copy(sourceDisclosure = null)
+        pendingSourceSwitch = null
         if (!translationNotice) resumeTranslationAction()
     }
 
     fun dismissSwitchedOff() {
         lyricsBackend.dismissSwitchedOff()
         mutableState.value = mutableState.value.copy(switchedOffSources = emptySet())
-    }
-
-    fun setBlendEnabled(id: String, enabled: Boolean) {
-        lyricsBackend.setBlendEnabled(id, enabled)
-        refreshSourcePolicy()
-        loadLyrics()
-    }
-
-    fun moveSource(id: String, direction: Int) {
-        val order = mutableState.value.sourceOrder.toMutableList()
-        val from = order.indexOf(id)
-        val to = from + direction
-        if (from !in order.indices || to !in order.indices) return
-        java.util.Collections.swap(order, from, to)
-        lyricsBackend.setPolicy(order, mutableState.value.disabledSourceIds)
-        refreshSourcePolicy()
-        loadLyrics()
     }
 
     /** Picks up a settings restore: sources, delays and Spotify links are re-read from storage. */
@@ -1175,10 +1195,7 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
         mutableState.value = mutableState.value.copy(
             customSources = lyricsBackend.customSources(),
             sourceDescriptors = lyricsBackend.descriptors + lyricsBackend.blendDescriptors,
-            sourceOrder = policy.sourceOrder,
-            disabledSourceIds = policy.disabledSourceIds,
-            blendDescriptors = lyricsBackend.blendDescriptors,
-            enabledBlendIds = policy.enabledBlendIds,
+            sourcePolicy = policy,
         )
     }
 
@@ -1252,13 +1269,13 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
         loadLyrics()
     }
 
-    /** The sources that could be chosen for this song, in the user's order, with what each had. */
+    /** The providers that could be chosen for this song, by where they rank, with what each had. */
     fun sourceChoices(): List<SourceChoice> {
-        val state = mutableState.value
         val known = lookedUp?.let { lookupCache[it] }.orEmpty()
         val shown = shownSelection?.source?.id
-        return state.sourceOrder.filter { it !in state.disabledSourceIds }
-            .mapNotNull { id -> lyricsBackend.descriptors.firstOrNull { it.id == id } }
+        val ranking = lyricsBackend.ranking()
+        return lyricsBackend.descriptors.filter { ranking.asked(it.id) }
+            .sortedBy { ranking.bestPlace(it.id) }
             .map { source ->
                 val result = known[source.id]
                 SourceChoice(
@@ -1646,10 +1663,7 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
                 outputLabel = outputRoute.label,
                 lyricDelayMs = outputProfiles.delayMs(outputRoute),
                 sourceDescriptors = lyricsBackend.descriptors + lyricsBackend.blendDescriptors,
-                sourceOrder = lyricsBackend.policy().sourceOrder,
-                disabledSourceIds = lyricsBackend.policy().disabledSourceIds,
-                blendDescriptors = lyricsBackend.blendDescriptors,
-                enabledBlendIds = lyricsBackend.policy().enabledBlendIds,
+                sourcePolicy = lyricsBackend.policy(),
             )
             return
         }

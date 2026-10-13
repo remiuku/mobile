@@ -59,11 +59,12 @@ object SourceDisclosures {
     ).associateBy(SourceDisclosure::id)
 
     /**
-     * The disclosure for [descriptor], or null when it needs none: sources on by default, rank-only
-     * slots that are never asked, and the user's own sources, whose address they typed.
+     * The disclosure for provider [descriptor], or null when it needs none: providers on by
+     * default, blends (built from other answers, never asked), and the user's own sources, whose
+     * address they typed. Agreed to once, it covers the provider in every source it serves.
      */
     fun forSource(descriptor: LyricsSourceDescriptor): SourceDisclosure? = when {
-        descriptor.defaultEnabled || descriptor.rankOnly || descriptor.upstreamFamily == "custom" -> null
+        descriptor.defaultEnabled || descriptor.upstreamFamily == "blend" || descriptor.upstreamFamily == "custom" -> null
         else -> byId[descriptor.id] ?: SourceDisclosure(descriptor.id, descriptor.displayName, descriptor.displayName)
     }
 

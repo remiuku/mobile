@@ -3,6 +3,7 @@ package com.tx24.spicyplayer.network.data.providers
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.tx24.spicyplayer.network.data.LyricsAttribution
+import com.tx24.spicyplayer.network.data.LyricsOrigins
 import com.tx24.spicyplayer.network.data.ProviderResult
 import com.tx24.spicyplayer.network.data.RemoteLyricsPayload
 import com.tx24.spicyplayer.network.data.RemoteLyricsQuality
@@ -52,8 +53,8 @@ class ProviderTextTest {
         assertEquals("https://spicylyrics.org/uid/1", community.maker?.profileUrl)
         assertEquals("uploader", community.uploader?.username)
 
-        // Unlabelled: nothing to go by, so it keeps RMM Revival's own place.
-        assertEquals(null, rmm("""{"ttml":"<tt/>"}""").originName)
+        // Unlabelled: the other Apple Music relay it uses now and then.
+        assertEquals("Apple Music", rmm("""{"ttml":"<tt/>"}""").originName)
 
         // Labelled "spicy_lyrics" with no uploader: Apple Music's lyrics passed on through Spicy Lyrics.
         assertEquals("Apple Music", rmm("""{"ttml":"<tt/>","lyricsSource":"spicylyrics","lyricsProviderSource":"spicy_lyrics","uploadAttribution":null}""").originName)
@@ -72,6 +73,29 @@ class ProviderTextTest {
         assertEquals(RemoteLyricsQuality.WORD_SYNCED, RemoteLyricsPayload(ttmlLyrics = apple).measuredQuality())
         val line = TtmlLyricsParser.parse(apple.byteInputStream()).lines.single()
         assertEquals(listOf("ka", "sa"), line.words.map { it.romanizedText })
+    }
+
+    @Test fun lrcRedTellsAppleMusicFromItsOwnSyncs() {
+        // Apple Music's TTML always carries leadingSilence (e.g. Anti-Hero, USUG12205736).
+        val apple = """<tt xmlns="http://www.w3.org/ns/ttml" xmlns:lrc="http://lrc.red/lyric-ttml-internal" lrc:timing="Word">""" +
+            """<head><metadata><sourceMetadata xmlns="http://lrc.red/lyric-ttml-internal" leadingSilence="0.480"/></metadata></head>""" +
+            """<body><div><p begin="1.0" end="2.0" ttm:agent="v1"><span begin="1.0" end="2.0">Hi</span></p></div></body></tt>"""
+        // lrc.red's own syncs have no leadingSilence and no agents, and full timestamps (e.g. Music Baby, QM24S2507040).
+        val ai = """<tt xmlns="http://www.w3.org/ns/ttml" xmlns:lrc="http://lrc.red/lyric-ttml-internal" lrc:timing="Word">""" +
+            """<head><metadata><sourceMetadata xmlns="http://lrc.red/lyric-ttml-internal"/></metadata></head>""" +
+            """<body><div><p begin="00:00:14.138" end="00:00:15.000"><span begin="00:00:14.138" end="00:00:15.000">Hi</span></p></div></body></tt>"""
+        assertEquals("Apple Music", LrcRedLyricsProvider.originOf(apple))
+        assertEquals(LyricsOrigins.LRC_RED_AI_NAME, LrcRedLyricsProvider.originOf(ai))
+        // Told apart on the TTML as served: the rename to Apple's names keeps the mark.
+        assertEquals("Apple Music", LrcRedLyricsProvider.originOf(LrcRedLyricsProvider.appleTtml(apple)))
+
+        // BiniLyrics serves lrc.red's TTML: labelled the same way, with Apple's names put back.
+        val bini = lrcRedPayload(ProviderResult.Hit(RemoteLyricsPayload(ttmlLyrics = ai))) as ProviderResult.Hit
+        assertEquals(LyricsAttribution("BiniLyrics", originName = LyricsOrigins.LRC_RED_AI_NAME), bini.payload.attribution)
+        assertTrue(bini.payload.ttmlLyrics!!.contains("itunes:timing"))
+        val biniApple = lrcRedPayload(ProviderResult.Hit(RemoteLyricsPayload(ttmlLyrics = apple))) as ProviderResult.Hit
+        assertEquals("Apple Music", biniApple.payload.attribution?.originName)
+        assertEquals(ProviderResult.Miss, lrcRedPayload(ProviderResult.Miss))
     }
 
     @Test fun spicyLyricsApiErrorsSayWhy() {

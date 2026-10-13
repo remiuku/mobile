@@ -1,7 +1,12 @@
 package com.tx24.spicyplayer.lyrics
 
 import android.content.SharedPreferences
+import com.tx24.spicyplayer.network.data.LyricsOrigins
+import com.tx24.spicyplayer.network.data.LyricsSourceSettings
+import com.tx24.spicyplayer.network.data.RemoteLyricsPolicy
+import com.tx24.spicyplayer.network.data.RemoteLyricsQuality
 import com.tx24.spicyplayer.network.data.SourceDisclosures
+import com.tx24.spicyplayer.network.data.SourcePair
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -90,6 +95,70 @@ class SourceDefaultsMigrationTest {
 
         assertEquals("spicy_lyrics,netease", prefs.values["order"])
         assertTrue("netease" in (prefs.values["disabled"] as Set<*>))
+    }
+
+    private val providers = NextLyricsBackend.createProviders(okhttp3.OkHttpClient(), com.google.gson.Gson(), clientKey = "")
+        .map { it.descriptor }
+
+    @Test
+    fun `old source preferences move to sources once, under new keys`() {
+        val prefs = MemoryPrefs(mutableMapOf(
+            "defaults" to version,
+            "order" to "lrclib,spicy_lyrics",
+            "disabled" to setOf("spotify", "kugou", "qq_music", "kuwo", "netease", "genius", "youtube_transcript", "rmm_revival"),
+            "blends" to setOf("blend_qq"),
+        ))
+
+        val policy = NextLyricsBackend.readPolicy(prefs, providers)
+
+        assertEquals(LyricsOrigins.LRCLIB, policy.sourceOrder.first())
+        assertEquals(LyricsOrigins.SPOTIFY, policy.sourceOrder.last())
+        assertEquals(policy.sourceOrder.joinToString(","), prefs.values[NextLyricsBackend.SOURCE_ORDER])
+        assertTrue(SourcePair(LyricsOrigins.CHINESE, "blend_qq").key in (prefs.values[NextLyricsBackend.PAIRS_ON] as Set<*>))
+        assertTrue(SourcePair(LyricsOrigins.CHINESE, "kugou").key in (prefs.values[NextLyricsBackend.PAIRS_OFF] as Set<*>))
+        // The old keys stay, but are no longer read: a change made since sticks.
+        assertEquals("lrclib,spicy_lyrics", prefs.values["order"])
+        val moved = LyricsSourceSettings.move(policy, providers, LyricsOrigins.LRCLIB, 1)
+        NextLyricsBackend.writePolicy(prefs, moved)
+        assertEquals(moved, NextLyricsBackend.readPolicy(prefs, providers))
+    }
+
+    @Test
+    fun `a restored older backup moves over too`() {
+        val prefs = MemoryPrefs(mutableMapOf())
+        NextLyricsBackend.writePolicy(prefs, NextLyricsBackend.readPolicy(prefs, providers))
+        // What restoring a backup from before sources writes: the store cleared, the old keys back.
+        prefs.values.clear()
+        prefs.values += mapOf("defaults" to version, "order" to "unison,spicy_lyrics", "disabled" to setOf("amll_ttml_db"))
+
+        val policy = NextLyricsBackend.readPolicy(prefs, providers)
+
+        assertEquals(LyricsOrigins.UNISON, policy.sourceOrder.first())
+        assertTrue(policy.sourceOrder.indexOf(LyricsOrigins.SPICY_COMMUNITY) < policy.sourceOrder.indexOf(LyricsOrigins.AMLL))
+        assertEquals(false, policy.pairs[SourcePair(LyricsOrigins.AMLL, "amll_ttml_db").key])
+    }
+
+    @Test
+    fun `a fresh install reads the defaults and stores nothing`() {
+        val prefs = MemoryPrefs(mutableMapOf("defaults" to version))
+
+        val policy = NextLyricsBackend.readPolicy(prefs, providers)
+
+        assertEquals(LyricsSourceSettings.normalized(RemoteLyricsPolicy(), providers), policy)
+        assertNull(prefs.values[NextLyricsBackend.SOURCE_ORDER])
+    }
+
+    @Test
+    fun `stored sync types come back`() {
+        val prefs = MemoryPrefs(mutableMapOf())
+        val wordOnly = LyricsSourceSettings.setSyncTypes(
+            NextLyricsBackend.readPolicy(prefs, providers), providers, LyricsOrigins.APPLE_MUSIC, setOf(RemoteLyricsQuality.WORD_SYNCED),
+        )
+        NextLyricsBackend.writePolicy(prefs, wordOnly)
+
+        val read = NextLyricsBackend.readPolicy(prefs, providers)
+
+        assertEquals(setOf(RemoteLyricsQuality.LINE_SYNCED, RemoteLyricsQuality.PLAIN), read.syncTypesOff[LyricsOrigins.APPLE_MUSIC])
     }
 
     @Test

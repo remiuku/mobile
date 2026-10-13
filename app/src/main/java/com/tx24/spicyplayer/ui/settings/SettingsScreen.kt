@@ -427,7 +427,7 @@ private fun PageSkeleton(page: SettingsPage) {
         SettingsPage.NowPlaying -> SettingsSkeleton(rows = 8)
         SettingsPage.Controls -> SettingsSkeleton(rows = 10)
         SettingsPage.Theme -> SettingsSkeleton(rows = 3)
-        SettingsPage.Sources -> SettingsSkeleton(rows = 13, cards = true)
+        SettingsPage.Sources -> SettingsSkeleton(rows = 11, cards = true)
         SettingsPage.Device -> SettingsSkeleton(rows = 9)
         SettingsPage.Advanced -> SettingsSkeleton(rows = 12)
     }
@@ -530,7 +530,9 @@ private fun HomeGroups(state: PlayerUiState, settings: AppSettings, updater: Upd
         GroupRow(
             Icons.Rounded.Layers,
             SettingsPage.Sources.title,
-            "${state.sourceOrder.count { it !in state.disabledSourceIds }} of ${state.sourceOrder.size} on",
+            state.sourceRanking.let { ranking ->
+                "${ranking.origins.count { com.tx24.spicyplayer.network.data.LyricsSourceSettings.isOn(ranking, it.id) }} of ${ranking.origins.size} on"
+            },
         ) { onOpen(SettingsPage.Sources) }
         GroupDivider()
         GroupRow(

@@ -17,6 +17,7 @@ import androidx.compose.material.icons.rounded.Insights
 import androidx.compose.material.icons.rounded.Public
 import com.tx24.spicyplayer.network.data.SourceDisclosure
 import com.tx24.spicyplayer.network.data.SourceDisclosures
+import com.tx24.spicyplayer.network.data.LyricsSourceSettings
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -362,10 +363,10 @@ class LyricsActivity : ComponentActivity() {
 /** The lookup settings for the daily settings snapshot: which sources are on and first, never a key. */
 private fun lookupSnapshot(state: PlayerUiState): Map<String, Any> = buildMap {
     // A custom source's ID and name are the user's own: only that it's custom is said.
-    state.sourceOrder.firstOrNull { it !in state.disabledSourceIds }
-        ?.let { put("first_source", if (CustomLyricsSource.isCustom(it)) "custom" else it) }
-    put("sources_off", state.disabledSourceIds.size)
-    put("blends_on", state.enabledBlendIds.size)
+    val ranking = state.sourceRanking
+    val on = ranking.origins.map { it.id }.filter { LyricsSourceSettings.isOn(ranking, it) }
+    on.firstOrNull()?.let { put("first_source", if (CustomLyricsSource.isCustom(it)) "custom" else it) }
+    put("sources_off", ranking.origins.size - on.size)
     put("human_romanizations", state.humanRomanizations)
     // Which translation is set up; never what was translated.
     state.translationPreferences.let { translation ->

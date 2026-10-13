@@ -45,12 +45,8 @@ data class LyricsSourceDescriptor(
     val upstreamFamily: String = id,
     val transportRequirement: TransportRequirement = TransportRequirement.DIRECT_OK,
     val releaseChannel: SourceReleaseChannel = SourceReleaseChannel.RECOMMENDED,
+    /** Whether its switches in Settings → Sources start on. */
     val defaultEnabled: Boolean = true,
-    /**
-     * Never asked: only a place in the order, where lyrics relayed from this origin rank
-     * ([RemoteLyricsSource.rankByOrigin]). Switched off, they rank after every source.
-     */
-    val rankOnly: Boolean = false,
 )
 
 /**
@@ -120,12 +116,22 @@ interface RemoteLyricsProvider {
     suspend fun warmUp() {}
 }
 
-/** Snapshot of source preferences for one lookup. */
+/**
+ * Snapshot of source preferences for one lookup. Sources are [LyricsOrigin]s; each provider has a
+ * switch per source it serves ([SourcePair]).
+ */
 data class RemoteLyricsPolicy(
+    /** Source IDs, first asked first; a source missing here goes where the default order puts it. */
     val sourceOrder: List<String> = emptyList(),
+    /** Sources switched off as a whole. */
     val disabledSourceIds: Set<String> = emptySet(),
-    /** Blends are off unless switched on; see [LyricsBlends]. */
-    val enabledBlendIds: Set<String> = emptySet(),
+    /**
+     * Provider switches by [SourcePair.key]. A pair not here takes its provider's
+     * [LyricsSourceDescriptor.defaultEnabled]; a blend's is off.
+     */
+    val pairs: Map<String, Boolean> = emptyMap(),
+    /** Sync types switched off per source ID. */
+    val syncTypesOff: Map<String, Set<RemoteLyricsQuality>> = emptyMap(),
 )
 
 enum class RemoteLyricsQuality(val rank: Int) {

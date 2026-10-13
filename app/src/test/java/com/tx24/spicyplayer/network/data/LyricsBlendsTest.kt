@@ -46,20 +46,17 @@ class LyricsBlendsTest {
     @Test
     fun `a blend sits just above its highest-ranked donor`() {
         val order = listOf("spicy", "netease", "kugou", "qq_music", "lrclib")
-        val chain = LyricsBlends.chain(order, LyricsBlends.live(order.toSet(), LyricsBlends.ALL.map { it.id }.toSet()))
+        val chain = LyricsBlends.chain(order, LyricsBlends.ALL)
         assertEquals(
             listOf("spicy", "blend_netease_kugou", "blend_netease_qq", "blend_netease", "netease",
                 "blend_kugou", "kugou", "blend_qq", "qq_music", "lrclib"),
             chain,
         )
-        // The three-ways go home to whichever donor ranks first, and need both donors switched on.
-        val onlyNetEase = LyricsBlends.live(setOf("spicy", "netease"), LyricsBlends.ALL.map { it.id }.toSet())
-        assertEquals(listOf("blend_netease"), onlyNetEase.map { it.id })
     }
 
     @Test
     fun `a line-synced base gets the donor's word timing in its own words`() = runBlocking {
-        val result = source().resolveLyrics(request, RemoteLyricsPolicy(enabledBlendIds = setOf("blend_netease")))
+        val result = source().resolveLyrics(request, blendOn)
             as RemoteLyricsResolution.Found
         assertEquals("blend_netease", result.selection.source.id)
         assertEquals(RemoteLyricsQuality.WORD_SYNCED, result.selection.quality)
@@ -85,9 +82,34 @@ class LyricsBlendsTest {
     @Test
     fun `a word-synced answer ranked above stands the blend down`() = runBlocking {
         val result = source(baseWordSynced = true)
-            .resolveLyrics(request, RemoteLyricsPolicy(enabledBlendIds = setOf("blend_netease"))) as RemoteLyricsResolution.Found
+            .resolveLyrics(request, blendOn) as RemoteLyricsResolution.Found
         assertEquals("spicy", result.selection.source.id)
         assertEquals(ProviderAttemptOutcome.SKIPPED, result.attempts.first { it.sourceId == "blend_netease" }.outcome)
+    }
+
+    /** The NetEase blend switched on in Chinese services, below the base. */
+    private val blendOn = RemoteLyricsPolicy(
+        sourceOrder = listOf("spicy", LyricsOrigins.CHINESE, LyricsOrigins.LRCLIB),
+        pairs = mapOf(SourcePair(LyricsOrigins.CHINESE, "blend_netease").key to true),
+    )
+
+    @Test
+    fun `each blend sits in Chinese services just above its highest donor`() {
+        val chinese = LyricsOrigins.BUILT_IN.single { it.id == LyricsOrigins.CHINESE }.providerIds
+        assertEquals(
+            listOf("blend_kugou", "blend_netease_kugou", "kugou", "blend_netease_qq", "blend_netease", "netease",
+                "blend_qq", "qq_music", "kuwo", "lrcmux"),
+            chinese,
+        )
+    }
+
+    @Test
+    fun `a blend is only live while every donor is switched on in Chinese services`() {
+        val providers = listOf("kugou", "netease").map { LyricsSourceDescriptor(it, it, 1, setOf(LyricsCapability.WORD_SYNC)) }
+        val blend = SourcePair(LyricsOrigins.CHINESE, "blend_netease_kugou").key to true
+        assertEquals(listOf("blend_netease_kugou"), SourceRanking(providers, RemoteLyricsPolicy(pairs = mapOf(blend))).liveBlends.map { it.id })
+        val kugouOff = SourcePair(LyricsOrigins.CHINESE, "kugou").key to false
+        assertEquals(emptyList<String>(), SourceRanking(providers, RemoteLyricsPolicy(pairs = mapOf(blend, kugouOff))).liveBlends.map { it.id })
     }
 
     private fun source(baseWordSynced: Boolean = false) = RemoteLyricsSource(

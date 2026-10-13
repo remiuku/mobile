@@ -15,7 +15,8 @@ import okhttp3.OkHttpClient
  * lrc.red serves Apple Music's lyrics TTML by ISRC, word, line and unsynced alike, with Apple's
  * `itunes:` names renamed. Its site search (`search.json`) finds the ISRC from title and artist;
  * the hits go through the Spotify matcher, which already refuses other versions of a song.
- * Every answer is Apple Music's, so [RemoteLyricsSource.rankByOrigin] ranks it in that place.
+ * Where Apple Music has no lyrics it serves a sync of its own making instead ([originOf]), so an
+ * answer ranks as Apple Music's or as lrc.red's AI syncs.
  */
 @Singleton
 class LrcRedLyricsProvider @Inject constructor(private val client: OkHttpClient, private val gson: Gson) : RemoteLyricsProvider {
@@ -52,7 +53,7 @@ class LrcRedLyricsProvider @Inject constructor(private val client: OkHttpClient,
             return@guarded ProviderResult.Hit(RemoteLyricsPayload(
                 ttmlLyrics = appleTtml(ttml),
                 sourceId = descriptor.id,
-                attribution = LyricsAttribution("lrc.red", originName = "Apple Music"),
+                attribution = LyricsAttribution("lrc.red", originName = originOf(ttml)),
             ))
         }
         ProviderResult.Miss
@@ -61,6 +62,14 @@ class LrcRedLyricsProvider @Inject constructor(private val client: OkHttpClient,
     companion object {
         private const val BASE = "https://lrc.red"
         private val RENAMED_ATTRIBUTE = Regex("""(?<=\s)lrc:(?=[A-Za-z]+=)""")
+
+        /**
+         * Whose lyrics lrc.red's [ttml] are: Apple Music's always carry `leadingSilence` on their
+         * metadata (and usually agents); the syncs lrc.red makes itself have neither. Read on the
+         * TTML as served, before [appleTtml] renames anything.
+         */
+        internal fun originOf(ttml: String): String =
+            if (ttml.contains("leadingSilence")) "Apple Music" else LyricsOrigins.LRC_RED_AI_NAME
 
         /** Puts back Apple's names (`itunes:timing`, `itunes:key`, `iTunesMetadata`) the parser reads. */
         internal fun appleTtml(ttml: String): String = ttml

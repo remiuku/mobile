@@ -16,9 +16,10 @@ class SourceDefaultsTest {
 
     @Test
     fun `a fresh install asks Spicy Lyrics and the lyrics APIs open to any app`() {
-        val prefs = LyricsSourcePreferenceNormalizer.normalize(null, emptySet(), descriptors)
-        val asked = descriptors.filter { !it.rankOnly && it.id !in prefs.disabledSourceIds }.map { it.id }.toSet()
+        val ranking = SourceRanking(descriptors, LyricsSourceSettings.normalized(RemoteLyricsPolicy(), descriptors))
+        val asked = descriptors.filter { ranking.asked(it.id) }.map { it.id }.toSet()
         assertEquals(DEFAULT_ON, asked)
+        assertEquals(emptyList<String>(), ranking.liveBlends)
     }
 
     @Test
@@ -27,14 +28,59 @@ class SourceDefaultsTest {
     }
 
     @Test
-    fun `relayed Apple Music and Spotify lyrics keep a place in the order`() {
-        val slots = descriptors.filter { it.rankOnly }.map { it.id }.toSet()
-        assertEquals(setOf(RemoteLyricsSource.APPLE_MUSIC_ID, RemoteLyricsSource.SPOTIFY_ID), slots)
+    fun `a fresh install has the sources in the default order`() {
+        val order = LyricsSourceSettings.normalized(RemoteLyricsPolicy(), descriptors).sourceOrder
+        assertEquals(
+            listOf(
+                LyricsOrigins.SPICY_COMMUNITY, LyricsOrigins.AMLL, LyricsOrigins.APPLE_MUSIC, LyricsOrigins.UNISON,
+                LyricsOrigins.SPOTIFY, LyricsOrigins.CHINESE, LyricsOrigins.LRCLIB, LyricsOrigins.LRC_RED_AI,
+                LyricsOrigins.GENIUS, LyricsOrigins.YOUTUBE,
+            ),
+            order,
+        )
+    }
+
+    @Test
+    fun `each source is served by its providers in a fixed order`() {
+        val providers = LyricsOrigins.forProviders(descriptors).associate { it.id to it.providerIds.filter { id -> LyricsBlends.byId(id) == null } }
+        assertEquals(listOf("spicy_lyrics", "rmm_revival"), providers[LyricsOrigins.SPICY_COMMUNITY])
+        assertEquals(listOf("amll_ttml_db"), providers[LyricsOrigins.AMLL])
+        assertEquals(listOf("spicy_lyrics", "rmm_revival", "lrc_red", "bini_lyrics"), providers[LyricsOrigins.APPLE_MUSIC])
+        assertEquals(listOf("lrc_red", "bini_lyrics"), providers[LyricsOrigins.LRC_RED_AI])
+        assertEquals(listOf("unison"), providers[LyricsOrigins.UNISON])
+        assertEquals(listOf("spicy_lyrics", "rmm_revival"), providers[LyricsOrigins.SPOTIFY])
+        assertEquals(listOf("kugou", "netease", "qq_music", "kuwo", "lrcmux"), providers[LyricsOrigins.CHINESE])
+        assertEquals(listOf("lrclib", "lrcmux"), providers[LyricsOrigins.LRCLIB])
+        assertEquals(listOf("genius", "lrcmux"), providers[LyricsOrigins.GENIUS])
+        assertEquals(listOf("youtube_transcript", "lrcmux"), providers[LyricsOrigins.YOUTUBE])
+        // Every provider serves at least one source; none gets a source of its own.
+        assertEquals(descriptors.map { it.id }.toSet(), providers.values.flatten().toSet())
+        assertEquals(LyricsOrigins.BUILT_IN.size, providers.size)
+    }
+
+    @Test
+    fun `an answer finds its source by where the relay says it came from`() {
+        val origins = LyricsOrigins.forProviders(descriptors)
+        fun origin(provider: String, name: String?) = LyricsOrigins.originOf(origins, provider, name)?.id
+        assertEquals(LyricsOrigins.SPICY_COMMUNITY, origin("spicy_lyrics", "Spicy Lyrics"))
+        assertEquals(LyricsOrigins.SPICY_COMMUNITY, origin("rmm_revival", "Spicy Lyrics Community"))
+        assertEquals(LyricsOrigins.APPLE_MUSIC, origin("spicy_lyrics", "Apple Music"))
+        assertEquals(LyricsOrigins.SPOTIFY, origin("rmm_revival", "Spotify"))
+        assertEquals(LyricsOrigins.APPLE_MUSIC, origin("lrc_red", "Apple Music"))
+        assertEquals(LyricsOrigins.LRC_RED_AI, origin("bini_lyrics", LyricsOrigins.LRC_RED_AI_NAME))
+        assertEquals(LyricsOrigins.CHINESE, origin("lrcmux", "KuGou"))
+        assertEquals(LyricsOrigins.LRCLIB, origin("lrcmux", "LRCLIB"))
+        assertEquals(LyricsOrigins.GENIUS, origin("lrcmux", "Genius"))
+        assertEquals(LyricsOrigins.YOUTUBE, origin("lrcmux", "YouTube Music"))
+        assertNull(origin("lrcmux", "Somewhere new"))
+        // A provider serving one source needs no name.
+        assertEquals(LyricsOrigins.CHINESE, origin("netease", null))
+        assertEquals(LyricsOrigins.CHINESE, origin("blend_qq", "Spicy + QQ Music"))
     }
 
     @Test
     fun `every other source says what it sends before it's switched on`() {
-        for (source in descriptors.filter { !it.rankOnly && it.id !in DEFAULT_ON }) {
+        for (source in descriptors.filter { it.id !in DEFAULT_ON }) {
             // A named entry, not the generic fallback.
             assertNotNull(source.id, SourceDisclosures.forId(source.id))
             assertEquals(source.id, SourceDisclosures.forSource(source)?.id)
@@ -42,8 +88,8 @@ class SourceDefaultsTest {
     }
 
     @Test
-    fun `default sources and the rank-only slots need no disclosure`() {
-        for (source in descriptors.filter { it.rankOnly || it.id in DEFAULT_ON }) {
+    fun `default providers and blends need no disclosure`() {
+        for (source in descriptors.filter { it.id in DEFAULT_ON } + LyricsBlends.ALL.map { it.descriptor }) {
             assertNull(source.id, SourceDisclosures.forSource(source))
         }
     }
