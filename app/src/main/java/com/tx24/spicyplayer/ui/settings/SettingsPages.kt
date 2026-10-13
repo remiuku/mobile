@@ -64,6 +64,7 @@ import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.MotionPhotosPaused
 import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.rounded.PictureInPictureAlt
+import androidx.compose.material.icons.rounded.Source
 import androidx.compose.material.icons.rounded.StayCurrentPortrait
 import androidx.compose.material.icons.rounded.Fullscreen
 import androidx.compose.material.icons.rounded.TouchApp
@@ -645,6 +646,13 @@ internal fun ControlsContent(settings: AppSettings) {
             onCheckedChange = { settings.queueButton = it },
             description = "Show its own button for the player's queue, while it shares one. It's always in quick settings.",
             icon = Icons.AutoMirrored.Rounded.QueueMusic,
+        )
+        ToggleRow(
+            label = "Lyrics source button",
+            checked = settings.sourceButton,
+            onCheckedChange = { settings.sourceButton = it },
+            description = "Show its own button for choosing this song's lyrics source. It's always in quick settings.",
+            icon = Icons.Rounded.Source,
         )
     }
 }

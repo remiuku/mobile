@@ -511,7 +511,7 @@ private fun HomeGroups(state: PlayerUiState, settings: AppSettings, updater: Upd
             SettingsPage.Controls.title,
             listOf(
                 if (settings.autoHideControls) "Hide after ${settings.controlsHideDelay.label}" else "Always shown",
-                "${listOf(settings.playerButtons, settings.resyncButton, settings.expandButton, settings.quickSettingsButton, settings.pipButton, settings.lyricsManagerButton, settings.queueButton).count { it }} of 7 extra buttons",
+                "${listOf(settings.playerButtons, settings.resyncButton, settings.expandButton, settings.quickSettingsButton, settings.pipButton, settings.lyricsManagerButton, settings.queueButton, settings.sourceButton).count { it }} of 8 extra buttons",
             ).joinToString(),
         ) { onOpen(SettingsPage.Controls) }
         GroupDivider()

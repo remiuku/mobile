@@ -40,6 +40,7 @@ import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.FastOutSlowInEasing
 
 import androidx.compose.material.icons.rounded.PictureInPictureAlt
+import androidx.compose.material.icons.rounded.Source
 import androidx.compose.material.icons.rounded.Translate
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.Icons
@@ -179,6 +180,7 @@ fun LyricsControls(
     /** Shows the Lyrics Manager button when set. */
     onOpenLyricsManager: (() -> Unit)? = null,
     onOpenQueue: (() -> Unit)? = null,
+    onOpenSource: (() -> Unit)? = null,
     /** Shows the quick settings button when set. */
     onOpenQuickSettings: (() -> Unit)? = null,
     /** Shows the picture-in-picture button when set. */
@@ -242,9 +244,9 @@ fun LyricsControls(
             contentAlignment = Alignment.TopCenter,
         ) {
             if (wide) {
-                ControlsBar(controls, romanizeAvailable, romanized, onToggleRomanize, onOpenSettings, onOpenLyricsManager, onOpenQuickSettings, expanded, onToggleExpanded, shown, showResync, showExpand, onOpenQueue = onOpenQueue, onEnterPip = onEnterPip)
+                ControlsBar(controls, romanizeAvailable, romanized, onToggleRomanize, onOpenSettings, onOpenLyricsManager, onOpenQuickSettings, expanded, onToggleExpanded, shown, showResync, showExpand, onOpenQueue = onOpenQueue, onOpenSource = onOpenSource, onEnterPip = onEnterPip)
             } else {
-                ControlsColumn(controls, romanizeAvailable, romanized, onToggleRomanize, onOpenSettings, onOpenLyricsManager, onOpenQuickSettings, expanded, onToggleExpanded, shown, showResync, showExpand, onOpenQueue = onOpenQueue, onEnterPip = onEnterPip)
+                ControlsColumn(controls, romanizeAvailable, romanized, onToggleRomanize, onOpenSettings, onOpenLyricsManager, onOpenQuickSettings, expanded, onToggleExpanded, shown, showResync, showExpand, onOpenQueue = onOpenQueue, onOpenSource = onOpenSource, onEnterPip = onEnterPip)
             }
             // Hidden controls swallow touches too: a touch there only brings them back, rather
             // than pressing a button nobody can see.
@@ -282,6 +284,7 @@ private fun ControlsColumn(
     showResync: Boolean,
     showExpand: Boolean,
     onOpenQueue: (() -> Unit)? = null,
+    onOpenSource: (() -> Unit)? = null,
     onEnterPip: (() -> Unit)? = null,
 ) {
     val shuffle = controls.customActions.firstOrNull { it.kind == ActionKind.Shuffle }
@@ -304,7 +307,7 @@ private fun ControlsColumn(
         // A player that adds enough buttons to run off the screen gets the rest in a More menu.
         BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = SpicySpacing.S2), contentAlignment = Alignment.Center) {
             FloatingButtons(
-                floatingActions(controls, others, romanizeAvailable, romanized, onToggleRomanize, onOpenSettings, onOpenLyricsManager, onOpenQuickSettings, expanded, onToggleExpanded, onSwapSide = null, showResync = showResync, showExpand = showExpand, onOpenQueue = onOpenQueue, onEnterPip = onEnterPip),
+                floatingActions(controls, others, romanizeAvailable, romanized, onToggleRomanize, onOpenSettings, onOpenLyricsManager, onOpenQuickSettings, expanded, onToggleExpanded, onSwapSide = null, showResync = showResync, showExpand = showExpand, onOpenQueue = onOpenQueue, onOpenSource = onOpenSource, onEnterPip = onEnterPip),
                 maxWidth, minSize = FLOATING_SIZE, maxSize = FLOATING_SIZE, minGap = SpicySpacing.S2, maxGap = SpicySpacing.S4,
             )
         }
@@ -331,6 +334,7 @@ private fun ControlsBar(
     showResync: Boolean,
     showExpand: Boolean,
     onOpenQueue: (() -> Unit)? = null,
+    onOpenSource: (() -> Unit)? = null,
     onEnterPip: (() -> Unit)? = null,
 ) {
     val shuffle = controls.customActions.firstOrNull { it.kind == ActionKind.Shuffle }
@@ -349,7 +353,7 @@ private fun ControlsBar(
         }
         BoxWithConstraints(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
             FloatingButtons(
-                floatingActions(controls, others, romanizeAvailable, romanized, onToggleRomanize, onOpenSettings, onOpenLyricsManager, onOpenQuickSettings, expanded, onToggleExpanded, onSwapSide = null, showResync = showResync, showExpand = showExpand, onOpenQueue = onOpenQueue, onEnterPip = onEnterPip),
+                floatingActions(controls, others, romanizeAvailable, romanized, onToggleRomanize, onOpenSettings, onOpenLyricsManager, onOpenQuickSettings, expanded, onToggleExpanded, onSwapSide = null, showResync = showResync, showExpand = showExpand, onOpenQueue = onOpenQueue, onOpenSource = onOpenSource, onEnterPip = onEnterPip),
                 maxWidth - SpicySpacing.S4, minSize = COVER_BUTTON_MIN, maxSize = COVER_BUTTON_MAX, minGap = COVER_BUTTON_GAP, maxGap = COVER_BUTTON_GAP,
             )
         }
@@ -481,6 +485,7 @@ private fun floatingActions(
     showResync: Boolean,
     showExpand: Boolean,
     onOpenQueue: (() -> Unit)? = null,
+    onOpenSource: (() -> Unit)? = null,
     onEnterPip: (() -> Unit)? = null,
 ): List<FloatingAction> = buildList {
     // Material icons are black until tinted; the others here are drawn white.
@@ -524,6 +529,9 @@ private fun floatingActions(
     if (onOpenLyricsManager != null) add(FloatingAction("Lyrics Manager", keep = 50, onOpenLyricsManager) { icon ->
         Image(rememberVectorPainter(SpicyIcons.LyricsManager), null, Modifier.size(icon(23f)))
     })
+    if (onOpenSource != null) add(FloatingAction("Lyrics source", keep = 45, onOpenSource) { icon ->
+        Image(rememberVectorPainter(Icons.Rounded.Source), null, Modifier.size(icon(23f)), colorFilter = white)
+    })
     if (onOpenQueue != null) add(FloatingAction("Queue", keep = 40, onOpenQueue) { icon ->
         Image(rememberVectorPainter(Icons.AutoMirrored.Rounded.QueueMusic), null, Modifier.size(icon(23f)), colorFilter = white)
     })
@@ -559,6 +567,7 @@ fun CoverControls(
     onOpenSettings: () -> Unit,
     onOpenLyricsManager: (() -> Unit)?,
     onOpenQueue: (() -> Unit)? = null,
+    onOpenSource: (() -> Unit)? = null,
     onOpenQuickSettings: (() -> Unit)?,
     expanded: Boolean,
     onToggleExpanded: () -> Unit,
@@ -592,7 +601,7 @@ fun CoverControls(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             FloatingButtons(
-                floatingActions(controls, others, romanizeAvailable, romanized, onToggleRomanize, onOpenSettings, onOpenLyricsManager, onOpenQuickSettings, expanded, onToggleExpanded, onSwapSide, showResync, showExpand, onOpenQueue = onOpenQueue, onEnterPip = onEnterPip),
+                floatingActions(controls, others, romanizeAvailable, romanized, onToggleRomanize, onOpenSettings, onOpenLyricsManager, onOpenQuickSettings, expanded, onToggleExpanded, onSwapSide, showResync, showExpand, onOpenQueue = onOpenQueue, onOpenSource = onOpenSource, onEnterPip = onEnterPip),
                 side * 0.88f, minSize = COVER_BUTTON_MIN, maxSize = COVER_BUTTON_MAX, minGap = COVER_BUTTON_GAP, maxGap = SpicySpacing.S3,
             )
             Spacer(Modifier.weight(1f))

@@ -127,6 +127,8 @@ class AppSettings(private val prefs: SharedPreferences) {
     var lyricsManagerButton by boolean("lyricsManagerButton", false)
     /** A floating button that opens the queue (it's always in quick settings); shown while the player shares one. */
     var queueButton by boolean("queueButton", false)
+    /** A floating button that opens the song's lyrics source choice (it's always in quick settings). */
+    var sourceButton by boolean("sourceButton", false)
     /** The player's own extra actions (like, shuffle modes, …) as floating buttons. */
     var playerButtons by boolean("playerButtons", false)
     var romanizeButton by boolean("romanizeButton", true)

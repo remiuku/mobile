@@ -142,6 +142,7 @@ import com.tx24.spicyplayer.ui.components.SpicyModalNotes
 import com.tx24.spicyplayer.ui.components.SpicyVersionRow
 import com.tx24.spicyplayer.ui.controls.ActionKind
 import com.tx24.spicyplayer.ui.controls.CoverControls
+import com.tx24.spicyplayer.ui.settings.QuickScreen
 import com.tx24.spicyplayer.ui.settings.QuickSettingsModal
 import com.tx24.spicyplayer.ui.components.LocalUiAnimations
 import com.tx24.spicyplayer.ui.controls.LyricsControls
@@ -529,7 +530,7 @@ private fun LyricsApp(
     var showSettings by remember { mutableStateOf(false) }
     var showLyricsManager by remember { mutableStateOf(false) }
     var showQuickSettings by remember { mutableStateOf(false) }
-    var quickOnQueue by remember { mutableStateOf(false) }
+    var quickStart by remember { mutableStateOf(QuickScreen.Main) }
     var showSpotifySearch by remember { mutableStateOf(false) }
     // Leaving the app only shrinks the lyrics when nothing else is half done in front of them.
     val pipAllowed = settings.autoPip && state.accessGranted && !showIntro && !showSettings && !showLyricsManager &&
@@ -750,9 +751,11 @@ private fun LyricsApp(
                 )
                 val onEnterPipButton = onEnterPip.takeIf { settings.pipButton }
                 val onOpenLyricsManager = if (settings.lyricsManagerButton) ({ showLyricsManager = true }) else null
-                val onOpenQuickSettings = if (settings.quickSettingsButton) ({ quickOnQueue = false; showQuickSettings = true }) else null
+                val onOpenQuickSettings = if (settings.quickSettingsButton) ({ quickStart = QuickScreen.Main; showQuickSettings = true }) else null
                 // The queue's own button opens quick settings on its queue screen.
-                val onOpenQueue = if (settings.queueButton && state.queue.isNotEmpty()) ({ quickOnQueue = true; showQuickSettings = true }) else null
+                val onOpenQueue = if (settings.queueButton && state.queue.isNotEmpty()) ({ quickStart = QuickScreen.Queue; showQuickSettings = true }) else null
+                // So does the source's, on its list of sources, while there's a song to choose for.
+                val onOpenSource = if (settings.sourceButton && state.localLyricsKey != null) ({ quickStart = QuickScreen.Source; showQuickSettings = true }) else null
                 val romanizeButton = romanizationAvailable && settings.romanizeButton
                 // Expanded, it's the only way back to the lyrics, so it stays.
                 val expandButton = settings.expandButton || headerExpanded
@@ -875,6 +878,7 @@ private fun LyricsApp(
                                     onOpenSettings = { showSettings = true },
                                     onOpenLyricsManager = onOpenLyricsManager,
                                     onOpenQueue = onOpenQueue,
+                                    onOpenSource = onOpenSource,
                                     onOpenQuickSettings = onOpenQuickSettings,
                                     onEnterPip = onEnterPipButton,
                                     expanded = headerExpanded,
@@ -909,6 +913,7 @@ private fun LyricsApp(
                         onOpenSettings = { showSettings = true },
                         onOpenLyricsManager = onOpenLyricsManager,
                         onOpenQueue = onOpenQueue,
+                        onOpenSource = onOpenSource,
                         onOpenQuickSettings = onOpenQuickSettings,
                         onEnterPip = onEnterPipButton,
                         expanded = headerExpanded,
@@ -1004,7 +1009,7 @@ private fun LyricsApp(
             viewModel = viewModel,
             settings = settings,
             backdrop = backdrop,
-            startOnQueue = quickOnQueue,
+            startOn = quickStart,
             onDismiss = { showQuickSettings = false },
         )
 
