@@ -23,6 +23,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
+import coil.Coil
+import coil.ImageLoader
+import com.tx24.spicyplayer.network.data.counted
+import okhttp3.OkHttpClient
 import com.tx24.spicyplayer.haptics.HapticPlayer
 import com.tx24.spicyplayer.haptics.ProvideTouchHaptics
 import com.tx24.spicyplayer.haptics.playMusicHaptics
@@ -202,6 +206,9 @@ import com.tx24.spicyplayer.analytics.lyricsOutcome
 import com.tx24.spicyplayer.ui.controls.ControlsRevealGuard
 import com.tx24.spicyplayer.ui.controls.LocalControlsRevealGuard
 
+/** Whether Coil's loader has been swapped for the counted one ([LyricsActivity.countImageDownloads]). */
+private var imageLoaderSet = false
+
 /**
  * The lyrics screen. Not named MainActivity: that name belongs to the launcher entry (an alias in
  * the manifest), so home-screen icons pinned before the icon choice existed keep working.
@@ -231,6 +238,7 @@ class LyricsActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         UsageStats.init(this)
+        countImageDownloads()
         enableEdgeToEdge()
         applySystemBars()
         if (pipSupported) {
@@ -280,6 +288,14 @@ class LyricsActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    /** Covers and artist images go through Coil's own client: counted like the rest. Once per process. */
+    private fun countImageDownloads() {
+        if (imageLoaderSet) return
+        imageLoaderSet = true
+        val context = applicationContext
+        Coil.setImageLoader { ImageLoader.Builder(context).okHttpClient { OkHttpClient.Builder().counted().build() }.build() }
     }
 
     /** Shrinks the lyrics into the floating window (the button's way in). */

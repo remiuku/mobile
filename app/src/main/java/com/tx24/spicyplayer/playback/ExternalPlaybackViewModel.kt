@@ -40,6 +40,8 @@ import com.tx24.spicyplayer.network.data.ProviderResult
 import com.tx24.spicyplayer.network.data.RemoteLyricsResolution
 import com.tx24.spicyplayer.network.data.RemoteLyricsSelection
 import com.tx24.spicyplayer.network.data.TrackNameCleaner
+import com.tx24.spicyplayer.network.data.TrafficCounter
+import com.tx24.spicyplayer.network.data.counted
 import com.tx24.spicyplayer.network.data.measuredQuality
 import com.tx24.spicyplayer.network.data.SpicyLyricsKey
 import com.tx24.spicyplayer.translation.*
@@ -238,7 +240,7 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
     private val translationCache = DiskTranslationCache(File(application.cacheDir, "translations"))
     private val translationEngine = TranslationEngine(SongLanguageDetector { null }, translationCache)
     private val translationSession = TranslationSession()
-    private val translationClient = okhttp3.OkHttpClient.Builder().callTimeout(45, java.util.concurrent.TimeUnit.SECONDS)
+    private val translationClient = okhttp3.OkHttpClient.Builder().counted().callTimeout(45, java.util.concurrent.TimeUnit.SECONDS)
         .followRedirects(false).followSslRedirects(false).build()
     private var translationJob: Job? = null
     private var translatedDocument: String? = null
@@ -499,6 +501,8 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
     private var lastPeriodicCheckMs = 0L
     /** Whether the lyrics screen is started. The ticker only polls while it is. */
     private val uiStarted = MutableStateFlow(true)
+    /** The song changed while the screen was stopped: its lookups wait for the screen to return. */
+    private var lookupDeferred = false
     /** When the last fresh report arrived. */
     private var lastReportAt = Long.MIN_VALUE / 2
     /** The song changed before its first report: that report re-anchors the clock outright. */
@@ -514,7 +518,7 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
     private var seekRefusedBy: String? = null
 
     private val spotifyExtras = SharedSpotify.extras(application.cacheDir)
-    private val itunesYear = ItunesReleaseYear(okhttp3.OkHttpClient())
+    private val itunesYear = ItunesReleaseYear(okhttp3.OkHttpClient.Builder().counted().build())
     private var extrasWanted = TrackExtrasWanted()
     /** What the screen asks for; [extrasWanted] adds the beats while calibrating. */
     private var screenExtrasWanted = TrackExtrasWanted()
@@ -1401,6 +1405,8 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
      * the next lookup, so it never competes with the song on screen. Cached entries cost nothing.
      */
     private fun warmAhead() {
+        // A lookup that finished after the app was left doesn't start fetching ahead.
+        if (!uiStarted.value) return
         val session = controller ?: return
         val queue = session.queue.orEmpty()
         val at = queue.indexOfFirst { it.queueId == session.playbackState?.activeQueueItemId }
@@ -1776,10 +1782,16 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
                     ?: metadata?.description?.iconUri?.toString()
             } else mutableState.value.artworkUri,
         )
-        if (lyricsChanged) {
+        if (lyricsChanged && !uiStarted.value) {
+            // Nobody sees the lyrics with the app in the background, and a lookup per song (every
+            // source, the extras, Genius, the songs ahead) kept the radio and CPU busy for nothing.
+            // The song that's playing when the screen comes back is looked up then.
+            extrasJob?.cancel()
+            lookupDeferred = true
+        } else if (lyricsChanged) {
             loadExtras()
             loadLyrics(settle = true)
-        } else if (metadataChanged && metadata != null) {
+        } else if (metadataChanged && metadata != null && !lookupDeferred) {
             rematchWithLength(metadata)
         }
     }
@@ -1904,6 +1916,15 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
 
     fun setUiStarted(started: Boolean) {
         uiStarted.value = started
+        TrafficCounter.background = !started
+        if (!started) {
+            // Songs fetched ahead are for someone looking; nobody is now.
+            warmJob?.cancel()
+        } else if (lookupDeferred) {
+            lookupDeferred = false
+            loadExtras()
+            loadLyrics()
+        }
     }
 
     private fun startTicker() = viewModelScope.launch {

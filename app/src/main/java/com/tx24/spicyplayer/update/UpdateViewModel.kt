@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.tx24.spicyplayer.network.data.counted
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
@@ -46,7 +47,7 @@ data class UpdateUiState(
  */
 class UpdateViewModel(application: Application) : AndroidViewModel(application) {
     private val prefs = application.getSharedPreferences("updates", Context.MODE_PRIVATE)
-    private val http = OkHttpClient()
+    private val http = OkHttpClient.Builder().counted().build()
     private val mutableState = MutableStateFlow(UpdateUiState())
     val state: StateFlow<UpdateUiState> = mutableState.asStateFlow()
     private var job: Job? = null

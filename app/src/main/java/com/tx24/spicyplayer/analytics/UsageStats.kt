@@ -9,6 +9,7 @@ import com.tx24.spicyplayer.ui.settings.AppSettings
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.MediaType.Companion.toMediaType
+import com.tx24.spicyplayer.network.data.counted
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -43,7 +44,7 @@ object UsageStats {
     private val sends: Boolean get() = available && BuildConfig.USAGE_STATS
 
     private val http by lazy {
-        OkHttpClient.Builder().callTimeout(15, TimeUnit.SECONDS).build()
+        OkHttpClient.Builder().counted().callTimeout(15, TimeUnit.SECONDS).build()
     }
 
     /** The app's context, for counting from places that have none at hand. */

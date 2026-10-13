@@ -15,6 +15,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import com.tx24.spicyplayer.BuildConfig
+import com.tx24.spicyplayer.network.data.TrafficCounter
 import com.tx24.spicyplayer.playback.PlayerUiState
 import com.tx24.spicyplayer.playback.SyncTrace
 import com.tx24.spicyplayer.playback.TranslationTrace
@@ -57,6 +58,12 @@ internal fun debugReport(context: Context, state: PlayerUiState): String {
             appendLine()
             appendLine("Translation (newest last):")
             translation.forEach { appendLine("  $it") }
+        }
+        val traffic = TrafficCounter.lines()
+        if (traffic.isNotEmpty()) {
+            appendLine()
+            appendLine("Downloaded since start:")
+            traffic.forEach { appendLine("  $it") }
         }
         val sync = SyncTrace.lines(SystemClock.elapsedRealtime())
         if (sync.isNotEmpty()) {

@@ -28,6 +28,7 @@ internal class NextLyricsBackend(context: Context, clientKey: String) {
     private val diskCache = File(context.cacheDir, "lyrics")
     private val preferences = context.getSharedPreferences("lyrics_sources", Context.MODE_PRIVATE)
     private val client = OkHttpClient.Builder()
+        .counted()
         .connectTimeout(8, TimeUnit.SECONDS)
         .readTimeout(12, TimeUnit.SECONDS)
         .build()

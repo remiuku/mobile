@@ -27,12 +27,17 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.database.StandaloneDatabaseProvider
+import androidx.media3.datasource.DataSource
+import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.TransferListener
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.hls.HlsMediaSource
+import com.tx24.spicyplayer.network.data.TrafficCounter
+import com.tx24.spicyplayer.network.data.counted
 import com.tx24.spicyplayer.network.motion.MotionCoverFinder
 import java.io.File
 import java.util.concurrent.TimeUnit
@@ -139,6 +144,7 @@ private object MotionCovers {
     fun finder(context: Context): MotionCoverFinder = finder ?: synchronized(this) {
         finder ?: MotionCoverFinder(
             client = OkHttpClient.Builder()
+                .counted()
                 .connectTimeout(8, TimeUnit.SECONDS)
                 .readTimeout(15, TimeUnit.SECONDS)
                 .build(),
@@ -155,7 +161,7 @@ private object MotionCovers {
     }
 
     fun player(context: Context, url: String): ExoPlayer {
-        val upstream = DefaultHttpDataSource.Factory().setUserAgent(BROWSER_UA)
+        val upstream = DefaultHttpDataSource.Factory().setUserAgent(BROWSER_UA).setTransferListener(CountedTransfers)
         val source = CacheDataSource.Factory()
             .setCache(cache(context))
             .setUpstreamDataSourceFactory(upstream)
@@ -186,6 +192,17 @@ private object MotionCovers {
     private const val MAX_VIDEO_BITRATE = 3_600_000
     private const val BROWSER_UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 " +
         "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+}
+
+/** Counts what the cover videos download (cache hits aren't network, so don't count). */
+@OptIn(UnstableApi::class)
+private object CountedTransfers : TransferListener {
+    override fun onTransferInitializing(source: DataSource, dataSpec: DataSpec, isNetwork: Boolean) = Unit
+    override fun onTransferStart(source: DataSource, dataSpec: DataSpec, isNetwork: Boolean) = Unit
+    override fun onBytesTransferred(source: DataSource, dataSpec: DataSpec, isNetwork: Boolean, bytesTransferred: Int) {
+        if (isNetwork) TrafficCounter.add(dataSpec.uri.host, bytesTransferred.toLong())
+    }
+    override fun onTransferEnd(source: DataSource, dataSpec: DataSpec, isNetwork: Boolean) = Unit
 }
 
 /** Forgets a remembered stream that failed, so the next song change searches afresh. */

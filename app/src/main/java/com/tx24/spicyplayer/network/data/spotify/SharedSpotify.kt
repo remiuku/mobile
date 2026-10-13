@@ -3,6 +3,7 @@ package com.tx24.spicyplayer.network.data.spotify
 import com.google.gson.Gson
 import java.io.File
 import java.util.concurrent.TimeUnit
+import com.tx24.spicyplayer.network.data.counted
 import okhttp3.OkHttpClient
 
 /**
@@ -11,6 +12,7 @@ import okhttp3.OkHttpClient
  */
 object SharedSpotify {
     private val client = OkHttpClient.Builder()
+        .counted()
         .connectTimeout(8, TimeUnit.SECONDS)
         .readTimeout(12, TimeUnit.SECONDS)
         .build()
