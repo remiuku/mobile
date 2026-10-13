@@ -44,17 +44,6 @@ class LyricsBlendsTest {
     }
 
     @Test
-    fun `a blend sits just above its highest-ranked donor`() {
-        val order = listOf("spicy", "netease", "kugou", "qq_music", "lrclib")
-        val chain = LyricsBlends.chain(order, LyricsBlends.ALL)
-        assertEquals(
-            listOf("spicy", "blend_netease_kugou", "blend_netease_qq", "blend_netease", "netease",
-                "blend_kugou", "kugou", "blend_qq", "qq_music", "lrclib"),
-            chain,
-        )
-    }
-
-    @Test
     fun `a line-synced base gets the donor's word timing in its own words`() = runBlocking {
         val result = source().resolveLyrics(request, blendOn)
             as RemoteLyricsResolution.Found
@@ -87,28 +76,27 @@ class LyricsBlendsTest {
         assertEquals(ProviderAttemptOutcome.SKIPPED, result.attempts.first { it.sourceId == "blend_netease" }.outcome)
     }
 
-    /** The NetEase blend switched on in Chinese services, below the base. */
+    /** The NetEase blend switched on in NetEase, below the base. */
     private val blendOn = RemoteLyricsPolicy(
-        sourceOrder = listOf("spicy", LyricsOrigins.CHINESE, LyricsOrigins.LRCLIB),
-        pairs = mapOf(SourcePair(LyricsOrigins.CHINESE, "blend_netease").key to true),
+        sourceOrder = listOf("spicy", LyricsOrigins.NETEASE, LyricsOrigins.LRCLIB),
+        pairs = mapOf(SourcePair(LyricsOrigins.NETEASE, "blend_netease").key to true),
     )
 
     @Test
-    fun `each blend sits in Chinese services just above its highest donor`() {
-        val chinese = LyricsOrigins.BUILT_IN.single { it.id == LyricsOrigins.CHINESE }.providerIds
-        assertEquals(
-            listOf("blend_kugou", "blend_netease_kugou", "kugou", "blend_netease_qq", "blend_netease", "netease",
-                "blend_qq", "qq_music", "kuwo", "lrcmux"),
-            chinese,
-        )
+    fun `each blend stands in the source its word timing comes from, the filling ones first`() {
+        fun providers(id: String) = LyricsOrigins.BUILT_IN.single { it.id == id }.providerIds
+        assertEquals(listOf("blend_kugou", "kugou", "lrcmux"), providers(LyricsOrigins.KUGOU))
+        assertEquals(listOf("blend_netease_kugou", "blend_netease_qq", "blend_netease", "netease"), providers(LyricsOrigins.NETEASE))
+        assertEquals(listOf("blend_qq", "qq_music"), providers(LyricsOrigins.QQ_MUSIC))
     }
 
     @Test
-    fun `a blend is only live while every donor is switched on in Chinese services`() {
+    fun `a blend is only live while every donor is asked`() {
         val providers = listOf("kugou", "netease").map { LyricsSourceDescriptor(it, it, 1, setOf(LyricsCapability.WORD_SYNC)) }
-        val blend = SourcePair(LyricsOrigins.CHINESE, "blend_netease_kugou").key to true
-        assertEquals(listOf("blend_netease_kugou"), SourceRanking(providers, RemoteLyricsPolicy(pairs = mapOf(blend))).liveBlends.map { it.id })
-        val kugouOff = SourcePair(LyricsOrigins.CHINESE, "kugou").key to false
+        val blend = SourcePair(LyricsOrigins.NETEASE, "blend_netease_kugou").key to true
+        val on = SourcePair(LyricsOrigins.KUGOU, "kugou").key to true
+        assertEquals(listOf("blend_netease_kugou"), SourceRanking(providers, RemoteLyricsPolicy(pairs = mapOf(blend, on))).liveBlends.map { it.id })
+        val kugouOff = SourcePair(LyricsOrigins.KUGOU, "kugou").key to false
         assertEquals(emptyList<String>(), SourceRanking(providers, RemoteLyricsPolicy(pairs = mapOf(blend, kugouOff))).liveBlends.map { it.id })
     }
 

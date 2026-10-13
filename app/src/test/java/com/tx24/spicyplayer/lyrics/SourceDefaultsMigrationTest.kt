@@ -114,11 +114,11 @@ class SourceDefaultsMigrationTest {
         assertEquals(LyricsOrigins.LRCLIB, policy.sourceOrder.first())
         assertEquals(LyricsOrigins.SPOTIFY, policy.sourceOrder.last())
         assertEquals(policy.sourceOrder.joinToString(","), prefs.values[NextLyricsBackend.SOURCE_ORDER])
-        assertTrue(SourcePair(LyricsOrigins.CHINESE, "blend_qq").key in (prefs.values[NextLyricsBackend.PAIRS_ON] as Set<*>))
-        assertTrue(SourcePair(LyricsOrigins.CHINESE, "kugou").key in (prefs.values[NextLyricsBackend.PAIRS_OFF] as Set<*>))
+        assertTrue(SourcePair(LyricsOrigins.QQ_MUSIC, "blend_qq").key in (prefs.values[NextLyricsBackend.PAIRS_ON] as Set<*>))
+        assertTrue(SourcePair(LyricsOrigins.KUGOU, "kugou").key in (prefs.values[NextLyricsBackend.PAIRS_OFF] as Set<*>))
         // The old keys stay, but are no longer read: a change made since sticks.
         assertEquals("lrclib,spicy_lyrics", prefs.values["order"])
-        val moved = LyricsSourceSettings.move(policy, providers, LyricsOrigins.LRCLIB, 1)
+        val moved = LyricsSourceSettings.reorder(policy, providers, policy.sourceOrder.drop(1) + LyricsOrigins.LRCLIB)
         NextLyricsBackend.writePolicy(prefs, moved)
         assertEquals(moved, NextLyricsBackend.readPolicy(prefs, providers))
     }

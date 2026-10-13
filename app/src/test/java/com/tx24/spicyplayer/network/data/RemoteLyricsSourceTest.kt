@@ -86,13 +86,13 @@ class RemoteLyricsSourceTest {
     }
 
     @Test
-    fun `LRCMux relaying KuGou ranks in Chinese services' place`() = runBlocking {
+    fun `LRCMux relaying KuGou ranks in KuGou's place`() = runBlocking {
         val source = source(
             provider("kugou", 1, result = ProviderResult.Miss),
             provider("amll_ttml_db", 2, result = ProviderResult.Hit(wordTtml("amll"))),
             provider("lrcmux", 3, result = ProviderResult.Hit(from("KuGou", by = "LRCMux"))),
         )
-        val order = RemoteLyricsPolicy(sourceOrder = listOf(LyricsOrigins.CHINESE, LyricsOrigins.AMLL))
+        val order = RemoteLyricsPolicy(sourceOrder = listOf(LyricsOrigins.KUGOU, LyricsOrigins.AMLL))
 
         val result = source.resolveLyrics(request, order) as RemoteLyricsResolution.Found
 
@@ -107,8 +107,8 @@ class RemoteLyricsSourceTest {
             provider("amll_ttml_db", 3, result = ProviderResult.Hit(synced("amll"))),
         )
         val policy = RemoteLyricsPolicy(
-            sourceOrder = listOf(LyricsOrigins.CHINESE, LyricsOrigins.AMLL),
-            disabledSourceIds = setOf(LyricsOrigins.CHINESE),
+            sourceOrder = listOf(LyricsOrigins.KUGOU, LyricsOrigins.AMLL),
+            disabledSourceIds = setOf(LyricsOrigins.KUGOU),
         )
 
         val result = source.resolveLyrics(request, policy) as RemoteLyricsResolution.Found
@@ -116,8 +116,8 @@ class RemoteLyricsSourceTest {
         assertEquals("amll_ttml_db", result.selection.source.id)
         val lrcmux = result.attempts.single { it.sourceId == "lrcmux" }
         assertEquals(ProviderAttemptOutcome.FILTERED, lrcmux.outcome)
-        assertEquals("Switched off for Chinese services", lrcmux.message)
-        // Chinese services is off, so Kugou is not asked at all.
+        assertEquals("Switched off for KuGou", lrcmux.message)
+        // KuGou is off, so Kugou is not asked at all.
         assertEquals(ProviderAttemptOutcome.DISABLED, result.attempts.single { it.sourceId == "kugou" }.outcome)
     }
 

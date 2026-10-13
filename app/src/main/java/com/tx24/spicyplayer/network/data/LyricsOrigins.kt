@@ -37,7 +37,10 @@ object LyricsOrigins {
     const val LRC_RED_AI = "lrc_red_ai"
     const val UNISON = "unison"
     const val SPOTIFY = "spotify"
-    const val CHINESE = "chinese_services"
+    const val KUGOU = "kugou"
+    const val NETEASE = "netease"
+    const val QQ_MUSIC = "qq_music"
+    const val KUWO = "kuwo"
     const val LRCLIB = "lrclib"
     const val GENIUS = "genius"
     const val YOUTUBE = "youtube"
@@ -45,8 +48,8 @@ object LyricsOrigins {
     /** The origin name lrc.red and BiniLyrics give the syncs lrc.red makes itself. */
     const val LRC_RED_AI_NAME = "lrc.red AI"
 
-    private val WORD_LINE = listOf(RemoteLyricsQuality.WORD_SYNCED, RemoteLyricsQuality.LINE_SYNCED)
-    private val ALL_TYPES = WORD_LINE + RemoteLyricsQuality.PLAIN
+    // Any source may give unsynced lyrics now and then, so each can have them switched off.
+    private val ALL_TYPES = listOf(RemoteLyricsQuality.WORD_SYNCED, RemoteLyricsQuality.LINE_SYNCED, RemoteLyricsQuality.PLAIN)
     private val LINE_PLAIN = listOf(RemoteLyricsQuality.LINE_SYNCED, RemoteLyricsQuality.PLAIN)
 
     private const val SPICY = RemoteLyricsSource.SPICY_ID
@@ -55,22 +58,30 @@ object LyricsOrigins {
     private const val BINI = "bini_lyrics"
     private const val LRCMUX = RemoteLyricsSource.LRCMUX_ID
 
-    /** The donors of the blends, in the order they rank in Chinese services. */
-    private val CHINESE_PROVIDERS = listOf("kugou", "netease", "qq_music", "kuwo", LRCMUX)
+    /**
+     * The blends whose word timing comes from [providerId]: they stand in its source, ahead of it,
+     * the ones that fill gaps from another source first.
+     */
+    private fun blendsTimedBy(providerId: String) = LyricsBlends.ALL.filter { it.timingSourceId == providerId }
+        .sortedBy { blend -> blend.spareSourceId?.let(FILLERS::indexOf) ?: FILLERS.size }
+        .map { it.id }
+
+    private val FILLERS = listOf("kugou", "netease", "qq_music")
 
     /** Every built-in source, in the order a fresh install has them. */
     val BUILT_IN: List<LyricsOrigin> = listOf(
-        LyricsOrigin(SPICY_COMMUNITY, "Spicy Lyrics community", listOf(SPICY, RMM), WORD_LINE,
+        LyricsOrigin(SPICY_COMMUNITY, "Spicy Lyrics community", listOf(SPICY, RMM), ALL_TYPES,
             RemoteLyricsSource.SPICY_OWN_ORIGINS),
-        LyricsOrigin(AMLL, "AMLL TTML DB", listOf(AMLL), WORD_LINE),
+        LyricsOrigin(AMLL, "AMLL TTML DB", listOf(AMLL), ALL_TYPES),
         LyricsOrigin(APPLE_MUSIC, "Apple Music", listOf(SPICY, RMM, LRC_RED, BINI), ALL_TYPES, setOf("Apple Music")),
         LyricsOrigin(UNISON, "Unison", listOf(UNISON), ALL_TYPES),
         LyricsOrigin(SPOTIFY, "Spotify", listOf(SPICY, RMM), ALL_TYPES, setOf("Spotify")),
-        // Each blend ranks just above its highest donor, as LyricsBlends.chain places it.
-        LyricsOrigin(CHINESE, "Chinese services", LyricsBlends.chain(CHINESE_PROVIDERS, LyricsBlends.ALL), WORD_LINE,
-            setOf("KuGou")),
+        LyricsOrigin(KUGOU, "KuGou", blendsTimedBy(KUGOU) + KUGOU + LRCMUX, ALL_TYPES, setOf("KuGou")),
+        LyricsOrigin(NETEASE, "NetEase", blendsTimedBy(NETEASE) + NETEASE, ALL_TYPES),
+        LyricsOrigin(QQ_MUSIC, "QQ Music", blendsTimedBy(QQ_MUSIC) + QQ_MUSIC, ALL_TYPES),
+        LyricsOrigin(KUWO, "Kuwo", listOf(KUWO), LINE_PLAIN),
         LyricsOrigin(LRCLIB, "LRCLIB", listOf(LRCLIB, LRCMUX), LINE_PLAIN, setOf("LRCLIB")),
-        LyricsOrigin(LRC_RED_AI, "lrc.red AI syncs", listOf(LRC_RED, BINI), WORD_LINE, setOf(LRC_RED_AI_NAME)),
+        LyricsOrigin(LRC_RED_AI, "lrc.red AI syncs", listOf(LRC_RED, BINI), ALL_TYPES, setOf(LRC_RED_AI_NAME)),
         LyricsOrigin(GENIUS, "Genius", listOf(GENIUS, LRCMUX), listOf(RemoteLyricsQuality.PLAIN), setOf("Genius")),
         LyricsOrigin(YOUTUBE, "YouTube", listOf("youtube_transcript", LRCMUX), LINE_PLAIN, setOf("YouTube Music")),
     )
@@ -135,11 +146,11 @@ class SourceRanking(providers: Collection<LyricsSourceDescriptor>, val policy: R
     fun pairOn(originId: String, providerId: String): Boolean = policy.pairs[SourcePair(originId, providerId).key]
         ?: (LyricsBlends.byId(providerId) == null && descriptors[providerId]?.defaultEnabled == true)
 
-    /** Switched on with its source, and for a blend, with every donor on in that source too. */
+    /** Switched on with its source, and for a blend, with every donor asked (live in a source of its own). */
     fun live(origin: LyricsOrigin, providerId: String): Boolean {
         if (providerId !in origin.providerIds || !sourceOn(origin.id) || !pairOn(origin.id, providerId)) return false
         val blend = LyricsBlends.byId(providerId) ?: return true
-        return blend.donorIds.all { live(origin, it) }
+        return blend.donorIds.all(::asked)
     }
 
     /** Whether [providerId] is asked: any of its switches is live. Blends are built, never asked. */

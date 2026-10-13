@@ -1,5 +1,6 @@
 package com.tx24.spicyplayer.ui.settings
 
+import androidx.compose.runtime.staticCompositionLocalOf
 import com.tx24.spicyplayer.ui.components.drawBrandMark
 import com.tx24.spicyplayer.ui.components.drawBrandRamp
 import com.tx24.spicyplayer.ui.components.rememberBrandGlyph
@@ -398,12 +399,17 @@ private fun Page(
             val animate = LocalUiAnimations.current
             val fade = remember { Animatable(if (animate) 0f else 1f) }
             LaunchedEffect(Unit) { if (animate) fade.animateTo(1f, tween(SpicyMotion.FAST_MS, easing = SpicyMotion.Standard)) }
-            Column(Modifier.fillMaxWidth().graphicsLayer { alpha = fade.value }, content = content)
+            CompositionLocalProvider(LocalPageScroll provides scroll) {
+                Column(Modifier.fillMaxWidth().graphicsLayer { alpha = fade.value }, content = content)
+            }
         } else {
             skeleton()
         }
     }
 }
+
+/** The open page's scroll, for content that scrolls it itself (a dragged source card at the edges). */
+internal val LocalPageScroll = staticCompositionLocalOf<ScrollState?> { null }
 
 @Composable
 private fun HomeSkeleton() {

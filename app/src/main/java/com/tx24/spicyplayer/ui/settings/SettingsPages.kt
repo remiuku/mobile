@@ -1,5 +1,40 @@
 package com.tx24.spicyplayer.ui.settings
 
+import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.material.icons.rounded.DragIndicator
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.composed
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onPlaced
+import androidx.compose.ui.layout.positionInParent
+import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.zIndex
+import com.tx24.spicyplayer.ui.components.LocalUiAnimations
+import com.tx24.spicyplayer.ui.theme.SpicyMotion
+import java.util.Collections
+import kotlin.math.abs
 import com.tx24.spicyplayer.ui.background.LEGACY_BLUR_DP
 import com.tx24.spicyplayer.ui.components.ChromeTheme
 import androidx.compose.material.icons.rounded.Apps
@@ -804,29 +839,7 @@ internal fun SourcesContent(state: PlayerUiState, viewModel: ExternalPlaybackVie
             modifier = Modifier.padding(start = 2.dp, end = 2.dp, bottom = SpicySpacing.S3),
         )
     }
-    var expanded by remember { mutableStateOf(emptySet<String>()) }
-    Column(verticalArrangement = Arrangement.spacedBy(SpicySpacing.S2)) {
-        ranking.origins.forEachIndexed { index, origin ->
-            val summary = origin.summary(ranking)
-            Searchable("Sources", origin.displayName, summary, *origin.providerIds.map { names[it] ?: it }.toTypedArray()) {
-                SourceCard(
-                    rank = index + 1,
-                    origin = origin,
-                    summary = summary,
-                    ranking = ranking,
-                    providerName = { names[it] ?: it },
-                    expanded = origin.id in expanded,
-                    canMoveUp = index > 0,
-                    canMoveDown = index < ranking.origins.lastIndex,
-                    onExpand = { expanded = if (origin.id in expanded) expanded - origin.id else expanded + origin.id },
-                    onEnabledChange = { viewModel.setSourceEnabled(origin.id, it) },
-                    onProviderChange = { provider, on -> viewModel.setProviderEnabled(origin.id, provider, on) },
-                    onSyncTypesChange = { viewModel.setSourceSyncTypes(origin.id, it) },
-                    onMove = { viewModel.moveSource(origin.id, it) },
-                )
-            }
-        }
-    }
+    SourceList(ranking, names, viewModel)
     CustomSourcesSection(state, viewModel)
     SettingsSection("Reading lyrics") {
         ToggleRow(
@@ -878,9 +891,161 @@ internal fun SourcesContent(state: PlayerUiState, viewModel: ExternalPlaybackVie
 }
 
 /**
- * A source's card: the rank in a ring, the name and what it gives, then up, down and the switch.
- * Tapping the card opens it to the providers that fetch the source, each with its own switch, and
- * the sync types it may give. A switched-off source dims.
+ * The sources as cards, in the user's order, reordered by dragging a card's handle: the card
+ * follows the finger, the others make way, the page scrolls at its edges, and the order is saved
+ * when it's dropped. Tapping a card opens it.
+ */
+@Composable
+private fun SourceList(ranking: SourceRanking, names: Map<String, String>, viewModel: ExternalPlaybackViewModel) {
+    var expanded by remember { mutableStateOf(emptySet<String>()) }
+    val byId = ranking.origins.associateBy { it.id }
+    // While a card is dragged: the order shown, which card, and how far it is from its slot.
+    var dragOrder by remember { mutableStateOf<List<String>?>(null) }
+    var dragged by remember { mutableStateOf<String?>(null) }
+    var dragOffset by remember { mutableFloatStateOf(0f) }
+    val heights = remember { mutableMapOf<String, Float>() }
+    val tops = remember { mutableMapOf<String, Float>() }
+    val density = LocalDensity.current
+    val gap = with(density) { SpicySpacing.S2.toPx() }
+    val edge = with(density) { DRAG_EDGE.toPx() }
+    val windowHeight = LocalWindowInfo.current.containerSize.height.toFloat()
+    val scroll = LocalPageScroll.current
+    val haptics = LocalHapticFeedback.current
+    val animate = LocalUiAnimations.current
+    val shown = dragOrder ?: ranking.origins.map { it.id }
+
+    // Past half of a neighbour, the dragged card takes its place; its offset keeps it under the finger.
+    fun settle() {
+        val id = dragged ?: return
+        val order = (dragOrder ?: return).toMutableList()
+        var i = order.indexOf(id)
+        var moved = false
+        while (true) {
+            val toward = if (dragOffset > 0f) i + 1 else i - 1
+            if (toward !in order.indices) break
+            val room = (heights[order[toward]] ?: break) + gap
+            if (abs(dragOffset) <= room / 2f) break
+            Collections.swap(order, i, toward)
+            dragOffset += if (toward > i) -room else room
+            i = toward
+            moved = true
+        }
+        if (moved) {
+            dragOrder = order
+            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        }
+    }
+
+    // Near the top or bottom of the screen, the page scrolls under the dragged card.
+    LaunchedEffect(dragged) {
+        val id = dragged ?: return@LaunchedEffect
+        if (scroll == null || windowHeight <= 0f) return@LaunchedEffect
+        while (dragged == id) {
+            val top = (tops[id] ?: 0f) + dragOffset
+            val bottom = top + (heights[id] ?: 0f)
+            val speed = when {
+                top < edge -> -(edge - top) / edge
+                bottom > windowHeight - edge -> (bottom - windowHeight + edge) / edge
+                else -> 0f
+            }.coerceIn(-1f, 1f) * DRAG_SCROLL_PX
+            if (speed != 0f) {
+                dragOffset += scroll.scrollBy(speed)
+                settle()
+            }
+            withFrameNanos { }
+        }
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(SpicySpacing.S2)) {
+        shown.forEachIndexed { index, id ->
+            val origin = byId[id] ?: return@forEachIndexed
+            val summary = origin.summary(ranking)
+            val isDragged = dragged == id
+            key(id) {
+                Searchable("Sources", origin.displayName, summary, *origin.providerIds.map { names[it] ?: it }.toTypedArray()) {
+                    SourceCard(
+                        rank = index + 1,
+                        origin = origin,
+                        summary = summary,
+                        ranking = ranking,
+                        providerName = { names[it] ?: it },
+                        expanded = id in expanded,
+                        dragged = isDragged,
+                        onExpand = { expanded = if (id in expanded) expanded - id else expanded + id },
+                        onEnabledChange = { viewModel.setSourceEnabled(id, it) },
+                        onProviderChange = { provider, on -> viewModel.setProviderEnabled(id, provider, on) },
+                        onSyncTypesChange = { viewModel.setSourceSyncTypes(id, it) },
+                        handle = Modifier.pointerInput(id) {
+                            detectDragGestures(
+                                onDragStart = {
+                                    dragOrder = shown
+                                    dragged = id
+                                    dragOffset = 0f
+                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                },
+                                onDragEnd = {
+                                    val order = dragOrder
+                                    dragged = null
+                                    dragOffset = 0f
+                                    dragOrder = null
+                                    if (order != null && order != ranking.origins.map { it.id }) viewModel.setSourceOrder(order)
+                                },
+                                onDragCancel = {
+                                    dragged = null
+                                    dragOffset = 0f
+                                    dragOrder = null
+                                },
+                            ) { change, amount ->
+                                change.consume()
+                                dragOffset += amount.y
+                                settle()
+                            }
+                        },
+                        modifier = Modifier
+                            // Where the card's slot is, read before the drag moves it.
+                            .onGloballyPositioned {
+                                heights[id] = it.size.height.toFloat()
+                                tops[id] = it.positionInWindow().y
+                            }
+                            .glidesToPlace(enabled = animate && dragged != null && !isDragged)
+                            .zIndex(if (isDragged) 1f else 0f)
+                            .graphicsLayer {
+                                if (isDragged) {
+                                    translationY = dragOffset
+                                    scaleX = DRAGGED_SCALE
+                                    scaleY = DRAGGED_SCALE
+                                }
+                            },
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** A card the reorder moved glides from where it was instead of jumping. */
+private fun Modifier.glidesToPlace(enabled: Boolean): Modifier = composed {
+    val shift = remember { Animatable(0f) }
+    var lastY by remember { mutableStateOf<Float?>(null) }
+    val scope = rememberCoroutineScope()
+    val enabledNow by rememberUpdatedState(enabled)
+    onPlaced { coordinates ->
+        val y = coordinates.positionInParent().y
+        val previous = lastY
+        lastY = y
+        if (enabledNow && previous != null && previous != y) {
+            scope.launch {
+                shift.snapTo(shift.value + previous - y)
+                shift.animateTo(0f, tween(SpicyMotion.FAST_MS, easing = SpicyMotion.Standard))
+            }
+        }
+    }.graphicsLayer { translationY = shift.value }
+}
+
+/**
+ * A source's card: the rank in a ring, the name and what it gives, a chevron, the switch and the
+ * drag handle. Tapping the card opens it to the providers that fetch the source and the sync
+ * types it may give.
  */
 @Composable
 private fun SourceCard(
@@ -890,21 +1055,27 @@ private fun SourceCard(
     ranking: SourceRanking,
     providerName: (String) -> String,
     expanded: Boolean,
-    canMoveUp: Boolean,
-    canMoveDown: Boolean,
+    dragged: Boolean,
     onExpand: () -> Unit,
     onEnabledChange: (Boolean) -> Unit,
     onProviderChange: (String, Boolean) -> Unit,
     onSyncTypesChange: (Set<RemoteLyricsQuality>) -> Unit,
-    onMove: (Int) -> Unit,
+    handle: Modifier,
+    modifier: Modifier = Modifier,
 ) {
     val enabled = LyricsSourceSettings.isOn(ranking, origin.id)
-    Column(Modifier.fillMaxWidth().outlinedCard(tinted = true)) {
+    val animate = LocalUiAnimations.current
+    val chevron by animateFloatAsState(
+        if (expanded) 180f else 0f,
+        if (animate) tween(SpicyMotion.FAST_MS, easing = SpicyMotion.Standard) else snap(),
+        label = "sourceChevron",
+    )
+    Column(modifier.fillMaxWidth().outlinedCard(tinted = true).alpha(if (dragged) DRAGGED_ALPHA else 1f)) {
         Row(
             Modifier
                 .fillMaxWidth()
                 .clickable(remember { MutableInteractionSource() }, indication = null, role = Role.Button, onClick = onExpand)
-                .padding(SpicySpacing.S3),
+                .padding(start = SpicySpacing.S3, top = SpicySpacing.S3, bottom = SpicySpacing.S3, end = SpicySpacing.S1),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(SpicySpacing.S2),
         ) {
@@ -919,21 +1090,21 @@ private fun SourceCard(
             }
             RowLabel(origin.displayName, summary, Modifier.weight(1f).alpha(if (enabled) 1f else DISABLED_ALPHA))
             Icon(
-                if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                Icons.Rounded.ExpandMore,
                 if (expanded) "Close ${origin.displayName}" else "Open ${origin.displayName}",
                 tint = SpicyColors.TextSecondary,
-                modifier = Modifier.size(20.dp),
+                modifier = Modifier.size(20.dp).rotate(chevron),
             )
-            SpicyIconButton(onClick = { onMove(-1) }, enabled = canMoveUp) {
-                Icon(Icons.Rounded.KeyboardArrowUp, "Move ${origin.displayName} up", tint = SpicyColors.TextPrimary, modifier = Modifier.size(20.dp))
-            }
-            SpicyIconButton(onClick = { onMove(1) }, enabled = canMoveDown) {
-                Icon(Icons.Rounded.KeyboardArrowDown, "Move ${origin.displayName} down", tint = SpicyColors.TextPrimary, modifier = Modifier.size(20.dp))
-            }
-            Spacer(Modifier.width(2.dp))
             SpicyToggle(enabled, onCheckedChange = onEnabledChange)
+            Box(handle.size(32.dp, 40.dp), contentAlignment = Alignment.Center) {
+                Icon(Icons.Rounded.DragIndicator, "Drag ${origin.displayName} to reorder", tint = SpicyColors.TextTertiary, modifier = Modifier.size(20.dp))
+            }
         }
-        if (expanded) {
+        AnimatedVisibility(
+            visible = expanded,
+            enter = if (animate) expandVertically(tween(SpicyMotion.MODAL_MS, easing = SpicyMotion.Modal)) + fadeIn(tween(SpicyMotion.FAST_MS)) else EnterTransition.None,
+            exit = if (animate) shrinkVertically(tween(SpicyMotion.FAST_MS, easing = SpicyMotion.Standard)) + fadeOut(tween(SpicyMotion.FAST_MS)) else ExitTransition.None,
+        ) {
             Column(
                 Modifier.fillMaxWidth().padding(start = SpicySpacing.S3, end = SpicySpacing.S3, bottom = SpicySpacing.S3),
                 verticalArrangement = Arrangement.spacedBy(SpicySpacing.S3),
@@ -966,6 +1137,13 @@ private fun SourceCard(
         }
     }
 }
+
+/** How close to the screen's top or bottom a dragged card scrolls the page. */
+private val DRAG_EDGE = 72.dp
+/** The page's fastest scroll under a dragged card, per frame. */
+private const val DRAG_SCROLL_PX = 18f
+private const val DRAGGED_SCALE = 1.02f
+private const val DRAGGED_ALPHA = 0.92f
 
 /** The rank ring's fill. */
 private val RankFill = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.09f)

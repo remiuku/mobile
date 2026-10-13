@@ -22,15 +22,9 @@ object LyricsSourceSettings {
         )
     }
 
-    /** Moves source [originId] [direction] places (-1 up, 1 down) when there's room. */
-    fun move(policy: RemoteLyricsPolicy, providers: Collection<LyricsSourceDescriptor>, originId: String, direction: Int): RemoteLyricsPolicy {
-        val order = SourceRanking(providers, policy).origins.map { it.id }.toMutableList()
-        val from = order.indexOf(originId)
-        val to = from + direction
-        if (from < 0 || to !in order.indices) return normalized(policy, providers)
-        java.util.Collections.swap(order, from, to)
-        return normalized(policy.copy(sourceOrder = order), providers)
-    }
+    /** The sources in [order] (by id, all of them); one it leaves out slots in by the default order. */
+    fun reorder(policy: RemoteLyricsPolicy, providers: Collection<LyricsSourceDescriptor>, order: List<String>): RemoteLyricsPolicy =
+        normalized(policy.copy(sourceOrder = order), providers)
 
     /**
      * Whether source [originId] reads as on: not switched off, with a provider (not just a blend)
@@ -124,7 +118,10 @@ object LyricsSourceSettings {
         LyricsOrigins.SPICY_COMMUNITY to listOf(RemoteLyricsSource.SPICY_ID),
         LyricsOrigins.APPLE_MUSIC to listOf(LyricsOrigins.APPLE_MUSIC, "bini_lyrics"),
         LyricsOrigins.SPOTIFY to listOf(LyricsOrigins.SPOTIFY),
-        LyricsOrigins.CHINESE to listOf("kugou", "netease", "qq_music", "kuwo"),
+        LyricsOrigins.KUGOU to listOf("kugou"),
+        LyricsOrigins.NETEASE to listOf("netease"),
+        LyricsOrigins.QQ_MUSIC to listOf("qq_music"),
+        LyricsOrigins.KUWO to listOf("kuwo"),
         LyricsOrigins.LRCLIB to listOf(LyricsOrigins.LRCLIB),
         LyricsOrigins.GENIUS to listOf(LyricsOrigins.GENIUS),
         LyricsOrigins.YOUTUBE to listOf("youtube_transcript"),

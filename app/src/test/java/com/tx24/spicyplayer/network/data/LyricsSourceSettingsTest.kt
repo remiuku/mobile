@@ -4,7 +4,10 @@ import com.google.gson.Gson
 import com.tx24.spicyplayer.lyrics.NextLyricsBackend
 import com.tx24.spicyplayer.network.data.LyricsOrigins.AMLL
 import com.tx24.spicyplayer.network.data.LyricsOrigins.APPLE_MUSIC
-import com.tx24.spicyplayer.network.data.LyricsOrigins.CHINESE
+import com.tx24.spicyplayer.network.data.LyricsOrigins.KUGOU
+import com.tx24.spicyplayer.network.data.LyricsOrigins.KUWO
+import com.tx24.spicyplayer.network.data.LyricsOrigins.NETEASE
+import com.tx24.spicyplayer.network.data.LyricsOrigins.QQ_MUSIC
 import com.tx24.spicyplayer.network.data.LyricsOrigins.GENIUS
 import com.tx24.spicyplayer.network.data.LyricsOrigins.LRCLIB
 import com.tx24.spicyplayer.network.data.LyricsOrigins.LRC_RED_AI
@@ -34,7 +37,7 @@ class LyricsSourceSettingsTest {
 
         // Each source at the earliest place its lyrics ranked at; lrc.red AI syncs where lrc.red stood.
         assertEquals(
-            listOf(LRCLIB, SPICY_COMMUNITY, AMLL, APPLE_MUSIC, LRC_RED_AI, UNISON, CHINESE, SPOTIFY, GENIUS, YOUTUBE),
+            listOf(LRCLIB, SPICY_COMMUNITY, AMLL, APPLE_MUSIC, LRC_RED_AI, UNISON, KUGOU, QQ_MUSIC, NETEASE, SPOTIFY, KUWO, GENIUS, YOUTUBE),
             policy.sourceOrder,
         )
         assertEquals(emptySet<String>(), policy.disabledSourceIds)
@@ -42,10 +45,10 @@ class LyricsSourceSettingsTest {
         // A provider's switch is its old one in every source it serves.
         assertTrue(ranking.pairOn(APPLE_MUSIC, "spicy_lyrics") && ranking.pairOn(SPOTIFY, "spicy_lyrics"))
         assertFalse(ranking.pairOn(APPLE_MUSIC, "rmm_revival") || ranking.pairOn(SPICY_COMMUNITY, "rmm_revival"))
-        assertTrue(ranking.pairOn(CHINESE, "netease") && ranking.pairOn(CHINESE, "lrcmux") && ranking.pairOn(GENIUS, "lrcmux"))
-        assertFalse(ranking.pairOn(CHINESE, "kugou") || ranking.pairOn(GENIUS, "genius"))
-        assertTrue(ranking.pairOn(CHINESE, "blend_netease"))
-        assertFalse(ranking.pairOn(CHINESE, "blend_kugou"))
+        assertTrue(ranking.pairOn(NETEASE, "netease") && ranking.pairOn(KUGOU, "lrcmux") && ranking.pairOn(GENIUS, "lrcmux"))
+        assertFalse(ranking.pairOn(KUGOU, "kugou") || ranking.pairOn(GENIUS, "genius"))
+        assertTrue(ranking.pairOn(NETEASE, "blend_netease"))
+        assertFalse(ranking.pairOn(KUGOU, "blend_kugou"))
         assertEquals(listOf("blend_netease"), ranking.liveBlends.map { it.id })
     }
 
@@ -64,7 +67,7 @@ class LyricsSourceSettingsTest {
         val policy = LyricsSourceSettings.migrate(null, emptySet(), emptySet(), providers)
 
         assertEquals(
-            listOf(SPICY_COMMUNITY, AMLL, APPLE_MUSIC, LRC_RED_AI, UNISON, CHINESE, LRCLIB, SPOTIFY, GENIUS, YOUTUBE),
+            listOf(SPICY_COMMUNITY, AMLL, APPLE_MUSIC, LRC_RED_AI, UNISON, KUGOU, QQ_MUSIC, NETEASE, LRCLIB, SPOTIFY, KUWO, GENIUS, YOUTUBE),
             policy.sourceOrder,
         )
         // Opt-in providers stay off; the old defaults stay on.
@@ -84,7 +87,7 @@ class LyricsSourceSettingsTest {
 
     @Test
     fun `a source added later slots in by the default order`() {
-        val stored = RemoteLyricsPolicy(sourceOrder = listOf(LRCLIB, SPICY_COMMUNITY, AMLL, APPLE_MUSIC, UNISON, SPOTIFY, CHINESE, GENIUS, YOUTUBE))
+        val stored = RemoteLyricsPolicy(sourceOrder = listOf(LRCLIB, SPICY_COMMUNITY, AMLL, APPLE_MUSIC, UNISON, SPOTIFY, KUGOU, NETEASE, QQ_MUSIC, KUWO, GENIUS, YOUTUBE))
 
         val order = LyricsSourceSettings.normalized(stored, providers).sourceOrder
 
@@ -95,15 +98,15 @@ class LyricsSourceSettingsTest {
     @Test
     fun `switching on a source with no provider on switches its first provider on`() {
         val fresh = LyricsSourceSettings.normalized(RemoteLyricsPolicy(), providers)
-        val noLrcMux = LyricsSourceSettings.setPairEnabled(fresh, providers, SourcePair(CHINESE, "lrcmux"), false)
-        assertFalse(LyricsSourceSettings.isOn(SourceRanking(providers, noLrcMux), CHINESE))
+        val noLrcMux = LyricsSourceSettings.setPairEnabled(fresh, providers, SourcePair(KUGOU, "lrcmux"), false)
+        assertFalse(LyricsSourceSettings.isOn(SourceRanking(providers, noLrcMux), KUGOU))
         // The first provider, not a blend.
-        assertEquals("kugou", LyricsSourceSettings.providerToSwitchOn(SourceRanking(providers, noLrcMux), CHINESE))
+        assertEquals("kugou", LyricsSourceSettings.providerToSwitchOn(SourceRanking(providers, noLrcMux), KUGOU))
 
-        val on = LyricsSourceSettings.setSourceEnabled(noLrcMux, providers, CHINESE, true)
+        val on = LyricsSourceSettings.setSourceEnabled(noLrcMux, providers, KUGOU, true)
 
         assertTrue(SourceRanking(providers, on).asked("kugou"))
-        assertNull(LyricsSourceSettings.providerToSwitchOn(SourceRanking(providers, on), CHINESE))
+        assertNull(LyricsSourceSettings.providerToSwitchOn(SourceRanking(providers, on), KUGOU))
     }
 
     @Test
@@ -118,12 +121,11 @@ class LyricsSourceSettingsTest {
     }
 
     @Test
-    fun `moves and sync types are kept`() {
+    fun `a dragged order and sync types are kept`() {
         val fresh = LyricsSourceSettings.normalized(RemoteLyricsPolicy(), providers)
-        val moved = LyricsSourceSettings.move(fresh, providers, AMLL, -1)
-        assertEquals(listOf(AMLL, SPICY_COMMUNITY), moved.sourceOrder.take(2))
-        // The top source can't go higher.
-        assertEquals(moved.sourceOrder, LyricsSourceSettings.move(moved, providers, AMLL, -1).sourceOrder)
+        val dragged = listOf(AMLL) + (fresh.sourceOrder - AMLL)
+        val moved = LyricsSourceSettings.reorder(fresh, providers, dragged)
+        assertEquals(dragged, moved.sourceOrder)
 
         val wordOnly = LyricsSourceSettings.setSyncTypes(moved, providers, APPLE_MUSIC, setOf(RemoteLyricsQuality.WORD_SYNCED))
         assertEquals(setOf(RemoteLyricsQuality.LINE_SYNCED, RemoteLyricsQuality.PLAIN), wordOnly.syncTypesOff[APPLE_MUSIC])

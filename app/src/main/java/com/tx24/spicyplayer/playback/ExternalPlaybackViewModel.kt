@@ -1068,8 +1068,9 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
     fun setSourceSyncTypes(originId: String, allowed: Set<RemoteLyricsQuality>) =
         changeSources { LyricsSourceSettings.setSyncTypes(it, lyricsBackend.descriptors, originId, allowed) }
 
-    fun moveSource(id: String, direction: Int) =
-        changeSources { LyricsSourceSettings.move(it, lyricsBackend.descriptors, id, direction) }
+    /** Puts the sources in [order] (dragged into place). */
+    fun setSourceOrder(order: List<String>) =
+        changeSources { LyricsSourceSettings.reorder(it, lyricsBackend.descriptors, order) }
 
     private fun changeSources(change: (RemoteLyricsPolicy) -> RemoteLyricsPolicy) {
         lyricsBackend.savePolicy(change(lyricsBackend.policy()))

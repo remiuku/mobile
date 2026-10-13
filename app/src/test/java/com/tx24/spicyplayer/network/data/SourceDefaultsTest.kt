@@ -33,7 +33,8 @@ class SourceDefaultsTest {
         assertEquals(
             listOf(
                 LyricsOrigins.SPICY_COMMUNITY, LyricsOrigins.AMLL, LyricsOrigins.APPLE_MUSIC, LyricsOrigins.UNISON,
-                LyricsOrigins.SPOTIFY, LyricsOrigins.CHINESE, LyricsOrigins.LRCLIB, LyricsOrigins.LRC_RED_AI,
+                LyricsOrigins.SPOTIFY, LyricsOrigins.KUGOU, LyricsOrigins.NETEASE, LyricsOrigins.QQ_MUSIC, LyricsOrigins.KUWO,
+                LyricsOrigins.LRCLIB, LyricsOrigins.LRC_RED_AI,
                 LyricsOrigins.GENIUS, LyricsOrigins.YOUTUBE,
             ),
             order,
@@ -49,7 +50,10 @@ class SourceDefaultsTest {
         assertEquals(listOf("lrc_red", "bini_lyrics"), providers[LyricsOrigins.LRC_RED_AI])
         assertEquals(listOf("unison"), providers[LyricsOrigins.UNISON])
         assertEquals(listOf("spicy_lyrics", "rmm_revival"), providers[LyricsOrigins.SPOTIFY])
-        assertEquals(listOf("kugou", "netease", "qq_music", "kuwo", "lrcmux"), providers[LyricsOrigins.CHINESE])
+        assertEquals(listOf("kugou", "lrcmux"), providers[LyricsOrigins.KUGOU])
+        assertEquals(listOf("netease"), providers[LyricsOrigins.NETEASE])
+        assertEquals(listOf("qq_music"), providers[LyricsOrigins.QQ_MUSIC])
+        assertEquals(listOf("kuwo"), providers[LyricsOrigins.KUWO])
         assertEquals(listOf("lrclib", "lrcmux"), providers[LyricsOrigins.LRCLIB])
         assertEquals(listOf("genius", "lrcmux"), providers[LyricsOrigins.GENIUS])
         assertEquals(listOf("youtube_transcript", "lrcmux"), providers[LyricsOrigins.YOUTUBE])
@@ -68,14 +72,14 @@ class SourceDefaultsTest {
         assertEquals(LyricsOrigins.SPOTIFY, origin("rmm_revival", "Spotify"))
         assertEquals(LyricsOrigins.APPLE_MUSIC, origin("lrc_red", "Apple Music"))
         assertEquals(LyricsOrigins.LRC_RED_AI, origin("bini_lyrics", LyricsOrigins.LRC_RED_AI_NAME))
-        assertEquals(LyricsOrigins.CHINESE, origin("lrcmux", "KuGou"))
+        assertEquals(LyricsOrigins.KUGOU, origin("lrcmux", "KuGou"))
         assertEquals(LyricsOrigins.LRCLIB, origin("lrcmux", "LRCLIB"))
         assertEquals(LyricsOrigins.GENIUS, origin("lrcmux", "Genius"))
         assertEquals(LyricsOrigins.YOUTUBE, origin("lrcmux", "YouTube Music"))
         assertNull(origin("lrcmux", "Somewhere new"))
         // A provider serving one source needs no name.
-        assertEquals(LyricsOrigins.CHINESE, origin("netease", null))
-        assertEquals(LyricsOrigins.CHINESE, origin("blend_qq", "Spicy + QQ Music"))
+        assertEquals(LyricsOrigins.NETEASE, origin("netease", null))
+        assertEquals(LyricsOrigins.QQ_MUSIC, origin("blend_qq", "Spicy + QQ Music"))
     }
 
     @Test
