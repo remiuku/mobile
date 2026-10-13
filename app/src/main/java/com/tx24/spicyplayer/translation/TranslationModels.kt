@@ -57,7 +57,8 @@ data class TranslationDocument(val song: String, val source: String, val lines: 
                     LyricAddress(parent, background)
                 } else LyricAddress(index)
                 val text = buildString {
-                    line.words.forEach { word ->
+                    // A line split to wrap has blank pieces holding its romanization; they aren't text.
+                    line.words.filter { it.text.isNotEmpty() }.forEach { word ->
                         if (isNotEmpty() && !word.attached) append(' ')
                         append(word.text)
                     }

@@ -88,4 +88,21 @@ class RemoteLyricsAdapterTest {
         assertEquals(listOf("", "", "", "", "", "kimi", "to", "aruita"), words.map { it.romanized })
         assertEquals(listOf(false, true, true, true, true, false, false, false), words.map { it.attached })
     }
+
+    @Test fun lineTimedLinesInWordSyncedLyricsAreFlaggedAndKeepTheirRomajiSpaces() {
+        val ttml = """<tt xmlns="http://www.w3.org/ns/ttml"><body><div>""" +
+            """<p begin="0s" end="2s"><span begin="0s" end="1s">I</span> <span begin="1s" end="2s">know</span></p>""" +
+            """<p begin="2s" end="6s"><span begin="2s" end="6s">今日は空が青い</span></p>""" +
+            "</div></body></tt>"
+        val selection = RemoteLyricsSelection(
+            LyricsSourceDescriptor("example", "Example", 1, emptySet()),
+            RemoteLyricsPayload(ttmlLyrics = ttml), RemoteLyricsQuality.WORD_SYNCED,
+        )
+        val ready = RemoteLyricsAdapter.render(selection, 6_000)
+        assertEquals(listOf(false, true), ready.lines.map { it.lineTimed })
+        val romaji = ready.lines[1].words.filter { it.text.isEmpty() }.mapNotNull { it.romanized }
+        // Cut into words to wrap, not one glued run.
+        assertEquals(true, romaji.size > 1)
+        assertEquals(ready.lines[1].words.filter { it.text.isNotEmpty() }.joinToString("") { it.text }, "今日は空が青い")
+    }
 }

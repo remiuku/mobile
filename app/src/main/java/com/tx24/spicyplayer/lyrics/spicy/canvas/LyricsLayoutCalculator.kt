@@ -209,6 +209,30 @@ internal object LyricsLayoutCalculator {
             block == Character.UnicodeBlock.HANGUL_COMPATIBILITY_JAMO
     }
 
+    /**
+     * Where an over-wide word may be cut: [start, end) ranges between its spaces (which fall out),
+     * with CJK runs cut between characters too. Fragments after a space start a new word on the
+     * row; the others stay glued to the one before.
+     */
+    internal fun overflowFragments(text: String): List<Pair<Int, Int>> {
+        val out = mutableListOf<Pair<Int, Int>>()
+        var start = -1
+        for (i in 0..text.length) {
+            val c = text.getOrNull(i)
+            if (c == null || c.isWhitespace()) {
+                if (start >= 0) out += start to i
+                start = -1
+                continue
+            }
+            if (start < 0) start = i
+            else if (isCjk(c) || isCjk(text[i - 1])) {
+                // Keep a surrogate pair whole.
+                if (!Character.isLowSurrogate(c)) { out += start to i; start = i }
+            }
+        }
+        return out
+    }
+
     /** The string to render for a word: its romanization when [romanize] is on and available. */
     private fun displayText(word: Word, romanize: Boolean): String =
         if (romanize) (word.romanizedText ?: word.text) else word.text
@@ -320,7 +344,9 @@ internal object LyricsLayoutCalculator {
             // An active line-synced line grows 1.05x away from its aligned edge. The reference
             // wraps it inside a 5cqw padding that the growth fills; here it must wrap narrower
             // so the enlarged line still ends at the margin instead of running past it.
-            val lineMaxWidth = if (lyricsType == LyricsType.Line) contentSlot.widthPx / ACTIVE_LINE_SCALE
+            // A line-timed line in word-synced lyrics is laid out as line-synced.
+            val lineType = if (line.lineTimed && lyricsType == LyricsType.Syllable) LyricsType.Line else lyricsType
+            val lineMaxWidth = if (lineType == LyricsType.Line) contentSlot.widthPx / ACTIVE_LINE_SCALE
                 else contentSlot.widthPx
             val gapStyle = TextStyle(
                 fontFamily = lineFontFamily,
@@ -331,7 +357,7 @@ internal object LyricsLayoutCalculator {
             val zero = textMeasurer.measure(text = AnnotatedString("0"), style = gapStyle)
             // Word-synced lines are rows of word elements spaced by `margin-right: 0.32ch`; line-
             // synced and static lines are plain text, spaced by a real space.
-            val textMode = lyricsType == LyricsType.Line || lyricsType == LyricsType.Static
+            val textMode = lineType == LyricsType.Line || lineType == LyricsType.Static
             val wordGap = if (textMode) {
                 textMeasurer.measure(text = AnnotatedString("a a"), style = gapStyle).size.width -
                     textMeasurer.measure(text = AnnotatedString("aa"), style = gapStyle).size.width.toFloat()
@@ -416,6 +442,25 @@ internal object LyricsLayoutCalculator {
                             isPartOfWord = charIdx > 0 || effectiveIsPartOfWord
                         ))
                         currentX += charResult.size.width
+                    }
+                } else if (fullW > lineMaxWidth && overflowFragments(text).size > 1) {
+                    // One timed word wider than a row (a whole line timed as one span, often
+                    // romanized into several words) can't wrap as a piece. It's cut where text
+                    // may break, at spaces and between CJK characters; each fragment keeps its
+                    // place in the word, so the wipe runs on across rows.
+                    for ((start, end) in overflowFragments(text)) {
+                        val fragment = text.substring(start, end)
+                        pieces.add(Piece(
+                            word = word,
+                            text = fragment,
+                            layout = textMeasurer.measure(fragment, style),
+                            sourceIdx = wIdx,
+                            charIdx = 0,
+                            fullWidth = fullW,
+                            startX = if (start == 0) 0f else textMeasurer.measure(text.substring(0, start), style).size.width.toFloat(),
+                            isCjkPiece = false,
+                            isPartOfWord = if (start == 0) effectiveIsPartOfWord else !text[start - 1].isWhitespace(),
+                        ))
                     }
                 } else {
                     pieces.add(Piece(

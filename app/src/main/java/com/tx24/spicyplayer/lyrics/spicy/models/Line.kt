@@ -22,6 +22,8 @@ data class Line(
     val oppositeAligned: Boolean = false,
     /** Display-only text with no word timings. The original document is kept separately. */
     val translationReplaces: Boolean = false,
+    /** Timed only as a whole inside word-synced lyrics: animated and drawn as line-synced. */
+    val lineTimed: Boolean = false,
 ) {
     val isBackground: Boolean get() = role == LineRole.BACKGROUND
     val isInterlude: Boolean get() = role == LineRole.INTERLUDE

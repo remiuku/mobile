@@ -62,6 +62,21 @@ class LineWrapperTest {
         assertEquals(listOf(0, 2, 3), text(pieces, max = 90f))
     }
 
+    @Test fun aWholeLineTimedAsOneWordIsCutWhereItMayWrap() {
+        // Apple Music times some Japanese lines as one span; romanized, it's several words in one.
+        val romaji = "Kasanatta kioku ni mayoi ga kieru"
+        val cuts = LyricsLayoutCalculator.overflowFragments(romaji)
+        assertEquals(listOf("Kasanatta", "kioku", "ni", "mayoi", "ga", "kieru"), cuts.map { (a, b) -> romaji.substring(a, b) })
+        // After a space each starts a word of its own, so the row breaks between them.
+        val pieces = cuts.map { (a, b) -> LineWrapper.Piece((b - a) * 10f, romaji.substring(a, b), gluedToPrevious = false) }
+        // "Kasanatta kioku" | "ni mayoi ga" | "kieru": every break between words.
+        assertEquals(listOf(0, 2, 5, 6), syllable(pieces, max = 150f))
+        // Kanji and kana are cut between characters, glued, so they break anywhere.
+        val japanese = "重なった記憶 に"
+        assertEquals(listOf("重", "な", "っ", "た", "記", "憶", "に"),
+            LyricsLayoutCalculator.overflowFragments(japanese).map { (a, b) -> japanese.substring(a, b) })
+    }
+
     @Test fun anOverlongLatinWordStillBreaksRatherThanOverflow() {
         val pieces = listOf(word(40f, "a")) + listOf(glued(40f, "b"), glued(40f, "c"), glued(40f, "d"))
         assertEquals(listOf(0, 2, 4), text(pieces, max = 90f))

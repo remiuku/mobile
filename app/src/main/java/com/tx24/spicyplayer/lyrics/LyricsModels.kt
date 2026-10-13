@@ -17,6 +17,8 @@ data class TimedLine(
     val groupId: Int? = null,
     val agent: String? = null,
     val oppositeAligned: Boolean = false,
+    /** Word-synced lyrics' line that is timed only as a whole ([MixedSync]); drawn as line-synced. */
+    val lineTimed: Boolean = false,
 )
 
 sealed interface LyricsState {

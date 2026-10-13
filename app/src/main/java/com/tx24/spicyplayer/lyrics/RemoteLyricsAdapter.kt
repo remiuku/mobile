@@ -45,9 +45,14 @@ internal object RemoteLyricsAdapter {
         require(unromanized.isNotEmpty()) { "Selected lyrics contain no displayable text" }
         // On-device romanization fills only the words the source left unromanized.
         val computed = RomanizationService.romanize(unromanized.map { line -> line.words.map(TimedWord::text) })
-        val lines = unromanized.mapIndexed { l, line ->
+        val romanized = unromanized.mapIndexed { l, line ->
             line.copy(words = line.words.mapIndexed { w, word -> word.copy(romanized = word.romanized ?: computed[l][w]) })
         }
+        // Lines timed only as a whole are drawn as line-synced, which wraps between words. They
+        // are split after romanizing, so a line read as one span keeps its romaji's spaces.
+        val lineTimed = if (selection.quality == RemoteLyricsQuality.WORD_SYNCED) MixedSync.lineTimed(romanized) else null
+        val lines = if (lineTimed == null || true !in lineTimed) romanized
+            else romanized.mapIndexed { l, line -> if (lineTimed[l]) wrappable(line).copy(lineTimed = true) else line }
         return LyricsState.Ready(
             lines = lines,
             provider = attribution?.providerName ?: selection.source.displayName,

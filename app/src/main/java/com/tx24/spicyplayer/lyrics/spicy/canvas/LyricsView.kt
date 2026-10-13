@@ -565,7 +565,7 @@ fun LyricsView(
                     layout.isInterlude -> drawInterludeGroup(layout, lineAnim, lineStartX, scrollOffset, dynamicY)
                     layout.line.translationReplaces -> drawTranslationText(layout, lineAnim, lineStartX, scrollOffset, dynamicY, config, lyricsType == LyricsType.Static, replacement = true)
                     lyricsType == LyricsType.Static -> drawStaticLine(layout, lineAnim, lineStartX, scrollOffset, dynamicY)
-                    lyricsType == LyricsType.Line -> drawLineModeLine(layout, lineAnim, lineStartX, scrollOffset, dynamicY, config)
+                    lyricsType == LyricsType.Line || layout.line.lineTimed -> drawLineModeLine(layout, lineAnim, lineStartX, scrollOffset, dynamicY, config)
                     // Minimal Lyrics Mode shrinks inactive lines (a CSS `scale`: paint only, no reflow)
                     // about their start edge, like line-synced lines.
                     lineAnim.scale != 1f -> withTransform({

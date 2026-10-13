@@ -1519,6 +1519,7 @@ private fun LyricsPanelContent(
                         role = line.role,
                         groupId = line.groupId,
                         oppositeAligned = line.oppositeAligned,
+                        lineTimed = line.lineTimed,
                     )
                 }
             }
