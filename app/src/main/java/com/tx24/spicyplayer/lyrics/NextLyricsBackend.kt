@@ -35,8 +35,11 @@ internal class NextLyricsBackend(context: Context, clientKey: String) {
     private val gson = Gson()
     /** Header values of custom sources: kept out of [preferences], which backups copy. */
     private val customHeaders = context.getSharedPreferences("custom_source_headers", Context.MODE_PRIVATE)
+    // One set of Genius pages for its lyrics, romanization and translation lookups, so a song's
+    // lookups share their requests.
+    private val geniusPages = GeniusSongPages(client, gson)
     private val builtIn: Set<RemoteLyricsProvider> =
-        createProviders(client, gson, clientKey, SharedSpotify.resolver)
+        createProviders(client, gson, clientKey, SharedSpotify.resolver, geniusPages)
     private val cooldowns = ProviderCooldownTracker()
     // Custom sources come and go, so these are rebuilt with them ([rebuild]).
     @Volatile private var providers: Set<RemoteLyricsProvider> = builtIn
@@ -242,6 +245,7 @@ internal class NextLyricsBackend(context: Context, clientKey: String) {
             gson: Gson,
             clientKey: String,
             spotifyResolver: SpotifyTrackResolver = SpotifyTrackResolver(AnonymousSpotifyCatalogSearch(client, gson)),
+            geniusPages: GeniusSongPages = GeniusSongPages(client, gson),
         ): Set<RemoteLyricsProvider> {
             val lrclib = Retrofit.Builder()
                 .baseUrl(LyricsService.BASE_URL)
@@ -268,7 +272,7 @@ internal class NextLyricsBackend(context: Context, clientKey: String) {
                 LyricsSource(lrclib),
                 RelayedOriginSlot.SPOTIFY,
                 LrcMuxLyricsProvider(client, gson),
-                GeniusLyricsProvider(client, gson),
+                GeniusLyricsProvider(geniusPages),
                 YouTubeTranscriptLyricsProvider(client, gson),
             )
         }
@@ -345,11 +349,9 @@ internal class NextLyricsBackend(context: Context, clientKey: String) {
         get() = preferences.getBoolean("humanRomanizations", false)
         set(value) = preferences.edit().putBoolean("humanRomanizations", value).apply()
 
-    // One set of Genius pages for both, so a song's romanization and translation lookups share
-    // their requests.
-    private val geniusPages = GeniusSongPages(client, gson)
     private val geniusRomanization = GeniusRomanizationSource(geniusPages)
-    private val romanCache = File(context.cacheDir, "genius-roman")
+    // Named anew when Genius matching changes, so answers matched the old way are asked again.
+    private val romanCache = File(context.cacheDir, "genius-roman-2")
     private val geniusTranslation = GeniusTranslationSource(geniusPages)
     private val humanTranslationCache = com.tx24.spicyplayer.translation.DiskGeniusTranslationCache(File(context.cacheDir, "genius-translations"))
 

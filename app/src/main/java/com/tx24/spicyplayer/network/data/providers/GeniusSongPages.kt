@@ -5,7 +5,6 @@ import com.google.gson.JsonObject
 import com.tx24.spicyplayer.lyrics.spicy.romanization.HumanRomanization
 import com.tx24.spicyplayer.network.data.awaitResponse
 import com.tx24.spicyplayer.network.data.spotify.SpotifyTrackMatcher
-import java.io.IOException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlin.coroutines.cancellation.CancellationException
@@ -14,10 +13,10 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 
 /**
- * Shared public song search, record lookup and lyric page parsing. One instance serves both the
- * romanization and the translation lookups, which ask about the same song at the same moment:
- * what Genius answered is kept for a while and a request already out is waited for, so the two
- * share their searches, records and pages instead of doubling the burst Genius limits.
+ * Shared public song search, record lookup and lyric page parsing. One instance serves the lyrics,
+ * romanization and translation lookups, which ask about the same song at the same moment: what
+ * Genius answered is kept for a while and a request already out is waited for, so they share
+ * their searches, records and pages instead of multiplying the burst Genius limits.
  */
 internal class GeniusSongPages(
     private val client: OkHttpClient,
@@ -85,9 +84,48 @@ internal class GeniusSongPages(
                 failure = e
             }
             if (romanizations && hits.any(::isRomanization)) break
+            // The song itself is all a lyrics or translation lookup needs: no more queries once found.
+            if (!romanizations && hits.any { !isRomanization(it) && ours(it, title, artist) }) break
         }
         if (strict && hits.isEmpty()) failure?.let { throw it }
         return hits.sortedBy { !isRomanization(it) }
+    }
+
+    /**
+     * The search hits that are the song itself (not a romanization, translation or another
+     * song), best first: a title that matches outright before one that only holds the other
+     * ("Lemon" before "Lemon (Remix)").
+     */
+    suspend fun originals(hits: List<JsonObject>, title: String, artist: String): List<JsonObject> {
+        var aliasLookups = 0
+        return hits.filter { hit ->
+            if (isRomanization(hit) || !sameTitle(hit, title)) return@filter false
+            if (sameArtist(hit, artist)) return@filter true
+            // The artist may be filed under another name: Genius's "Official髭男dism" is the
+            // player's "Official HIGE DANdism". Its record lists the others; asked of a few hits only.
+            aliasLookups++ <= MAX_ALIAS_LOOKUPS && aliasOf(hit, artist)
+        }.sortedByDescending { exactTitle(it, title) }
+    }
+
+    /** Whether one of [artist]'s names is among the hit's primary artist's alternate names on Genius. */
+    private suspend fun aliasOf(hit: JsonObject, artist: String): Boolean {
+        val id = hit.getAsJsonObject("primary_artist")?.get("id")?.takeIf { it.isJsonPrimitive }?.asLong ?: return false
+        val record = runCatching { getJson("https://genius.com/api/artists/$id") }
+            .onFailure { if (it is CancellationException) throw it }.getOrNull()
+            ?.getAsJsonObject("response")?.getAsJsonObject("artist") ?: return false
+        val aliases = record.getAsJsonArray("alternate_names")?.mapNotNull { it.takeIf { e -> e.isJsonPrimitive }?.asString }.orEmpty()
+            .map(::norm).filter { it.length >= 2 }
+        val names = artist.split(ARTIST_SEPARATOR).map(::norm).filter { it.length >= 2 }
+        return names.any { name -> aliases.any { it == name || it in name || name in it } }
+    }
+
+    /** The song's own page record from a search, or null when Genius has none that's ours. Throws when Genius couldn't answer. */
+    suspend fun original(title: String, artist: String): JsonObject? =
+        originals(search(title, artist, romanizations = false, strict = true), title, artist).firstOrNull()
+
+    private fun exactTitle(hit: JsonObject, title: String): Boolean {
+        val theirs = hit.str("title")
+        return norm(theirs) == norm(title) || norm(theirs.replace(BRACKETED, "")) == norm(title.replace(BRACKETED, ""))
     }
 
     /** A song, not an album: an album's id is a different id space and would fetch another song. */
@@ -107,9 +145,11 @@ internal class GeniusSongPages(
      * Whether a romanization page is for [artist]. They're filed under a Genius account, so the
      * page title is where the musician is named: "Ado - 踊 (Odo) (Romanized)". Unknown counts as yes.
      */
-    fun byUs(hit: JsonObject, artist: String): Boolean {
-        if (artist.isBlank()) return true
+    fun byUs(hit: JsonObject, artist: String, title: String = ""): Boolean {
         val bare = hit.str("title").replace(ROMAN_HINT, "").trim(' ', '-', '(', ')', '[', ']')
+        // Another version's romanization is no use either.
+        if (title.isNotBlank() && otherVersion(bare.substringAfter(" - "), title)) return false
+        if (artist.isBlank()) return true
         if (" - " !in bare) return true
         val ours = norm(artist)
         val theirs = norm(bare.substringBefore(" - "))
@@ -123,10 +163,27 @@ internal class GeniusSongPages(
      * credited artists in Genius's credits, featured ones included, is enough: a producer can be
      * filed under another name (the player's "32ki" is Genius's "サツキ (Satsuki)").
      */
-    fun ours(hit: JsonObject, title: String, artist: String): Boolean {
+    fun ours(hit: JsonObject, title: String, artist: String): Boolean = sameTitle(hit, title) && sameArtist(hit, artist)
+
+    /**
+     * One title holds the other, whole or without their bracketed parts, and the hit isn't
+     * another version of the song ("Spring Day (Japanese Ver.)", "Pretender - Acoustic Ver"):
+     * one has lines of its own, which neither pair nor time with the song's.
+     */
+    private fun sameTitle(hit: JsonObject, title: String): Boolean {
         fun holds(a: String, b: String) = a.isNotEmpty() && b.isNotEmpty() && (a == b || a in b || b in a)
         val theirTitle = hit.str("title")
         if (!holds(norm(theirTitle), norm(title)) && !holds(norm(theirTitle.replace(BRACKETED, "")), norm(title.replace(BRACKETED, "")))) return false
+        return !otherVersion(theirTitle, title)
+    }
+
+    /** [theirs] names a version (in brackets or after a dash) that [ours] doesn't. */
+    private fun otherVersion(theirs: String, ours: String): Boolean {
+        val extras = BRACKETED.findAll(theirs).map { it.value } + listOfNotNull(theirs.substringAfter(" - ", "").takeIf(String::isNotEmpty))
+        return extras.any { extra -> VERSION.findAll(extra).any { it.value.lowercase() !in ours.lowercase() } }
+    }
+
+    private fun sameArtist(hit: JsonObject, artist: String): Boolean {
         val who = norm(artistOf(hit))
         val asked = norm(artist)
         if (asked.isEmpty() || who.isEmpty() || asked in who || who in asked) return true
@@ -164,7 +221,7 @@ internal class GeniusSongPages(
             remembered("page:$url") {
                 val html = client.newCall(Request.Builder().url(url).header("User-Agent", BROWSER_UA).get().build())
                     .awaitResponse().use {
-                        if (!it.isSuccessful && it.code != 404) throw IOException("Genius page unavailable (HTTP ${it.code})")
+                        if (!it.isSuccessful && it.code != 404) throw ProviderHttpException("Genius", it.code)
                         if (it.isSuccessful) it.body?.string().orEmpty() else ""
                     }
                 geniusLyricsText(html).takeIf(String::isNotBlank)
@@ -186,7 +243,7 @@ internal class GeniusSongPages(
         client.newCall(Request.Builder().url(url).header("Referer", "https://genius.com/").header("User-Agent", BROWSER_UA).get().build())
             .awaitResponse().use { r ->
                 if (r.code == 404) return@use null
-                if (!r.isSuccessful) throw IOException("Genius unavailable (HTTP ${r.code})")
+                if (!r.isSuccessful) throw ProviderHttpException("Genius", r.code)
                 gson.fromJson(r.body?.string(), JsonObject::class.java)
             }
     }
@@ -197,6 +254,10 @@ internal class GeniusSongPages(
 
     private companion object {
         const val MAX_ANSWERS = 64
+        /** Artist records asked for alternate names per lookup: the first title matches are the likely ones. */
+        const val MAX_ALIAS_LOOKUPS = 2
+        /** What names another version of a song in its title. */
+        val VERSION = Regex("""\b(?:ver(?:sion)?\b\.?|remix|live|acoustic|instrumental|inst\.|sped up|slowed|tv size|demo)""", RegexOption.IGNORE_CASE)
         /** Long enough for one song's lookups to share; short enough that an edited page shows up. */
         const val ANSWER_MS = 10 * 60_000L
         val ROMAN_HINT = Regex("romani[sz]ed|romani[sz]ation|\\bromaji\\b", RegexOption.IGNORE_CASE)

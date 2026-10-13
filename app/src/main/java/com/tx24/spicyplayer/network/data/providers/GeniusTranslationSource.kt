@@ -17,8 +17,7 @@ internal class GeniusTranslationSource(private val pages: GeniusSongPages) {
      */
     suspend fun find(title: String, artist: String, target: String): GeniusTranslationPair? {
         val hits = pages.search(title, artist, romanizations = false, strict = true)
-        for (hit in hits) {
-            if (pages.isRomanization(hit) || !pages.ours(hit, title, artist)) continue
+        for (hit in pages.originals(hits, title, artist)) {
             val song = pages.record(hit.get("id")?.asLong ?: continue) ?: continue
             val linked = linkedTranslations(song, target).takeIf { it.isNotEmpty() } ?: continue
             val original = pages.textAt(song.get("url")?.asString.orEmpty(), strict = true) ?: continue

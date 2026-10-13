@@ -15,11 +15,10 @@ internal class GeniusRomanizationSource(private val pages: GeniusSongPages) {
     suspend fun find(title: String, artist: String): List<String>? {
         val hits = pages.search(title, artist, strict = true)
         for (hit in hits) {
-            if (!pages.isRomanization(hit) || !pages.byUs(hit, artist)) continue
+            if (!pages.isRomanization(hit) || !pages.byUs(hit, artist, title)) continue
             pages.linesAt(hit.get("url")?.asString.orEmpty(), strict = true)?.let { return it }
         }
-        for (hit in hits) {
-            if (pages.isRomanization(hit) || !pages.ours(hit, title, artist)) continue
+        for (hit in pages.originals(hits, title, artist)) {
             val linked = pages.linkedRomanization(hit.get("id")?.asLong ?: continue, strict = true) ?: continue
             pages.linesAt(linked.get("url")?.asString.orEmpty(), strict = true)?.let { return it }
         }
