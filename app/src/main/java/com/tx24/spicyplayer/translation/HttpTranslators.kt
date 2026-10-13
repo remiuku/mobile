@@ -15,36 +15,56 @@ class GoogleTranslator(private val client: OkHttpClient) : Translator {
      * are limiting this connection, it's [ProviderBusy]; asking again soon only lengthens a block.
      */
     override suspend fun translate(request: TranslatorRequest): TranslatorResponse {
+        var retryAfter: Long? = null
+        /** The body, or null when the endpoint is limiting this connection. */
+        suspend fun call(http: Request): String? = client.newCall(http).awaitResponse().use { response ->
+            if (response.code == 429 || response.code == 503) {
+                retryAfterMs(response)?.let { asked -> retryAfter = maxOf(retryAfter ?: 0L, asked) }
+                return@use null
+            }
+            if (!response.isSuccessful) throw IOException("Translation is unavailable (HTTP ${response.code}).")
+            response.body.string()
+        }
         call(googleChromeRequest(request))?.let { return googleChromeResponse(it, request.source) }
         call(googleRequest(request))?.let { return googleResponse(it) }
-        throw ProviderBusy()
-    }
-
-    /** The body, or null when the endpoint is limiting this connection. */
-    private suspend fun call(request: Request): String? = client.newCall(request).awaitResponse().use { response ->
-        if (response.code == 429 || response.code == 503) return@use null
-        if (!response.isSuccessful) throw IOException("Translation is unavailable (HTTP ${response.code}).")
-        response.body.string()
+        throw ProviderBusy(retryAfter)
     }
 }
 
+/** How long a 429 or 503 asked to be left alone, in seconds or as a date; null when it didn't say. */
+internal fun retryAfterMs(response: okhttp3.Response, now: Long = System.currentTimeMillis()): Long? {
+    val value = response.header("Retry-After")?.trim() ?: return null
+    value.toLongOrNull()?.let { return it.coerceAtLeast(0L) * 1_000L }
+    return response.headers.getDate("Retry-After")?.time?.minus(now)?.coerceAtLeast(0L)
+}
+
+/** Each line its own `q`: Google then detects each line's language, not one for them all. */
 internal fun googleChromeRequest(request: TranslatorRequest): Request {
-    val text = request.lines.joinToString("\n")
-    if (text.length > TranslationBatching.GOOGLE_TEXT_LIMIT) throw TranslationFailure("This request exceeds Google's text limit.")
+    if (request.lines.sumOf { it.length } + request.lines.size - 1 > TranslationBatching.GOOGLE_TEXT_LIMIT) {
+        throw TranslationFailure("This request exceeds Google's text limit.")
+    }
     val url = "https://translate.googleapis.com/translate_a/t".toHttpUrl().newBuilder()
         .addQueryParameter("client", "dict-chrome-ex")
         .addQueryParameter("sl", request.source ?: "auto").addQueryParameter("tl", request.target).build()
-    return Request.Builder().url(url).post(FormBody.Builder().add("q", text).build()).build()
+    val body = FormBody.Builder().apply { request.lines.forEach { add("q", it) } }.build()
+    return Request.Builder().url(url).post(body).build()
 }
 
-/** `[["translation","ja"]]` when the language was detected, `["translation"]` when it was given. */
+/**
+ * One item per `q`: `["translation","ja"]` when the language was detected, a bare
+ * `"translation"` when it was given. The song's language is the one most of its lines are in.
+ */
 internal fun googleChromeResponse(json: String, source: String?): TranslatorResponse {
-    val first = JsonParser.parseString(json).asJsonArray.firstOrNull() ?: throw IOException("Google returned an invalid response.")
-    val (text, language) = if (first.isJsonArray) {
-        val pair = first.asJsonArray
-        pair[0].asString to pair.getOrNull(1)?.takeIf { it.isJsonPrimitive }?.asString
-    } else first.asString to source
-    return TranslatorResponse(text.replace("\r\n", "\n").split('\n').map { TranslationEntry(it.takeIf(String::isNotBlank)) }, language)
+    val items = JsonParser.parseString(json).takeIf { it.isJsonArray }?.asJsonArray ?: throw IOException("Google returned an invalid response.")
+    val lines = items.map { item ->
+        val (text, language) = if (item.isJsonArray) {
+            val pair = item.asJsonArray
+            pair.getOrNull(0)?.takeIf { it.isJsonPrimitive }?.asString to pair.getOrNull(1)?.takeIf { it.isJsonPrimitive }?.asString
+        } else item.takeIf { it.isJsonPrimitive }?.asString to source
+        TranslationEntry(text?.takeIf(String::isNotBlank), language = languageCode(language))
+    }
+    val main = lines.mapNotNull { it.language }.groupingBy { it }.eachCount().maxByOrNull { it.value }?.key
+    return TranslatorResponse(lines, main ?: source)
 }
 
 private fun com.google.gson.JsonArray.getOrNull(index: Int) = if (index < size()) get(index) else null
@@ -75,46 +95,38 @@ class DeepLTranslator(private val client: OkHttpClient, private val key: String)
         if (!DeepLKey.valid(key)) throw TranslationFailure("Add your DeepL API key in Translation settings.")
         val response = client.newCall(deepLRequest(request, key))
             .awaitResponse().use { response ->
+                when (response.code) {
+                    429 -> throw ProviderBusy(retryAfterMs(response))
+                    403 -> throw TranslationFailure("DeepL didn't accept your API key. Check it in Translation settings.")
+                    456 -> throw TranslationFailure("Your DeepL translation quota is used up for now.")
+                }
                 if (!response.isSuccessful) throw IOException("DeepL couldn't translate these lyrics (HTTP ${response.code}).")
                 JsonParser.parseString(response.body.string()).asJsonObject
             }
-        val translation = response.getAsJsonArray("translations")?.firstOrNull()?.takeIf { it.isJsonObject }?.asJsonObject
+        val translations = response.getAsJsonArray("translations")?.map { it.takeIf { item -> item.isJsonObject }?.asJsonObject }
             ?: throw IOException("DeepL returned an invalid response.")
-        val language = translation.get("detected_source_language")?.takeUnless { it.isJsonNull }?.asString
-        val translated = languageCode(language) != languageCode(request.target)
-        val texts = deepLLines(translation.get("text")?.takeUnless { it.isJsonNull }?.asString.orEmpty(), request.lines.size)
-        return TranslatorResponse(texts.mapIndexed { index, text ->
-            text?.let { TranslationEntry(it, translated && it != request.lines[index]) }
-        }, language)
+        val lines = translations.map { item ->
+            val text = item?.get("text")?.takeUnless { it.isJsonNull }?.asString?.trim()?.takeIf(String::isNotBlank)
+            val language = item?.get("detected_source_language")?.takeUnless { it.isJsonNull }?.asString
+            text?.let { TranslationEntry(it, language = languageCode(language)) }
+        }
+        val main = lines.mapNotNull { it?.language }.groupingBy { it }.eachCount().maxByOrNull { it.value }?.key
+        return TranslatorResponse(lines, main ?: request.source)
     }
 }
 
 /**
- * The whole song as one document, each line in its own numbered tag: DeepL reads the lines with
- * each other for context, and every translated line comes back in its tag, so none can run into
- * another.
+ * Each line its own `text`, so DeepL detects each line's language (a mixed song's lines in the
+ * target language come back marked as such), with the whole song as `context`: read for meaning,
+ * never translated or billed.
  */
-internal fun deepLDocument(lines: List<String>): String = lines.withIndex().joinToString("\n") { (index, line) ->
-    "<l i=\"$index\">${line.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")}</l>"
-}
-
-/** [count] lines read back from [deepLDocument]'s tags; a tag that didn't come back is null. */
-internal fun deepLLines(document: String, count: Int): List<String?> {
-    val found = Regex("""<l i="(\d+)">(.*?)</l>""", RegexOption.DOT_MATCHES_ALL).findAll(document)
-        .associate { it.groupValues[1].toInt() to it.groupValues[2] }
-    return List(count) { index ->
-        found[index]?.replace("&lt;", "<")?.replace("&gt;", ">")?.replace("&quot;", "\"")?.replace("&apos;", "'")
-            ?.replace("&amp;", "&")?.trim()?.takeIf(String::isNotBlank)
-    }
-}
-
 internal fun deepLRequest(request: TranslatorRequest, key: String): Request {
     fun code(language: String): String = if (languageCode(language) == "no") "NB" else language.uppercase(java.util.Locale.ROOT)
     val body = FormBody.Builder().apply {
-        add("text", deepLDocument(request.lines))
+        request.lines.forEach { add("text", it) }
         add("target_lang", code(request.target))
         request.source?.let { add("source_lang", code(it)) }
-        add("tag_handling", "xml")
+        if (request.context.isNotBlank()) add("context", request.context)
         add("split_sentences", "nonewlines")
         add("preserve_formatting", "1")
     }.build()

@@ -5,34 +5,31 @@ import com.google.gson.JsonObject
 import com.tx24.spicyplayer.translation.GeniusTranslationPair
 import com.tx24.spicyplayer.translation.TranslationLanguages
 import com.tx24.spicyplayer.translation.languageCode
-import kotlin.coroutines.cancellation.CancellationException
 import okhttp3.OkHttpClient
 
 internal class GeniusTranslationSource(client: OkHttpClient, gson: Gson) {
     private val pages = GeniusSongPages(client, gson)
 
-    suspend fun find(title: String, artist: String, target: String): GeniusTranslationPair? = try {
-        val hits = pages.search(title, artist, romanizations = false)
-        var found: GeniusTranslationPair? = null
+    /**
+     * The song's translation into [target], or null when Genius has none that pairs. A lookup
+     * that couldn't finish (Genius limiting or unreachable) throws instead, so it isn't
+     * remembered as missing.
+     */
+    suspend fun find(title: String, artist: String, target: String): GeniusTranslationPair? {
+        val hits = pages.search(title, artist, romanizations = false, strict = true)
         for (hit in hits) {
             if (pages.isRomanization(hit) || !pages.ours(hit, title, artist)) continue
             val song = pages.record(hit.get("id")?.asLong ?: continue) ?: continue
             val linked = linkedTranslations(song, target).takeIf { it.isNotEmpty() } ?: continue
-            val original = pages.textAt(song.get("url")?.asString.orEmpty()) ?: continue
+            val original = pages.textAt(song.get("url")?.asString.orEmpty(), strict = true) ?: continue
             // The first page that pairs with the original; a sung cover in the same language has
             // its own lines and pairs with little or nothing.
             for (page in linked) {
-                val translated = pages.textAt(page.get("url")?.asString.orEmpty()) ?: continue
-                found = GeniusTranslationPair.fromText(original, translated, song.get("language")?.asString)
-                if (found != null) break
+                val translated = pages.textAt(page.get("url")?.asString.orEmpty(), strict = true) ?: continue
+                GeniusTranslationPair.fromText(original, translated, song.get("language")?.asString)?.let { return it }
             }
-            if (found != null) break
         }
-        found
-    } catch (cancelled: CancellationException) {
-        throw cancelled
-    } catch (_: Exception) {
-        null
+        return null
     }
 }
 

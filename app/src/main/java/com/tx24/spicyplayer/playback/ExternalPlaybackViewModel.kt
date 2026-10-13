@@ -233,6 +233,8 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
     private var translationJob: Job? = null
     private var translatedDocument: String? = null
     private var pendingTranslationAction: String? = null
+    /** The rest a provider's limit was last announced for, so it's said once. */
+    private var restingNotice = 0L
     private var outputRoute = outputProfiles.currentRoute()
     private val mutableState = MutableStateFlow(PlayerUiState(
         translationPreferences = translationStore.read(),
@@ -255,6 +257,7 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
     val messages: SharedFlow<String> = mutableMessages
 
     fun toggleTranslation() {
+        UsageStats.count(UsageCounter.TRANSLATE)
         if (mutableState.value.translationEnabled) {
             clearTranslation()
             mutableState.value = mutableState.value.copy(translationEnabled = false)
@@ -381,6 +384,7 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
                     withContext(Dispatchers.IO) {
                         translationEngine.translate(document, preferences, source, translator,
                             human = { lyricsBackend.humanTranslation(state.title, state.artist, preferences.targetLanguage) },
+                            trace = ::traceTranslation,
                             onPartial = { partial ->
                                 withContext(Dispatchers.Main) {
                                     if (translationSession.accepts(ticket) && translationDocument()?.hash == document.hash && mutableState.value.translationEnabled) {
@@ -415,6 +419,18 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
+            } catch (resting: ProviderResting) {
+                traceTranslation("waiting: ${resting.provider.label} is limiting translations")
+                if (!translationSession.accepts(ticket) || !mutableState.value.translationEnabled) return@launch
+                // Said once per rest, not again for every song that comes up meanwhile; a tap
+                // always gets an answer.
+                if (manual || restingNotice != resting.untilMs) showMessage(resting.message ?: "Translation is busy.")
+                restingNotice = resting.untilMs
+                delay((resting.untilMs - System.currentTimeMillis()).coerceAtLeast(0L) + 1_000L)
+                if (translationSession.accepts(ticket) && translationDocument()?.hash == document.hash && mutableState.value.translationEnabled) {
+                    traceTranslation("trying again after the wait")
+                    translateCurrent(force = true)
+                }
             } catch (error: Exception) {
                 Log.w(TRANSLATE_TAG, "translation failed", error)
                 traceTranslation("failed: ${error.message}")

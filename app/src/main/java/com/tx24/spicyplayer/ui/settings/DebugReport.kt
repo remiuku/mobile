@@ -69,7 +69,7 @@ internal fun debugReport(context: Context, state: PlayerUiState): String {
 }
 
 /** Where the romanization and translation on screen come from, and how they're set. */
-private fun textLines(context: Context, state: PlayerUiState): List<Pair<String, String>> {
+internal fun textLines(context: Context, state: PlayerUiState): List<Pair<String, String>> {
     val settings = AppSettings(context.getSharedPreferences("ui", Context.MODE_PRIVATE))
     val lyrics = state.lyrics as? LyricsState.Ready
     val romanization = when {

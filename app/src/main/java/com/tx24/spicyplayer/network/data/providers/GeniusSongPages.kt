@@ -5,6 +5,7 @@ import com.google.gson.JsonObject
 import com.tx24.spicyplayer.lyrics.spicy.romanization.HumanRomanization
 import com.tx24.spicyplayer.network.data.awaitResponse
 import com.tx24.spicyplayer.network.data.spotify.SpotifyTrackMatcher
+import java.io.IOException
 import kotlin.coroutines.cancellation.CancellationException
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
@@ -13,8 +14,12 @@ import okhttp3.Request
 /** Shared public song search, record lookup and lyric page parsing. */
 internal class GeniusSongPages(private val client: OkHttpClient, private val gson: Gson) {
 
-    /** Search the song, with extra reading-specific queries when looking for romanizations. */
-    suspend fun search(title: String, artist: String, romanizations: Boolean = true): List<JsonObject> {
+    /**
+     * Search the song, with extra reading-specific queries when looking for romanizations. With
+     * [strict], a search that found nothing because every query failed throws instead of
+     * answering "no hits", so a caller can tell an outage from a miss.
+     */
+    suspend fun search(title: String, artist: String, romanizations: Boolean = true, strict: Boolean = false): List<JsonObject> {
         val cleanTitle = title.replace(BRACKETED, "").trim()
         val cleanArtist = artist.replace(BRACKETED, "").trim()
         val queries = if (romanizations) listOf(
@@ -25,6 +30,7 @@ internal class GeniusSongPages(private val client: OkHttpClient, private val gso
         ) else listOf("$title $artist", "$cleanTitle $cleanArtist")
         val hits = mutableListOf<JsonObject>()
         val seen = mutableSetOf<Long>()
+        var failure: Exception? = null
         for (query in queries) {
             if (query.isBlank()) continue
             try {
@@ -42,10 +48,12 @@ internal class GeniusSongPages(private val client: OkHttpClient, private val gso
                 }
             } catch (c: CancellationException) {
                 throw c
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                failure = e
             }
             if (romanizations && hits.any(::isRomanization)) break
         }
+        if (strict && hits.isEmpty()) failure?.let { throw it }
         return hits.sortedBy { !isRomanization(it) }
     }
 
@@ -109,16 +117,23 @@ internal class GeniusSongPages(private val client: OkHttpClient, private val gso
     suspend fun linesAt(url: String, minimum: Int = 4): List<String>? =
         textAt(url)?.let(HumanRomanization::cleanLines)?.takeIf { it.size >= minimum }
 
-    /** A page's lyrics as text, section headers ("[Chorus]") kept. */
-    suspend fun textAt(url: String): String? {
+    /**
+     * A page's lyrics as text, section headers ("[Chorus]") kept. With [strict], a page that
+     * couldn't be read (limited, server error, no connection) throws; a missing page is still null.
+     */
+    suspend fun textAt(url: String, strict: Boolean = false): String? {
         if (url.isBlank()) return null
         return try {
             val html = client.newCall(Request.Builder().url(url).header("User-Agent", BROWSER_UA).get().build())
-                .awaitResponse().use { if (it.isSuccessful) it.body?.string().orEmpty() else "" }
+                .awaitResponse().use {
+                    if (strict && !it.isSuccessful && it.code != 404) throw IOException("Genius page unavailable (HTTP ${it.code})")
+                    if (it.isSuccessful) it.body?.string().orEmpty() else ""
+                }
             geniusLyricsText(html).takeIf(String::isNotBlank)
         } catch (c: CancellationException) {
             throw c
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            if (strict) throw e
             null
         }
     }
@@ -126,10 +141,15 @@ internal class GeniusSongPages(private val client: OkHttpClient, private val gso
     suspend fun record(songId: Long): JsonObject? =
         getJson("https://genius.com/api/songs/$songId")?.getAsJsonObject("response")?.getAsJsonObject("song")
 
-    // Genius' front answers OkHttp's own user agent with HTTP 401.
+    // Genius' front answers OkHttp's own user agent with HTTP 401. A missing page is null; any
+    // other refusal (rate limit, server error) throws, so it isn't taken for a missing page.
     private suspend fun getJson(url: String): JsonObject? =
         client.newCall(Request.Builder().url(url).header("Referer", "https://genius.com/").header("User-Agent", BROWSER_UA).get().build())
-            .awaitResponse().use { r -> if (r.isSuccessful) gson.fromJson(r.body?.string(), JsonObject::class.java) else null }
+            .awaitResponse().use { r ->
+                if (r.code == 404) return@use null
+                if (!r.isSuccessful) throw IOException("Genius unavailable (HTTP ${r.code})")
+                gson.fromJson(r.body?.string(), JsonObject::class.java)
+            }
 
     private fun artistOf(hit: JsonObject) = hit.getAsJsonObject("primary_artist")?.str("name").orEmpty()
     private fun norm(s: String) = SpotifyTrackMatcher.normalize(s).replace(" ", "")

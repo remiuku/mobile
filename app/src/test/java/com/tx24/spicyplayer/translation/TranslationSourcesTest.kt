@@ -80,7 +80,7 @@ class TranslationSourcesTest {
     @Test fun `Google asks Chrome's endpoint first and the web one only when that one is limited`() = runBlocking {
         val request = TranslatorRequest(listOf("ciao", "mondo"), "en", null, "ciao\nmondo")
         val asked = mutableListOf<String>()
-        val chrome = GoogleTranslator(google(200 to """[["hello\nworld","it"]]""", 500 to "", asked)).translate(request)
+        val chrome = GoogleTranslator(google(200 to """[["hello","it"],["world","it"]]""", 500 to "", asked)).translate(request)
         assertEquals(listOf("hello", "world"), chrome.lines.map { it?.text })
         assertEquals("it", chrome.detectedLanguage)
         assertEquals(listOf("/translate_a/t"), asked)
@@ -215,8 +215,8 @@ class TranslationSourcesTest {
         assertEquals(listOf("Night comes", "machine:声が響く"), result.texts)
         assertEquals(listOf(TranslationOrigin.Genius, TranslationOrigin.Google), result.origins)
         assertEquals(input.lines.map { it.text }, machine.requests.single().lines)
-        assertEquals("Translation: Genius + Google", result.geniusCredit())
-        assertEquals("Translation: Genius + Google", LyricsFooter(translationCredit = result.geniusCredit()).lines().single().text)
+        assertEquals("Translation: Genius + Google", result.credit())
+        assertEquals("Translation: Genius + Google", LyricsFooter(translationCredit = result.credit()).lines().single().text)
     }
 
     @Test fun `complete human coverage makes zero machine calls and disk hits retain origins`() = runBlocking {
@@ -228,7 +228,7 @@ class TranslationSourcesTest {
         val result = (engine.translate(input, preferences, null, machine) { pair } as TranslationOutcome.Translated).result
         assertEquals(listOf("Night comes", null, "Stars shine"), result.texts)
         assertEquals(listOf(TranslationOrigin.Genius, null, TranslationOrigin.Genius), result.origins)
-        assertEquals("Translation: Genius", result.geniusCredit())
+        assertEquals("Translation: Genius", result.credit())
         assertEquals(result, (engine.translate(input, preferences, null, machine) { error("Cache should avoid Genius too") } as TranslationOutcome.Translated).result)
         assertTrue(machine.requests.isEmpty())
     }
@@ -276,6 +276,72 @@ class TranslationSourcesTest {
         cache.forget("song", "artist")
         cache.find("song", "artist", "en") { calls++; pair }
         assertEquals(4, calls)
+        // A lookup that failed isn't remembered as missing.
+        assertTrue(runCatching { cache.find("song", "artist", "de") { calls++; throw java.io.IOException("limited") } }.isFailure)
+        assertEquals(pair, cache.find("song", "artist", "de") { calls++; pair })
+        assertEquals(6, calls)
+    }
+
+    /** A client answering every request with [code] and [body], and [headers]. */
+    private fun answering(code: Int, body: String = "", vararg headers: Pair<String, String>) = OkHttpClient.Builder().addInterceptor { chain ->
+        Response.Builder().request(chain.request()).protocol(Protocol.HTTP_1_1).code(code).message("x").body(body.toResponseBody())
+            .apply { headers.forEach { (name, value) -> header(name, value) } }.build()
+    }.build()
+
+    @Test fun `Google gets each line as its own q and answers with each line's language`() {
+        val request = googleChromeRequest(TranslatorRequest(listOf("사랑해", "I love you"), "en", null, ""))
+        val body = request.body as FormBody
+        assertEquals(listOf("q" to "사랑해", "q" to "I love you"), (0 until body.size).map { body.name(it) to body.value(it) })
+        assertEquals("auto", request.url.queryParameter("sl"))
+        val response = googleChromeResponse("""[["I love you","ko"],["I love you","en"],["","en"]]""", null)
+        assertEquals(listOf("ko", "en", "en"), response.lines.map { it?.language })
+        assertEquals(listOf("I love you", "I love you", null), response.lines.map { it?.text })
+        assertEquals(listOf("hello", "world"), googleChromeResponse("""["hello","world"]""", "it").lines.map { it?.text })
+    }
+
+    @Test fun `a limited Google or DeepL passes on how long it asked to wait`() = runBlocking {
+        val request = TranslatorRequest(listOf("ciao"), "en", null, "")
+        val google = runCatching { GoogleTranslator(answering(429, "", "Retry-After" to "90")).translate(request) }.exceptionOrNull()
+        assertEquals(90_000L, (google as ProviderBusy).retryAfterMs)
+        assertNull((runCatching { GoogleTranslator(answering(429)).translate(request) }.exceptionOrNull() as ProviderBusy).retryAfterMs)
+        val deepL = runCatching { DeepLTranslator(answering(429, "", "Retry-After" to "5"), "abcdefghijklmnopq:fx").translate(request) }.exceptionOrNull()
+        assertEquals(5_000L, (deepL as ProviderBusy).retryAfterMs)
+        val quota = runCatching { DeepLTranslator(answering(456), "abcdefghijklmnopq:fx").translate(request) }.exceptionOrNull()
+        assertTrue(quota is TranslationFailure)
+    }
+
+    @Test fun `DeepL tells each line's language so a mixed song's English stays as it is`() = runBlocking {
+        val answer = """{"translations":[
+            {"detected_source_language":"KO","text":"I miss you"},
+            {"detected_source_language":"EN","text":"I want you back tonight!"},
+            {"detected_source_language":"KO","text":"Love you"}]}"""
+        val request = TranslatorRequest(listOf("보고 싶어", "I want you back tonight", "사랑해"), "en", null, "보고 싶어\nI want you back tonight\n사랑해")
+        val response = DeepLTranslator(answering(200, answer), "abcdefghijklmnopq:fx").translate(request)
+        assertEquals(listOf("ko", "en", "ko"), response.lines.map { it?.language })
+        assertEquals("ko", response.detectedLanguage)
+        val engine = TranslationEngine(SongLanguageDetector { null }, Cache(), pause = {})
+        val deepL = object : Translator {
+            override val provider = TranslationProvider.DeepL
+            override suspend fun translate(request: TranslatorRequest) = response
+        }
+        val result = engine.translate(document(*request.lines.toTypedArray()), preferences.copy(provider = TranslationProvider.DeepL, humanTranslations = false), null, deepL)
+        assertEquals(listOf("I miss you", null, "Love you"), (result as TranslationOutcome.Translated).result.texts)
+        assertEquals("Translation: DeepL", result.result.credit())
+    }
+
+    @Test fun `a Genius outage is an error, not a song without a translation`() = runBlocking {
+        val gson = com.google.gson.Gson()
+        val limited = com.tx24.spicyplayer.network.data.providers.GeniusTranslationSource(answering(429), gson)
+        assertTrue(runCatching { limited.find("夜に駆ける", "YOASOBI", "en") }.isFailure)
+        val empty = com.tx24.spicyplayer.network.data.providers.GeniusTranslationSource(
+            answering(200, """{"response":{"sections":[]}}"""), gson)
+        assertNull(empty.find("夜に駆ける", "YOASOBI", "en"))
+    }
+
+    @Test fun `a Genius line that just repeats the original isn't shown under it`() {
+        val input = document("夜が来る", "I want you back", "星が光る")
+        val pair = GeniusTranslationPair.fromText("夜が来る\nI want you back\n星が光る", "Night comes\nI want you back\nStars shine", "ja")!!
+        assertEquals(listOf("Night comes", null, "Stars shine"), HumanTranslation.align(input, pair))
     }
 
     @Test fun `romanization and translation independently choose all four presentations`() {

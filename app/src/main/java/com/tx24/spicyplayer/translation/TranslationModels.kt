@@ -106,14 +106,27 @@ data class TranslationKey(
     ) + ".json"
 }
 
-const val TRANSLATION_CACHE_VERSION = 3
+const val TRANSLATION_CACHE_VERSION = 5
 
 data class TranslationResult(
     val key: TranslationKey,
     val texts: List<String?>,
+    /** The song's main language, for display; a mixed song's lines can each be in another. */
     val detectedLanguage: String?,
     val origins: List<TranslationOrigin?> = texts.map { if (it == null) null else TranslationOrigin.valueOf(key.provider.name) },
+    /** Each line's own language, where the provider said; null where it didn't. */
+    val languages: List<String?> = texts.map { null },
 ) {
+    /** Without the lines in a language that is now [excluded]; a line of unknown language goes by the song's. */
+    fun without(excluded: Set<String>): TranslationResult {
+        val codes = excluded.mapNotNull(::languageCode).toSet()
+        if (codes.isEmpty()) return this
+        val dropped = texts.indices.filter { languageCode(languages.getOrNull(it) ?: detectedLanguage) in codes }
+        if (dropped.isEmpty()) return this
+        return copy(texts = texts.mapIndexed { i, text -> text.takeIf { i !in dropped } },
+            origins = origins.mapIndexed { i, origin -> origin.takeIf { i !in dropped } })
+    }
+
     /** Where the lines came from, for the debug report and a tap's message: "Genius 22, Google 37, none 4". */
     fun lineSources(): String {
         val counts = origins.groupingBy { it?.name ?: "none" }.eachCount()
@@ -121,11 +134,9 @@ data class TranslationResult(
         return order.mapNotNull { name -> counts[name]?.let { "$name $it" } }.joinToString(", ")
     }
 
-    fun geniusCredit(): String? {
-        if (TranslationOrigin.Genius !in origins) return null
-        val machine = origins.filterNotNull().firstOrNull { it != TranslationOrigin.Genius }
-        return "Translation: Genius" + (machine?.let { " + ${it.name}" } ?: "")
-    }
+    /** Who translated the lines on screen, for the credits: "Translation: Genius + Google". */
+    fun credit(): String? = TranslationOrigin.entries.filter { it in origins }.takeIf { it.isNotEmpty() }
+        ?.joinToString(" + ", prefix = "Translation: ") { it.name }
 }
 
 /** A generation also rejects an old request after off/on, even when its document is identical. */
@@ -138,7 +149,8 @@ class TranslationSession {
     fun accepts(ticket: Ticket): Boolean = current == ticket
 }
 
-data class TranslationEntry(val text: String?, val needsTranslation: Boolean = true)
+/** One translated line; [language] is the line's own, when the provider tells it line by line. */
+data class TranslationEntry(val text: String?, val needsTranslation: Boolean = true, val language: String? = null)
 data class TranslatorResponse(val lines: List<TranslationEntry?>, val detectedLanguage: String? = null)
 data class TranslatorRequest(val lines: List<String>, val target: String, val source: String?, val context: String)
 
@@ -147,7 +159,10 @@ interface Translator {
     suspend fun translate(request: TranslatorRequest): TranslatorResponse
 }
 
-class TranslationFailure(message: String) : IllegalArgumentException(message)
+open class TranslationFailure(message: String) : IllegalArgumentException(message)
+
+/** The provider asked to be left alone until [untilMs] (wall clock); nothing is sent to it before then. */
+class ProviderResting(val provider: TranslationProvider, val untilMs: Long, message: String) : TranslationFailure(message)
 
 /** The provider is rate limited for now; [retryAfterMs] is how long it asked to wait, when it said. */
 class ProviderBusy(val retryAfterMs: Long? = null) : java.io.IOException("Translation is busy.")

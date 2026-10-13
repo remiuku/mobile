@@ -958,6 +958,21 @@ internal fun AdvancedContent(state: PlayerUiState, viewModel: ExternalPlaybackVi
     SettingsSection("Debug info") { CopyDebugInfoRow(state) }
     SettingsSection("Session") { InfoLines(sessionLines(state)) }
     lyricsLines(state)?.let { details -> SettingsSection("These lyrics") { InfoLines(details) } }
+    SettingsSection("Romanization and translation") {
+        InfoLines(textLines(LocalContext.current, state))
+        // What translation did, step by step: which provider answered in which languages, what
+        // Genius had, waits and failures. Newest last; the same lines go in the debug info.
+        val log = com.tx24.spicyplayer.playback.TranslationTrace.lines(android.os.SystemClock.elapsedRealtime())
+        if (log.isEmpty()) {
+            Text("Nothing translated yet", style = DescriptionStyle, modifier = Modifier.padding(horizontal = SpicySpacing.S3, vertical = SpicySpacing.S1))
+        }
+        log.forEach { line ->
+            Searchable("Translation log", line, "Diagnostics") {
+                Text(line, style = SpicyType.Caption.copy(color = SpicyColors.TextSecondary),
+                    modifier = Modifier.padding(horizontal = SpicySpacing.S3, vertical = SpicySpacing.S1))
+            }
+        }
+    }
     SettingsSection("Last lookup") {
         Searchable("Last lookup", "Attempts", "Diagnostics") {
             if (state.providerAttempts.isEmpty()) {

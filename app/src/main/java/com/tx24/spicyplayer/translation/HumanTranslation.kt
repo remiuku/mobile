@@ -88,6 +88,8 @@ object HumanTranslation {
             val readings = exact.mapNotNull { translated(index, it) }.distinct()
             if (exact.size > 1 && readings.size > 1) out[line.index] = null
             else if (out[line.index] == null && readings.size == 1) out[line.index] = readings.single()
+            // A mixed song's page keeps the lines already in the target language as they are.
+            if (out[line.index]?.let { sameText(it, line.text) } == true) out[line.index] = null
         }
         return out
     }
@@ -99,7 +101,10 @@ object HumanTranslation {
     private const val MIN_SCORE = 0.85
 }
 
-fun combineTranslations(key: TranslationKey, human: List<String?>, machine: List<String?>, language: String?): TranslationResult {
+fun combineTranslations(
+    key: TranslationKey, human: List<String?>, machine: List<String?>, language: String?,
+    languages: List<String?> = human.map { null },
+): TranslationResult {
     require(human.size == machine.size)
     val texts = human.indices.map { human[it]?.takeIf(String::isNotBlank) ?: machine[it]?.takeIf(String::isNotBlank) }
     val origins = texts.indices.map { index ->
@@ -109,5 +114,5 @@ fun combineTranslations(key: TranslationKey, human: List<String?>, machine: List
             else -> TranslationOrigin.valueOf(key.provider.name)
         }
     }
-    return TranslationResult(key, texts, language, origins)
+    return TranslationResult(key, texts, language, origins, languages)
 }

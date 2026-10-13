@@ -86,7 +86,8 @@ class TranslationTest {
         val error = runCatching {
             TranslationEngine(SongLanguageDetector { null }, cache, pause = {}).translate(document("uno"), preferences.copy(provider = TranslationProvider.DeepL), "it", translator)
         }.exceptionOrNull()
-        assertEquals("Translation is busy right now. Try again in a minute.", error?.message)
+        assertEquals("DeepL is busy right now. Trying again in a minute.", error?.message)
+        assertTrue(error is ProviderResting)
         assertEquals(3, translator.requests.size)
         assertNull(cache.result)
     }
@@ -213,7 +214,7 @@ class TranslationTest {
         assertNotEquals(key.fileName(), key.copy(provider = TranslationProvider.DeepL).fileName())
         assertNotEquals(key.fileName(), key.copy(sourceLanguage = "ru").fileName())
         assertNotEquals(key.fileName(), key.fileName(TRANSLATION_CACHE_VERSION + 1))
-        assertEquals(3, TRANSLATION_CACHE_VERSION)
+        assertEquals(5, TRANSLATION_CACHE_VERSION)
     }
 
     @Test fun `wrong cache version and malformed entries are ignored`() {
@@ -250,29 +251,26 @@ class TranslationTest {
         assertTrue(result.result.texts[0]!!.count { it == ':' } > 1)
     }
 
-    @Test fun `DeepL gets the whole song as one tagged document`() = runBlocking {
+    @Test fun `DeepL gets each line as its own text with the whole song as context`() = runBlocking {
         val input = document(*Array(120) { "line $it" })
         val translator = FakeTranslator(TranslationProvider.DeepL)
-        TranslationEngine(SongLanguageDetector { "ru" }, MemoryCache()).translate(input, preferences.copy(provider = TranslationProvider.DeepL), "ru", translator)
-        assertEquals(listOf(120), translator.requests.map { it.lines.size })
-        assertEquals("ru", translator.requests.single().source)
-        val request = deepLRequest(translator.requests.single(), "0123456789abcdef:fx")
+        TranslationEngine(SongLanguageDetector { "ru" }, MemoryCache(), pause = {}).translate(input, preferences.copy(provider = TranslationProvider.DeepL), "ru", translator)
+        assertEquals(listOf(50, 50, 20), translator.requests.map { it.lines.size })
+        assertTrue(translator.requests.all { it.source == "ru" && it.context == input.context })
+        val request = deepLRequest(translator.requests.first(), "0123456789abcdef:fx")
         val body = request.body as FormBody
         val fields = (0 until body.size).groupBy({ body.name(it) }, { body.value(it) })
-        assertEquals(listOf(deepLDocument(translator.requests.single().lines)), fields["text"])
-        assertNull(fields["context"])
-        assertEquals(listOf("xml"), fields["tag_handling"])
-        assertEquals(listOf("nonewlines"), fields["split_sentences"])
+        assertEquals(translator.requests.first().lines, fields["text"])
+        assertEquals(listOf(input.context), fields["context"])
+        assertNull(fields["tag_handling"])
         assertEquals(listOf("RU"), fields["source_lang"])
     }
 
-    @Test fun `DeepL lines come back by tag, never running into each other`() {
-        val lines = listOf("マジクソ笑えるわ", "a < b & c", "止まらない")
-        val sent = deepLDocument(lines)
-        assertEquals(lines, deepLLines(sent, 3))
-        // A tag DeepL dropped leaves only that line empty; the others stay where they were.
-        val answer = "<l i=\"0\">This is hilarious</l>\n<l i=\"2\">Can't stop</l>"
-        assertEquals(listOf("This is hilarious", null, "Can't stop"), deepLLines(answer, 3))
+    @Test fun `a comma or dash the translator carried on with is dropped, not one the line has`() {
+        assertEquals("I miss you", trimStrayPunctuation("I miss you,", "보고 싶어"))
+        assertEquals("And then", trimStrayPunctuation("And then —", "そして"))
+        assertEquals("Wait,", trimStrayPunctuation("Wait,", "待って、"))
+        assertEquals("Is it you?", trimStrayPunctuation("Is it you?", "너야?"))
     }
 
     @Test fun `DeepL free and paid keys select the right host without key in URL`() {
@@ -359,13 +357,83 @@ class TranslationTest {
         assertEquals(1, translator.requests.size)
     }
 
-    @Test fun `later batches carry the language the first answer found`() = runBlocking {
+    @Test fun `every batch lets the provider detect each line unless the song's language is set`() = runBlocking {
         val texts = (0 until 260).map { if (it % 100 == 99) "" else "riga $it " + "a".repeat(30) }
         val translator = FakeTranslator()
-        TranslationEngine(SongLanguageDetector { null }, MemoryCache()).translate(document(*texts.toTypedArray()), preferences, null, translator)
+        val engine = TranslationEngine(SongLanguageDetector { null }, MemoryCache())
+        engine.translate(document(*texts.toTypedArray()), preferences, null, translator)
         assertTrue(translator.requests.size > 1)
-        assertNull(translator.requests.first().source)
-        assertTrue(translator.requests.drop(1).all { it.source == "it" })
+        assertTrue(translator.requests.all { it.source == null })
+        val set = FakeTranslator()
+        engine.translate(document(*texts.toTypedArray()), preferences, "it", set)
+        assertTrue(set.requests.all { it.source == "it" })
+    }
+
+    @Test fun `a mixed song translates only the lines not already in the target language`() = runBlocking {
+        val cache = MemoryCache()
+        // Korean verses, an English hook, a Japanese line: Google tells each line's language.
+        val translator = FakeTranslator { request ->
+            TranslatorResponse(request.lines.map { line ->
+                when {
+                    line.any { it in '가'..'힣' } -> TranslationEntry("ko:$line", language = "ko")
+                    line.any { it in 'ぁ'..'ん' } -> TranslationEntry("ja:$line", language = "ja")
+                    else -> TranslationEntry(line, language = "en")
+                }
+            }, "ko")
+        }
+        val song = document("사랑해 너무 보고 싶어", "I want you back tonight", "君のことが好きだ", "보고 싶어")
+        val result = (TranslationEngine(SongLanguageDetector { null }, cache).translate(song, preferences, null, translator)
+            as TranslationOutcome.Translated).result
+        assertEquals(listOf("ko:사랑해 너무 보고 싶어", null, "ja:君のことが好きだ", "ko:보고 싶어"), result.texts)
+        assertEquals("ko", result.detectedLanguage)
+        assertEquals(listOf("ko", "en", "ja", "ko"), result.languages)
+        // Leaving Japanese alone later hides just that line, without asking again.
+        val again = TranslationEngine(SongLanguageDetector { null }, cache)
+            .translate(song, preferences.copy(excludedLanguages = setOf("ja")), null, FakeTranslator()) as TranslationOutcome.Translated
+        assertEquals(listOf("ko:사랑해 너무 보고 싶어", null, null, "ko:보고 싶어"), again.result.texts)
+    }
+
+    @Test fun `a song mostly in the target language still translates its other lines`() = runBlocking {
+        val translator = FakeTranslator { request ->
+            TranslatorResponse(request.lines.map { line ->
+                if (line.startsWith("Hola")) TranslationEntry("Hello friend", language = "es") else TranslationEntry(line, language = "en")
+            }, "en")
+        }
+        val song = document("I want you back", "Every night and day", "Hola amigo")
+        val result = (TranslationEngine(SongLanguageDetector { null }, MemoryCache()).translate(song, preferences, null, translator)
+            as TranslationOutcome.Translated).result
+        assertEquals(listOf(null, null, "Hello friend"), result.texts)
+        assertEquals("en", result.detectedLanguage)
+    }
+
+    @Test fun `a provider asking to wait longer than a moment is left alone for that long`() = runBlocking {
+        var clock = 0L
+        var calls = 0
+        val translator = FakeTranslator(TranslationProvider.DeepL) { calls++; throw ProviderBusy(retryAfterMs = 120_000L) }
+        val engine = TranslationEngine(SongLanguageDetector { null }, MemoryCache(), pause = { fail("No waiting in place") }, now = { clock })
+        val deepL = preferences.copy(provider = TranslationProvider.DeepL)
+        val error = runCatching { engine.translate(document("uno"), deepL, null, translator) }.exceptionOrNull() as ProviderResting
+        assertEquals(120_000L, error.untilMs)
+        assertEquals("DeepL is busy right now. Trying again in 2 minutes.", error.message)
+        clock = 119_000L
+        runCatching { engine.translate(document("due"), deepL, null, translator) }
+        assertEquals(1, calls)
+        clock = 120_000L
+        runCatching { engine.translate(document("tre"), deepL, null, translator) }
+        assertEquals(2, calls)
+    }
+
+    @Test fun `a failed Genius lookup shows the machine translation but doesn't keep it`() = runBlocking {
+        val cache = MemoryCache()
+        val traces = mutableListOf<String>()
+        val result = TranslationEngine(SongLanguageDetector { null }, cache, pause = {})
+            .translate(document("uno"), preferences, null, FakeTranslator(), trace = { traces += it }) { throw java.io.IOException("Genius unavailable (HTTP 429)") }
+        assertEquals(listOf("translated:uno"), (result as TranslationOutcome.Translated).result.texts)
+        assertNull("Kept, it would hide Genius from this song for good", cache.result)
+        assertTrue(traces.any { "HTTP 429" in it })
+        // Genius simply having none is kept as usual.
+        TranslationEngine(SongLanguageDetector { null }, cache, pause = {}).translate(document("uno"), preferences, null, FakeTranslator()) { null }
+        assertNotNull(cache.result)
     }
 
     @Test fun `translation asterisks go unless the line has its own`() {

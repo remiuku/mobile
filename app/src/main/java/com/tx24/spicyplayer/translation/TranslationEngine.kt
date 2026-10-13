@@ -1,5 +1,6 @@
 package com.tx24.spicyplayer.translation
 
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withTimeoutOrNull
@@ -9,6 +10,7 @@ data class TranslationPiece(val index: Int, val part: Int, val text: String, val
 
 object TranslationBatching {
     const val GOOGLE_TEXT_LIMIT = 4_999
+    const val DEEPL_LINES = 50
 
     fun batches(document: TranslationDocument, provider: TranslationProvider): List<List<TranslationPiece>> {
         val verses = mutableListOf<MutableList<TranslationPiece>>()
@@ -24,8 +26,8 @@ object TranslationBatching {
             }
         }
         if (verse.isNotEmpty()) verses.add(verse)
-        // One document, so DeepL reads the whole song together; its size limit is checked on the request.
-        if (provider == TranslationProvider.DeepL) return listOf(verses.flatten()).filter { it.isNotEmpty() }
+        // DeepL reads the whole song as each request's context, so its lines just go in fifties.
+        if (provider == TranslationProvider.DeepL) return verses.flatten().chunked(DEEPL_LINES)
         val batches = mutableListOf<List<TranslationPiece>>()
         var batch = mutableListOf<TranslationPiece>()
         verses.forEach { block ->
@@ -71,14 +73,38 @@ object TranslationBatching {
         return if (verses.size > 1) verses else emptyList()
     }
 
-    /** A positional response of the wrong size cannot reveal where a missing item was. */
-    fun align(batch: List<TranslationPiece>, response: TranslatorResponse): Map<Pair<Int, Int>, String?> {
+    /**
+     * A positional response of the wrong size cannot reveal where a missing item was. A line in a
+     * language [skips] leaves alone (a mixed song's lines in the target language), or that came
+     * back as it went out, gets no translation under it.
+     */
+    fun align(batch: List<TranslationPiece>, response: TranslatorResponse, skips: (String) -> Boolean = { false }): Map<Pair<Int, Int>, String?> {
         if (response.lines.size != batch.size) return batch.associate { (it.index to it.part) to null }
         return batch.mapIndexed { position, piece ->
             val result = response.lines[position]
-            (piece.index to piece.part) to result?.text?.takeIf { result.needsTranslation && it.isNotBlank() }
+            (piece.index to piece.part) to result?.text?.let { trimStrayPunctuation(it, piece.text) }?.takeIf {
+                result.needsTranslation && it.isNotBlank() && result.language?.let(skips) != true && !sameText(it, piece.text)
+            }
         }.toMap()
     }
+}
+
+/**
+ * A translator reading a line as part of a longer sentence ends it with the comma or dash that
+ * sentence carries on with: dropped unless the original line ends with one of its own.
+ */
+internal fun trimStrayPunctuation(translation: String, original: String): String {
+    if (original.trimEnd().lastOrNull()?.let { it in TRAILING } == true) return translation.trim()
+    return translation.trim().trimEnd { it in TRAILING || it.isWhitespace() }
+}
+
+private const val TRAILING = ",;:、，；：—–-"
+
+/** The same words, whatever the case, spacing and punctuation: a "translation" that changed nothing. */
+internal fun sameText(a: String, b: String): Boolean {
+    fun key(text: String) = java.text.Normalizer.normalize(text, java.text.Normalizer.Form.NFKC)
+        .lowercase(java.util.Locale.ROOT).filter(Char::isLetterOrDigit)
+    return key(a).let { it.isNotEmpty() && it == key(b) }
 }
 
 interface TranslationCache {
@@ -98,8 +124,8 @@ class TranslationEngine(
     private val pause: suspend (Long) -> Unit = { kotlinx.coroutines.delay(it) },
     private val now: () -> Long = System::currentTimeMillis,
 ) {
-    /** Until when Google is left alone after it started limiting this connection. */
-    @Volatile private var googleRestsUntil = 0L
+    /** Until when each provider is left alone after it asked to be (wall clock). */
+    private val restsUntil = java.util.concurrent.ConcurrentHashMap<TranslationProvider, Long>()
     private val languages = object : LinkedHashMap<String, String?>(16, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String?>): Boolean = size > 32
     }
@@ -112,6 +138,12 @@ class TranslationEngine(
     fun key(document: TranslationDocument, preferences: TranslationPreferences, source: String?): TranslationKey =
         TranslationKey(document.hash, languageCode(preferences.targetLanguage) ?: "en", preferences.provider, languageCode(source), preferences.humanTranslations)
 
+    /**
+     * [source] is a language the whole song is known to be in (one set for the song), and only
+     * that is ever sent as the source language. Otherwise the provider detects each line's own,
+     * so a mixed song's lines in the target language are left alone instead of being read as the
+     * song's main language.
+     */
     suspend fun translate(
         document: TranslationDocument,
         preferences: TranslationPreferences,
@@ -119,32 +151,48 @@ class TranslationEngine(
         translator: Translator,
         /** The machine translation, shown while a slow human lookup is still out. */
         onPartial: suspend (TranslationResult) -> Unit = {},
+        /** What happened, step by step, for the debug report. */
+        trace: (String) -> Unit = {},
         human: suspend () -> GeniusTranslationPair? = { null },
     ): TranslationOutcome = coroutineScope {
-        if (skipTranslation(source, preferences.targetLanguage, preferences.excludedLanguages)) return@coroutineScope TranslationOutcome.Skipped(source)
+        fun skips(language: String?) = skipTranslation(language, preferences.targetLanguage, preferences.excludedLanguages)
+        if (skips(source)) return@coroutineScope TranslationOutcome.Skipped(source)
         require(translator.provider == preferences.provider)
         val key = key(document, preferences, source)
-        cache.read(key, document.lines.size)?.let {
-            return@coroutineScope if (skipTranslation(it.detectedLanguage, preferences.targetLanguage, preferences.excludedLanguages))
-                TranslationOutcome.Skipped(it.detectedLanguage) else TranslationOutcome.Translated(it)
+        cache.read(key, document.lines.size)?.let { cached ->
+            val shown = cached.without(preferences.excludedLanguages)
+            trace("from cache: ${shown.lineSources()}")
+            return@coroutineScope if (shown.texts.all { it == null }) TranslationOutcome.Skipped(cached.detectedLanguage)
+            else TranslationOutcome.Translated(shown)
         }
+        if (document.lines.all { it.boundary }) return@coroutineScope TranslationOutcome.Skipped(source)
         val none = List<String?>(document.lines.size) { null }
-        val lookup = if (preferences.humanTranslations) async { runCatching { human() }.getOrNull() } else null
+        // A failed lookup (Genius limiting or unreachable) isn't the same as no translation: the
+        // result is then shown but not kept, so the next play asks Genius again.
+        var humanFailed = false
+        val lookup = if (preferences.humanTranslations) async {
+            try {
+                human()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                humanFailed = true
+                trace("Genius failed: ${error.message ?: error.javaClass.simpleName}")
+                null
+            }
+        } else null
         // A human translation already on hand (cached) decides before any machine request; a slow
         // lookup doesn't hold the machine translation back.
         val quick = lookup?.let { withTimeoutOrNull(QUICK_HUMAN_MS) { it.await() } }
         var humanTexts = quick?.let { HumanTranslation.align(document, it) } ?: none
-        var detected = source ?: languageCode(quick?.sourceLanguage)
-        fun skipped(): TranslationOutcome {
-            lookup?.cancel()
-            // Kept, untranslated, so the song is known to need nothing the next time it plays.
-            cache.write(TranslationResult(key, none, detected))
-            return TranslationOutcome.Skipped(detected)
+        fun traceHuman(pair: GeniusTranslationPair?, texts: List<String?>) {
+            if (humanFailed) return
+            trace(if (pair == null) "Genius: no ${preferences.targetLanguage} translation"
+                else "Genius: ${texts.count { it != null }} lines matched of ${pair.originals.size} on the page")
         }
-        if (skipTranslation(detected, preferences.targetLanguage, preferences.excludedLanguages)) return@coroutineScope skipped()
-        if (document.lines.all { it.boundary }) return@coroutineScope TranslationOutcome.Skipped(source)
+        if (quick != null) traceHuman(quick, humanTexts)
         if (document.lines.all { it.boundary || humanTexts[it.index] != null }) {
-            val result = combineTranslations(key, humanTexts, none, detected)
+            val result = combineTranslations(key, humanTexts, none, source ?: languageCode(quick?.sourceLanguage))
             cache.write(result)
             return@coroutineScope TranslationOutcome.Translated(result)
         }
@@ -152,26 +200,37 @@ class TranslationEngine(
         val batches = TranslationBatching.batches(document, translator.provider)
         if (batches.isEmpty()) return@coroutineScope TranslationOutcome.Skipped(source)
         val aligned = mutableMapOf<Pair<Int, Int>, String?>()
+        val lineLanguages = mutableMapOf<Int, String>()
+        val languageWeights = mutableMapOf<String, Int>()
         var requests = 0
         var answered = false
         suspend fun send(batch: List<TranslationPiece>) {
             if (requests++ > 0) pause(PACE_MS)
-            val response = ask(translator, TranslatorRequest(batch.map { it.text }, key.targetLanguage, detected, document.context))
-            detected = detected ?: languageCode(response.detectedLanguage)
-            if (skipTranslation(detected, preferences.targetLanguage, preferences.excludedLanguages)) {
-                answered = true
-                return
-            }
-            if (response.lines.size != batch.size && translator.provider == TranslationProvider.Google) {
+            val response = ask(translator, TranslatorRequest(batch.map { it.text }, key.targetLanguage, source, document.context), trace)
+            if (response.lines.size != batch.size) {
+                trace("asked ${batch.size} lines, ${response.lines.size} came back")
+                if (translator.provider != TranslationProvider.Google) throw TranslationFailure("Translation returned an incomplete response. Try again later.")
                 if (batch.size > 1) TranslationBatching.fallback(batch).forEach { send(it) }
                 return
             }
-            if (response.lines.size != batch.size) throw TranslationFailure("Translation returned an incomplete response. Try again later.")
             answered = true
-            aligned.putAll(TranslationBatching.align(batch, response))
+            val weights = mutableMapOf<String, Int>()
+            batch.forEachIndexed { position, piece ->
+                val own = languageCode(response.lines[position]?.language)
+                if (own != null && piece.part == 0) lineLanguages[piece.index] = own
+                if (piece.part != 0) return@forEachIndexed
+                val language = own ?: languageCode(response.detectedLanguage) ?: return@forEachIndexed
+                // By lines, not characters: a line of Hangul or kanji is far shorter than its English.
+                weights.merge(language, 1, Int::plus)
+            }
+            weights.forEach { (language, weight) -> languageWeights.merge(language, weight, Int::plus) }
+            aligned.putAll(TranslationBatching.align(batch, response) { skips(it) })
+            trace("${translator.provider.label}: ${batch.size} lines" +
+                weights.entries.sortedByDescending { it.value }.joinToString(" ") { it.key }.takeIf(String::isNotEmpty)?.let { ", in $it" }.orEmpty())
         }
-        batches.forEach { if (!skipTranslation(detected, preferences.targetLanguage, preferences.excludedLanguages)) send(it) }
-        if (skipTranslation(detected, preferences.targetLanguage, preferences.excludedLanguages)) return@coroutineScope skipped()
+        batches.forEach { send(it) }
+        // The song's language is the one most of its lines are in.
+        val detected = source ?: languageWeights.maxByOrNull { it.value }?.key ?: languageCode(quick?.sourceLanguage)
         val pieces = batches.flatten().groupBy { it.index }
         val texts = document.lines.map { line ->
             val parts = pieces[line.index].orEmpty()
@@ -179,41 +238,62 @@ class TranslationEngine(
             if (parts.isEmpty() || parts.any { aligned[it.index to it.part] == null }) null
             else parts.joinToString(" ") { aligned.getValue(it.index to it.part).orEmpty() }
         }
+        val perLine = document.lines.map { lineLanguages[it.index] }
         if (lookup != null && quick == null) {
-            if (texts.any { it != null }) onPartial(combineTranslations(key, none, texts, detected))
-            humanTexts = lookup.await()?.let { HumanTranslation.align(document, it) } ?: none
+            if (texts.any { it != null }) onPartial(combineTranslations(key, none, texts, detected, perLine))
+            val pair = lookup.await()
+            humanTexts = pair?.let { HumanTranslation.align(document, it) } ?: none
+            traceHuman(pair, humanTexts)
         }
-        if (!answered && humanTexts.all { it == null }) throw TranslationFailure("Couldn't translate these lyrics. Try again later.")
-        val result = combineTranslations(key, humanTexts, texts, detected)
-        cache.write(result)
+        val result = combineTranslations(key, humanTexts, texts, detected, perLine)
+        if (result.texts.all { it == null }) {
+            // Every line answered and none needed translating: the song is in the target language
+            // (or ones left alone). Kept, so it's known the next time it plays.
+            val unanswered = batches.flatten().any { (it.index to it.part) !in aligned }
+            if (!answered || unanswered) throw TranslationFailure("Couldn't translate these lyrics. Try again later.")
+            if (!humanFailed) cache.write(result)
+            return@coroutineScope TranslationOutcome.Skipped(detected)
+        }
+        if (humanFailed) trace("not cached: Genius gets asked again next time") else cache.write(result)
         TranslationOutcome.Translated(result)
     }
 
-    /** [Translator.translate], waiting out a busy provider a couple of times before giving up. */
-    private suspend fun ask(translator: Translator, request: TranslatorRequest): TranslatorResponse {
-        // Google's limit is a block on the connection: asking again soon only makes it last
-        // longer, so it's left alone for a while instead of retried.
-        if (translator.provider == TranslationProvider.Google) {
-            if (now() < googleRestsUntil) throw TranslationFailure(GOOGLE_RESTING)
-            return try {
-                translator.translate(request)
-            } catch (busy: ProviderBusy) {
-                googleRestsUntil = now() + GOOGLE_REST_MS
-                throw TranslationFailure(GOOGLE_RESTING)
-            }
-        }
-        repeat(BUSY_RETRIES) { attempt ->
+    /**
+     * [Translator.translate], waiting out a busy provider briefly. One that asks for longer, or
+     * stays busy, is left alone until then. Google's limit is a block on the connection that
+     * asking again only lengthens, so it is never retried at once.
+     */
+    private suspend fun ask(translator: Translator, request: TranslatorRequest, trace: (String) -> Unit): TranslatorResponse {
+        val provider = translator.provider
+        restsUntil[provider]?.let { if (now() < it) throw resting(provider, it) }
+        var attempt = 0
+        while (true) {
             try {
                 return translator.translate(request)
             } catch (busy: ProviderBusy) {
-                pause(busy.retryAfterMs?.coerceIn(1_000L, 10_000L) ?: (BUSY_WAIT_MS * (attempt + 1)))
+                val asked = busy.retryAfterMs
+                if (provider == TranslationProvider.Google || attempt >= BUSY_RETRIES || asked != null && asked > MAX_WAIT_MS) {
+                    val rest = asked?.coerceIn(MIN_REST_MS, MAX_REST_MS) ?: if (provider == TranslationProvider.Google) GOOGLE_REST_MS else MIN_REST_MS
+                    val until = now() + rest
+                    restsUntil[provider] = until
+                    trace("${provider.label} is limiting (retry after: ${asked?.let { "${it / 1000} s" } ?: "not given"}), left alone for ${rest / 1000} s")
+                    throw resting(provider, until)
+                }
+                val wait = asked?.coerceAtLeast(1_000L) ?: (BUSY_WAIT_MS * (attempt + 1))
+                trace("${provider.label} is busy, asking again in ${wait / 1000} s")
+                pause(wait)
+                attempt++
             }
         }
-        return try {
-            translator.translate(request)
-        } catch (busy: ProviderBusy) {
-            throw TranslationFailure("Translation is busy right now. Try again in a minute.")
-        }
+    }
+
+    private fun resting(provider: TranslationProvider, until: Long): ProviderResting {
+        val minutes = ((until - now()).coerceAtLeast(0L) + 59_999L) / 60_000L
+        val wait = if (minutes <= 1) "a minute" else "$minutes minutes"
+        return ProviderResting(provider, until, when (provider) {
+            TranslationProvider.Google -> "Google is limiting translations on this connection. Trying again in $wait, or use DeepL."
+            TranslationProvider.DeepL -> "DeepL is busy right now. Trying again in $wait."
+        })
     }
 
     private companion object {
@@ -222,7 +302,11 @@ class TranslationEngine(
         const val PACE_MS = 300L
         const val BUSY_RETRIES = 2
         const val BUSY_WAIT_MS = 2_000L
+        /** The longest a busy provider is waited out in place; one asking for longer is left to rest. */
+        const val MAX_WAIT_MS = 10_000L
+        const val MIN_REST_MS = 60_000L
+        const val MAX_REST_MS = 30 * 60_000L
         const val GOOGLE_REST_MS = 10 * 60_000L
-        const val GOOGLE_RESTING = "Google is limiting translations on this connection. Try again in a few minutes, or use DeepL."
     }
 }
+

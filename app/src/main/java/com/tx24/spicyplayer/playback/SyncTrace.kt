@@ -24,4 +24,4 @@ internal class EventTrace(private val maxLines: Int) {
 internal val SyncTrace = EventTrace(40)
 
 /** What translation did: started, shown, skipped, dropped as stale, failed. */
-internal val TranslationTrace = EventTrace(20)
+internal val TranslationTrace = EventTrace(40)
