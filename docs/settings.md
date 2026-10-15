@@ -1,0 +1,27 @@
+# Adding a setting
+
+The settings screen lives in `ui/settings/`; its controls in `ui/components/SettingsControls.kt`.
+
+1. **Pick its page.** The groups are This song, Lyrics (how the lyrics look and animate, text), Romanization & Translation, Scroll & Sync (delay and scrolling), Background, Now Playing (song header, cover, credits), Controls (hiding and floating buttons), Theme, Sources, Device (screen, performance, haptics) and Advanced. Keep each page to about ten rows; when one grows past that, split by what the settings are about rather than nesting pages (`SettingsPage` in `ui/settings/SettingsScreen.kt`). Only make a new group when none fits. A new group needs a `SettingsPage` entry, a row on the first page (`HomeGroups`) with a live one-line summary, a case in `PageContent`, and a placeholder in `PageSkeleton`.
+2. **Store it where it's used.**
+   - How the lyrics screen looks and behaves (word motion, refresh rate, update channel): a property in `ui/settings/AppSettings.kt` (the `ui` SharedPreferences), which reads as Compose state.
+   - Lookup, sources or playback: a field in `PlayerUiState` plus a view-model function that saves it.
+   - Keep the logic free of Android code where possible, for the Kotlin Multiplatform move after v1.
+3. **Build it from the shared controls**, never Material ones:
+   - `ToggleRow` for on/off;
+   - `SettingRow` with an `SpicySelect` for a choice between a few named options;
+   - `SettingRow` with an `SpicyButton` or `SpicyTextField` for actions and text;
+   - `SettingRow(stacked = true)` with `SpicyBipolarSlider` for amounts.
+
+   Wording follows Spicy Lyrics: a short label, and a one-sentence description that ends with a full stop. Keep descriptions to one line where possible. Give every row a fitting `Icons.Rounded` icon; the shared controls apply the neighbouring rows' secondary tint.
+4. **Search matches rows by their label and description automatically.** When shortening an existing description, retain its old text in `searchDescription` so old searches still find the row. Anything else (a card, a note) needs wrapping in `Searchable(...)`, or search won't find it. A page's first rows go without a section title, because the page header already names them. Later groups on the same page go in `SettingsSection("Title")`.
+5. **Keep the placeholder honest.** If a page gains or loses several rows, update its row count in `PageSkeleton`. If the first page's summary for that group should mention the new setting, update it too.
+6. **Don't repeat what the lyrics screen already has.** For example, romanize is a button there.
+
+## Romanization & Translation
+
+`RomanizationTranslationContent` in `ui/settings/TranslationSettings.kt` owns the combined page. Romanization comes first: Romanize button, Romanization (Replace the line / Under each line), Human romanizations. Translation follows: Target language, Display mode, Translate automatically, Provider, Use human translations from Genius, the conditional DeepL key rows, Don't translate. The per-song Lyrics language override stays in This song and quick settings.
+
+Moving a row changes only where it appears. Keep its label, callback and storage key. Romanize and Romanize button remain `ui.romanize` and `ui.romanizeButton`; the display choices remain `ui.romanizationMode` and `ui.translationMode`. Human romanizations remains `lyrics_sources.humanRomanizations`; translation preferences stay in `translation`, and per-song language overrides in `song_languages`.
+
+Settings backups include the `ui`, `lyrics_sources`, `translation` and `song_languages` stores through `SettingsBackup.STORES`. `SettingsBackupStore` validates types when restoring. DeepL credentials stay in their separate device-only store; translation disclosure consent is also kept on the device. Do not migrate preferences or change backup schemas for a row move.

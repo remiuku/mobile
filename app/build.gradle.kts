@@ -84,7 +84,14 @@ android {
     }
 
     // Android logging/clock calls are no-ops in JVM tests, so provider code runs there unchanged.
-    testOptions { unitTests.isReturnDefaultValues = true }
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+        // PublicDocsTest reads these, so an edit to them must rerun the tests.
+        unitTests.all {
+            it.inputs.files(rootProject.file("CLAUDE.md"), rootProject.fileTree("docs"))
+                .withPropertyName("publicDocs")
+        }
+    }
 
     buildFeatures {
         compose = true
