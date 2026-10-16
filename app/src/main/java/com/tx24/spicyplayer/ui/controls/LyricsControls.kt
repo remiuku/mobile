@@ -498,9 +498,9 @@ private fun floatingActions(
         // Shows what a tap switches to: "A" to go back, the kana mark to romanize.
         add(FloatingAction(if (romanized) "Show original lyrics" else "Romanize lyrics", keep = 80, onToggleRomanize) { icon ->
             if (romanized) {
-                Image(rememberVectorPainter(SpicyIcons.DisableRomanization), null, Modifier.size(icon(19f)))
+                Image(rememberVectorPainter(SpicyIcons.DisableRomanization), null, Modifier.size(icon(23f)))
             } else {
-                Image(rememberVectorPainter(SpicyIcons.EnableRomanization), null, Modifier.size(icon(17f)))
+                Image(rememberVectorPainter(SpicyIcons.EnableRomanization), null, Modifier.size(icon(23f)))
             }
         })
     }
@@ -525,7 +525,7 @@ private fun floatingActions(
         Image(rememberVectorPainter(SpicyIcons.Resync), null, Modifier.size(icon(23f)))
     })
     if (showExpand) add(FloatingAction(if (expanded) "Show lyrics" else "Show the cover", keep = 70, onToggleExpanded) { icon ->
-        Image(rememberVectorPainter(if (expanded) SpicyIcons.Collapse else SpicyIcons.Expand), null, Modifier.size(icon(21f)))
+        Image(rememberVectorPainter(if (expanded) SpicyIcons.Collapse else SpicyIcons.Expand), null, Modifier.size(icon(23f)))
     })
     if (onSwapSide != null) add(FloatingAction("Move the cover to the other side", keep = 60, onSwapSide) { icon ->
         Image(rememberVectorPainter(SpicyIcons.SwapSide), null, Modifier.size(icon(23f)))
@@ -977,28 +977,34 @@ internal object SpicyIcons {
         15f, 20f,
         "M 4.427 19.963 C 5.513 19.963 6.06 19.416 6.06 18.33 L 6.06 1.66 C 6.06 0.545 5.513 0.037 4.427 0.037 L 1.633 0.037 C 0.548 0.037 0 0.575 0 1.66 L 0 18.331 C -0.009 19.416 0.538 19.963 1.633 19.963 L 4.427 19.963 Z M 13.377 19.963 C 14.462 19.963 15 19.416 15 18.33 L 15 1.66 C 15 0.545 14.462 0.037 13.376 0.037 L 10.573 0.037 C 9.487 0.037 8.949 0.575 8.949 1.66 L 8.949 18.331 C 8.949 19.416 9.487 19.963 10.573 19.963 L 13.376 19.963 L 13.377 19.963 Z",
     )
-    val DisableRomanization = icon(
-        750f, 900f,
-        "m529.42,632.32H214.71l-81.89,163.5H13.31L377.06,80.35l350.9,715.47h-121.41l-77.13-163.5Zm-45.23-95.48l-109.03-228.9-114.27,228.9h223.3Z",
+    // A and ア are both "a": the script a tap switches to is drawn at full strength, the one it
+    // leaves dimmed.
+    val DisableRomanization = line(
+        DIM to "M2.5 18 6.75 6 11 18", DIM to "M4 14h5.5",
+        1f to "M13.5 6.5h8L19 9.75", 1f to "M17.25 9.75v1.75c0 2.75-1.25 5-3.75 6.5",
     )
-    val EnableRomanization = icon(
-        125.45f, 131.07f,
-        "m53.38,130.41c-12.54-2.87-20.86-14.36-19.98-27.42.59-7.62,5.8-15.12,13.07-18.69,4.28-2.11,11.02-3.4,17.75-3.46h4.8v-12.71c.06-16,.64-17.99,5.98-20.74,4.86-2.46,10.96-.47,13.3,4.34,1.17,2.34,1.23,3.52,1.23,17.23v14.65l2.81,1.05c13.59,5.1,30.59,17.87,32.34,24.38,1.17,4.34-.88,8.79-4.92,10.72-4.1,1.93-5.63,1.41-13.89-5.27-4.69-3.69-12.83-9.02-15.29-9.96-.88-.29-1.05,0-1.05,1.64,0,2.93-1.58,8.5-3.34,11.78-1.93,3.46-6.74,8.03-10.43,9.79-6.21,2.99-15.88,4.16-22.38,2.7v-.03Zm11.84-20.51c1.05-.47,2.4-1.46,2.87-2.29,1-1.52,1.41-5.39.7-6.15-.64-.59-12.66-.18-13.95.53-1.23.64-1.46,4.92-.29,6.45,1.82,2.34,6.86,3.05,10.66,1.46h0Z",
-        "m6.33,103.4c-4.39-1.99-6.91-6.04-6.21-9.9.23-1.11,2.23-4.8,4.51-8.32,7.21-11.19,17.64-31.23,18.98-36.56l.35-1.46h-8.67c-7.62,0-8.91-.18-10.66-1.17-2.99-1.76-4.34-3.93-4.34-6.91,0-3.52,1.64-6.04,5.1-7.73,2.81-1.41,3.4-1.46,13.89-1.46h10.96l.64-3.93c.35-2.23,1.05-6.86,1.58-10.43,1-7.21,1.93-9.79,4.22-12.19,2.34-2.46,4.39-3.34,7.85-3.34,5.74,0,9.26,3.34,9.26,8.79,0,1.46-.64,5.8-1.46,9.67-.76,3.87-1.46,7.27-1.46,7.56,0,.94,2.99-.29,7.97-3.28,6.04-3.57,9.32-4.22,12.42-2.23,4.51,2.81,4.92,10.84.82,16.35-2.7,3.63-10.9,6.33-20.92,6.91l-6.45.35-1.99,5.33c-3.63,9.67-9.43,22.73-15.35,34.34-6.74,13.3-9.43,17.64-11.72,18.98-2.46,1.46-6.86,1.76-9.32.64h0Z",
-        "m109.17,57.17c-11.19-4.69-29.82-13.3-30.88-14.24-4.69-4.22-3.46-12.42,2.17-15.12,4.28-1.99,6.56-1.29,24.9,7.73,15.12,7.38,16.88,8.44,18.34,10.61,1.99,2.87,2.34,6.8.76,9.2-1.29,1.99-5.21,3.81-8.26,3.81-1.35,0-4.34-.88-7.03-1.99Z",
+    val EnableRomanization = line(
+        1f to "M2.5 18 6.75 6 11 18", 1f to "M4 14h5.5",
+        DIM to "M13.5 6.5h8L19 9.75", DIM to "M17.25 9.75v1.75c0 2.75-1.25 5-3.75 6.5",
     )
 
-    /** Lucide's settings cog. */
+    /** A gear with eight teeth around a small hub. */
     val Settings = lucide(
-        "M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2Z",
-        "M15 12a3 3 0 1 1-6 0a3 3 0 1 1 6 0Z",
+        "M10.07 5.69L10.48 3.38A8.75 8.75 0 0 1 13.52 3.38L13.93 5.69A6.6 6.6 0 0 1 15.1 6.17L17.02 4.83A8.75 8.75 0 0 1 19.17 6.98L17.83 8.9A6.6 6.6 0 0 1 18.31 10.07L20.62 10.48A8.75 8.75 0 0 1 20.62 13.52L18.31 13.93A6.6 6.6 0 0 1 17.83 15.1L19.17 17.02A8.75 8.75 0 0 1 17.02 19.17L15.1 17.83A6.6 6.6 0 0 1 13.93 18.31L13.52 20.62A8.75 8.75 0 0 1 10.48 20.62L10.07 18.31A6.6 6.6 0 0 1 8.9 17.83L6.98 19.17A8.75 8.75 0 0 1 4.83 17.02L6.17 15.1A6.6 6.6 0 0 1 5.69 13.93L3.38 13.52A8.75 8.75 0 0 1 3.38 10.48L5.69 10.07A6.6 6.6 0 0 1 6.17 8.9L4.83 6.98A8.75 8.75 0 0 1 6.98 4.83L8.9 6.17A6.6 6.6 0 0 1 10.07 5.69Z",
+        "M14.75 12a2.75 2.75 0 1 1-5.5 0a2.75 2.75 0 1 1 5.5 0Z",
     )
 
-    /** Lucide's maximize-2, for growing the song header. */
-    val Expand = lucide("M15 3h6v6", "M9 21H3v-6", "M21 3l-7 7", "M3 21l7-7")
+    /** Four rounded corners pulled out to the edges, for growing the song header. */
+    val Expand = lucide(
+        "M3.5 8.5V6A2.5 2.5 0 0 1 6 3.5h2.5", "M15.5 3.5H18A2.5 2.5 0 0 1 20.5 6v2.5",
+        "M20.5 15.5V18a2.5 2.5 0 0 1-2.5 2.5h-2.5", "M8.5 20.5H6A2.5 2.5 0 0 1 3.5 18v-2.5",
+    )
 
-    /** Lucide's minimize-2, for shrinking it back. */
-    val Collapse = lucide("M4 14h6v6", "M20 10h-6V4", "M14 10l7-7", "M3 21l7-7")
+    /** The same corners turned inside out, for shrinking it back. */
+    val Collapse = lucide(
+        "M8.5 3.5V6A2.5 2.5 0 0 1 6 8.5H3.5", "M20.5 8.5H18A2.5 2.5 0 0 1 15.5 6V3.5",
+        "M15.5 20.5V18a2.5 2.5 0 0 1 2.5-2.5h2.5", "M3.5 15.5H6A2.5 2.5 0 0 1 8.5 18v2.5",
+    )
 
     /** Lucide's refresh-cw, for resyncing with the player. */
     val Resync = lucide(
@@ -1008,29 +1014,32 @@ internal object SpicyIcons {
         "M8 16H3v5",
     )
 
-    /** A split panel with arrows out to both sides, for moving the landscape cover across. */
+    /** The screen with the cover on one side, pointing at the side it will move to. */
     val SwapSide = lucide(
-        "M5.5 3h13A2.5 2.5 0 0 1 21 5.5v13a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 18.5v-13A2.5 2.5 0 0 1 5.5 3Z",
-        "M12 3v18",
-        "m8.5 9-3 3 3 3",
-        "m15.5 9 3 3-3 3",
+        "M6 4h12a3 3 0 0 1 3 3v10a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3Z",
+        "M7.25 9.5h2.5a1.25 1.25 0 0 1 1.25 1.25v2.5a1.25 1.25 0 0 1-1.25 1.25h-2.5A1.25 1.25 0 0 1 6 13.25v-2.5A1.25 1.25 0 0 1 7.25 9.5Z",
+        "M14 12h4m-1.75-1.75L18 12l-1.75 1.75",
     )
 
-    /** A book leaning on another, for the Lyrics Manager. */
+    /** A lyric sheet in front of another, for the Lyrics Manager. */
     val LyricsManager = lucide(
-        "M4.5 3h4A1.5 1.5 0 0 1 10 4.5v15A1.5 1.5 0 0 1 8.5 21h-4A1.5 1.5 0 0 1 3 19.5v-15A1.5 1.5 0 0 1 4.5 3Z",
-        "M6.5 3v18",
-        "M14.5 3.7 13 4.3a1 1 0 0 0-.56 1.3l5.4 14.1a1 1 0 0 0 1.3.56l1.5-.6a1 1 0 0 0 .56-1.3L15.8 4.26a1 1 0 0 0-1.3-.56Z",
+        "M8 3h8.5A2.5 2.5 0 0 1 19 5.5V16",
+        "M7.5 6h6a2.5 2.5 0 0 1 2.5 2.5v10a2.5 2.5 0 0 1-2.5 2.5h-6a2.5 2.5 0 0 1-2.5-2.5v-10a2.5 2.5 0 0 1 2.5-2.5Z",
+        "M8 10.5h5", "M8 14h5", "M8 17.5h3",
     )
 
-    /** A Lucide icon: 24-unit paths stroked 2 units wide with round caps and joins. */
-    private fun lucide(vararg paths: String): ImageVector =
+    /** A line icon: 24-unit paths stroked 2 units wide with round caps and joins. */
+    private fun lucide(vararg paths: String): ImageVector = line(*paths.map { 1f to it }.toTypedArray())
+
+    /** [lucide], each path at its own alpha. */
+    private fun line(vararg paths: Pair<Float, String>): ImageVector =
         ImageVector.Builder(defaultWidth = 24.dp, defaultHeight = 24.dp, viewportWidth = 24f, viewportHeight = 24f)
             .apply {
-                paths.forEach { path ->
+                paths.forEach { (alpha, path) ->
                     addPath(
                         PathParser().parsePathString(path).toNodes(),
                         stroke = SolidColor(SpicyPalette.Neutral.TextPrimary),
+                        strokeAlpha = alpha,
                         strokeLineWidth = 2f,
                         strokeLineCap = StrokeCap.Round,
                         strokeLineJoin = StrokeJoin.Round,
@@ -1038,6 +1047,9 @@ internal object SpicyIcons {
                 }
             }
             .build()
+
+    /** How strongly the script a romanize tap leaves is drawn. */
+    private const val DIM = 0.4f
 
     private fun icon(width: Float, height: Float, vararg paths: String): ImageVector =
         ImageVector.Builder(defaultWidth = width.dp, defaultHeight = height.dp, viewportWidth = width, viewportHeight = height)
