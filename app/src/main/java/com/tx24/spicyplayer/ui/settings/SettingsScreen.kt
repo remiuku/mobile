@@ -70,8 +70,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -119,7 +122,8 @@ import dev.chrisbanes.haze.hazeEffect
 import kotlinx.coroutines.launch
 import kotlin.coroutines.cancellation.CancellationException
 
-internal enum class SettingsPage(val title: String) {
+/** A page of settings; one with a [parent] opens from a group card on that page instead of the first page. */
+internal enum class SettingsPage(val title: String, val parent: SettingsPage? = null) {
     ThisSong("This song"),
     Lyrics("Lyrics"),
     Translation("Romanization & Translation"),
@@ -130,13 +134,22 @@ internal enum class SettingsPage(val title: String) {
     Theme("Theme"),
     Sources("Sources"),
     Device("Device"),
+    FloatingLyrics("Floating lyrics", parent = Device),
     Advanced("Advanced"),
+    ;
+
+    /** "Device › Floating lyrics": the title with every page above it, for search results. */
+    val path: String get() = parent?.let { "${it.path} › $title" } ?: title
 }
+
+/** Opens a page over the one showing; what [SubPageRow]s call. */
+internal val LocalOpenSettingsPage = staticCompositionLocalOf<(SettingsPage) -> Unit> { {} }
 
 /**
  * The settings, over the song's own background, blurred and dimmed, opening like the pop-ups
  * do (fade in, 0.96 → 1 scale, 220 ms).
- * The first page lists groups; each opens its own page, which slides in from the right.
+ * The first page lists groups; each opens its own page, which slides in from the right. A page
+ * can hold group cards of its own ([SubPageCard]), which open further pages the same way.
  * Back, including Android's predictive back gesture, steps out one page at a time; on the first
  * page the gesture shrinks the whole screen toward the lyrics before it closes.
  *
@@ -164,9 +177,9 @@ fun SettingsScreen(
     // How far a back gesture on the first page has gone, and from which edge.
     val backSwipe = remember { Animatable(0f) }
     var swipeFromLeft by remember { mutableStateOf(true) }
-    // 0 on the first page, 1 once a group's page has slid in.
-    val pageShift = remember { Animatable(0f) }
-    var page by remember { mutableStateOf<SettingsPage?>(null) }
+    // The pages opened over the first one, deepest last, each with how far it has slid in
+    // (0 → 1) and whether its rows have replaced its skeleton.
+    val stack = remember { mutableStateListOf<OpenPage>() }
     var closing by remember { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
     val homeScroll = rememberScrollState()
@@ -174,7 +187,6 @@ fun SettingsScreen(
     // animation started alongside would be over before it's seen. So a page opens with a
     // skeleton, which is quick to build, and swaps in its rows once it has settled.
     var homeReady by remember { mutableStateOf(false) }
-    var pageReady by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         withFrameNanos { }  // the frame that builds the screen, before timing starts
@@ -191,42 +203,44 @@ fun SettingsScreen(
         }
     }
     fun show(target: SettingsPage) {
+        // A second tap while the page is still sliding in, or a page already open.
+        if (stack.any { it.page == target }) return
         UsageStats.count(UsageCounter.page(target.name))
-        page = target
-        pageReady = false
+        val opened = OpenPage(target)
+        stack += opened
         scope.launch {
-            pageShift.snapTo(0f)
             withFrameNanos { }
-            pageShift.animateTo(1f, modal)
-            pageReady = true
+            opened.shift.animateTo(1f, modal)
+            opened.ready = true
         }
     }
     fun back() {
+        val top = stack.lastOrNull() ?: return close()
         scope.launch {
-            pageShift.animateTo(0f, modal)
-            page = null
+            top.shift.animateTo(0f, modal)
+            stack.remove(top)
         }
     }
 
     PredictiveBackHandler(enabled = !closing) { progress ->
-        val onPage = page != null
+        val top = stack.lastOrNull()
         try {
             progress.collect { event ->
-                if (onPage) {
-                    pageShift.snapTo(1f - event.progress * PAGE_PEEK)
+                if (top != null) {
+                    top.shift.snapTo(1f - event.progress * PAGE_PEEK)
                 } else {
                     swipeFromLeft = event.swipeEdge == BackEventCompat.EDGE_LEFT
                     backSwipe.snapTo(event.progress)
                 }
             }
-            if (onPage) {
-                pageShift.animateTo(0f, modal)
-                page = null
+            if (top != null) {
+                top.shift.animateTo(0f, modal)
+                stack.remove(top)
             } else {
                 close()
             }
         } catch (e: CancellationException) {
-            scope.launch { if (onPage) pageShift.animateTo(1f, modal) else backSwipe.animateTo(0f, modal) }
+            scope.launch { if (top != null) top.shift.animateTo(1f, modal) else backSwipe.animateTo(0f, modal) }
             throw e
         }
     }
@@ -274,7 +288,11 @@ fun SettingsScreen(
                     },
             )
         }
-        CompositionLocalProvider(LocalSpicyPalette provides palette, LocalSettingsBackdrop provides backdrop) {
+        CompositionLocalProvider(
+            LocalSpicyPalette provides palette,
+            LocalSettingsBackdrop provides backdrop,
+            LocalOpenSettingsPage provides ::show,
+        ) {
         BoxWithConstraints(
             Modifier
                 .fillMaxSize()
@@ -288,7 +306,9 @@ fun SettingsScreen(
                 },
         ) {
             val width = constraints.maxWidth.toFloat()
-            // Stays built under a group's page, so going back doesn't wait on rebuilding it.
+            // How far the page above level [index] has slid in: it moves this one aside.
+            fun covered(index: Int): Float = stack.getOrNull(index)?.shift?.value ?: 0f
+            // Every page stays built under the one above it, so going back doesn't wait on rebuilding it.
             run {
                 Page(
                     title = "Settings",
@@ -298,8 +318,9 @@ fun SettingsScreen(
                     ready = homeReady,
                     skeleton = { HomeSkeleton() },
                     modifier = Modifier.graphicsLayer {
-                        translationX = -pageShift.value * width * HOME_PARALLAX
-                        alpha = 1f - pageShift.value
+                        val over = covered(0)
+                        translationX = -over * width * HOME_PARALLAX
+                        alpha = 1f - over
                     },
                     header = { SpicySearchBar(query, { query = it }, Modifier.fillMaxWidth().padding(top = SpicySpacing.S4)) },
                 ) {
@@ -310,24 +331,28 @@ fun SettingsScreen(
                     }
                 }
             }
-            page?.let { shown ->
-                Page(
-                    title = shown.title,
-                    onBack = ::back,
-                    contentPadding = contentPadding,
-                    scroll = rememberScrollState(),
-                    ready = pageReady,
-                    skeleton = { PageSkeleton(shown) },
-                    modifier = Modifier
-                        .graphicsLayer {
-                            translationX = (1f - pageShift.value) * width * PAGE_TRAVEL
-                            alpha = pageShift.value
-                        }
-                        // Keeps touches from falling through to the first page underneath.
-                        .pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent() } },
-                    header = { Spacer(Modifier.height(SpicySpacing.S2)) },
-                ) {
-                    PageContent(shown, state, viewModel, updater, settings, onOpenLyricsManager, onOpenSpotifySearch)
+            stack.forEachIndexed { index, opened ->
+                key(opened.page) {
+                    Page(
+                        title = opened.page.title,
+                        onBack = ::back,
+                        contentPadding = contentPadding,
+                        scroll = rememberScrollState(),
+                        ready = opened.ready,
+                        skeleton = { PageSkeleton(opened.page) },
+                        modifier = Modifier
+                            .graphicsLayer {
+                                val shift = opened.shift.value
+                                val over = covered(index + 1)
+                                translationX = (1f - shift) * width * PAGE_TRAVEL - over * width * HOME_PARALLAX
+                                alpha = shift * (1f - over)
+                            }
+                            // Keeps touches from falling through to the page underneath.
+                            .pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent() } },
+                        header = { Spacer(Modifier.height(SpicySpacing.S2)) },
+                    ) {
+                        PageContent(opened.page, state, viewModel, updater, settings, onOpenLyricsManager, onOpenSpotifySearch)
+                    }
                 }
             }
         }
@@ -356,8 +381,16 @@ private fun PageContent(
         SettingsPage.Theme -> ThemeContent(settings)
         SettingsPage.Sources -> SourcesContent(state, viewModel)
         SettingsPage.Device -> DeviceContent(settings)
+        SettingsPage.FloatingLyrics -> FloatingLyricsContent(settings)
         SettingsPage.Advanced -> AdvancedContent(state, viewModel, updater, settings)
     }
+}
+
+/** A page opened over the first one: how far it has slid in, and whether its rows have replaced its skeleton. */
+@Stable
+private class OpenPage(val page: SettingsPage) {
+    val shift = Animatable(0f)
+    var ready by mutableStateOf(false)
 }
 
 /** A scrolling page under a glass back button and its title. */
@@ -435,6 +468,7 @@ private fun PageSkeleton(page: SettingsPage) {
         SettingsPage.Theme -> SettingsSkeleton(rows = 3)
         SettingsPage.Sources -> SettingsSkeleton(rows = 11, cards = true)
         SettingsPage.Device -> SettingsSkeleton(rows = 9)
+        SettingsPage.FloatingLyrics -> SettingsSkeleton(rows = 1)
         SettingsPage.Advanced -> SettingsSkeleton(rows = 12)
     }
 }
@@ -598,6 +632,23 @@ internal fun GroupDivider() {
 }
 
 /**
+ * A grouped card inside a page, like the first page's: [SubPageRow]s that open further pages.
+ * Search lists those pages' rows on their own, so the card steps aside while searching.
+ */
+@Composable
+internal fun SubPageCard(content: @Composable ColumnScope.() -> Unit) {
+    if (LocalSettingsQuery.current.isNotBlank()) return
+    Column(Modifier.fillMaxWidth().padding(vertical = SpicySpacing.S2).outlinedCard(), content = content)
+}
+
+/** A [GroupRow] that opens [page] over the one showing. */
+@Composable
+internal fun SubPageRow(page: SettingsPage, icon: ImageVector, summary: String) {
+    val open = LocalOpenSettingsPage.current
+    GroupRow(icon, page.title, summary) { open(page) }
+}
+
+/**
  * The footer card, kept short: the name, version, channel and update status with a manual check,
  * then the links out two by two. The status checks quietly on its own and claims nothing until it knows.
  */
@@ -690,7 +741,7 @@ private fun SearchResults(query: String, state: PlayerUiState, viewModel: Extern
             content = {
                 Column(Modifier.fillMaxWidth()) {
                     SettingsPage.entries.forEach { page ->
-                        SettingsSection(page.title) { PageContent(page, state, viewModel, updater, settings, onOpenLyricsManager, onOpenSpotifySearch) }
+                        SettingsSection(page.path) { PageContent(page, state, viewModel, updater, settings, onOpenLyricsManager, onOpenSpotifySearch) }
                     }
                     AboutCardSpacer(state, updater, settings)
                 }

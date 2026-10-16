@@ -798,14 +798,18 @@ internal fun DeviceContent(settings: AppSettings) {
             onChange = { settings.systemBars = SystemBarsMode.valueOf(it) },
         )
     }
-    ToggleRow(
-        label = "Floating lyrics",
-        checked = settings.autoPip,
-        onCheckedChange = { settings.autoPip = it },
-        description = "Leave the app while a song plays and the lyrics shrink into a small floating window.",
-        icon = Icons.Rounded.PictureInPictureAlt,
-        enabled = PictureInPicture.supported(LocalContext.current),
-    )
+    SubPageCard {
+        val supported = PictureInPicture.supported(LocalContext.current)
+        SubPageRow(
+            SettingsPage.FloatingLyrics,
+            Icons.Rounded.PictureInPictureAlt,
+            when {
+                !supported -> "Not available on this phone"
+                settings.autoPip -> "Opens when you leave the app"
+                else -> "Off"
+            },
+        )
+    }
     SettingsSection("Performance") {
         ToggleRow(
             label = "Smoother motion",
@@ -831,6 +835,18 @@ internal fun DeviceContent(settings: AppSettings) {
         )
     }
     HapticsSection(settings)
+}
+
+@Composable
+internal fun FloatingLyricsContent(settings: AppSettings) {
+    ToggleRow(
+        label = "Floating lyrics",
+        checked = settings.autoPip,
+        onCheckedChange = { settings.autoPip = it },
+        description = "Leave the app while a song plays and the lyrics shrink into a small floating window.",
+        icon = Icons.Rounded.PictureInPictureAlt,
+        enabled = PictureInPicture.supported(LocalContext.current),
+    )
 }
 
 @Composable

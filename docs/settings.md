@@ -2,7 +2,14 @@
 
 The settings screen lives in `ui/settings/`; its controls in `ui/components/SettingsControls.kt`.
 
-1. **Pick its page.** The groups are This song, Lyrics (how the lyrics look and animate, text), Romanization & Translation, Scroll & Sync (delay and scrolling), Background, Now Playing (song header, cover, credits), Controls (hiding and floating buttons), Theme, Sources, Device (screen, performance, haptics) and Advanced. Keep each page to about ten rows; when one grows past that, split by what the settings are about rather than nesting pages (`SettingsPage` in `ui/settings/SettingsScreen.kt`). Only make a new group when none fits. A new group needs a `SettingsPage` entry, a row on the first page (`HomeGroups`) with a live one-line summary, a case in `PageContent`, and a placeholder in `PageSkeleton`.
+1. **Pick its page.** The groups are This song, Lyrics (how the lyrics look and animate, text), Romanization & Translation, Scroll & Sync (delay and scrolling), Background, Now Playing (song header, cover, credits), Controls (hiding and floating buttons), Theme, Sources, Device (screen, performance, haptics) and Advanced. Keep each page to about ten rows. Only make a new group when none fits. A new group needs a `SettingsPage` entry, a row on the first page (`HomeGroups`) with a live one-line summary, a case in `PageContent`, and a placeholder in `PageSkeleton`.
+
+   **Nested groups.** When one feature has a group of its own (about four rows or more, all about one thing, like Floating lyrics), give it a page inside its parent page instead of crowding the parent:
+   - A `SettingsPage` entry with `parent = ...`.
+   - A `SubPageCard { SubPageRow(page, icon, summary) }` on the parent page, with a live summary.
+   - A case in `PageContent` and a placeholder in `PageSkeleton`.
+
+   Nest at most two levels below the first page. Search lists a nested page's rows under its full path ("Device › Floating lyrics"), and hides the card itself.
 2. **Store it where it's used.**
    - How the lyrics screen looks and behaves (word motion, refresh rate, update channel): a property in `ui/settings/AppSettings.kt` (the `ui` SharedPreferences), which reads as Compose state.
    - Lookup, sources or playback: a field in `PlayerUiState` plus a view-model function that saves it.
