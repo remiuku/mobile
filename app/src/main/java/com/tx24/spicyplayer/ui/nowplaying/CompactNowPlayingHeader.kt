@@ -450,7 +450,7 @@ private val CssLineHeight = LineHeightStyle(LineHeightStyle.Alignment.Center, Li
 
 /** One `.SongName`/`.Artists` row: a single line that scrolls per [HeaderMarquee] when it overflows. */
 @Composable
-private fun MarqueeLine(
+internal fun MarqueeLine(
     text: String,
     style: TextStyle,
     color: Color,

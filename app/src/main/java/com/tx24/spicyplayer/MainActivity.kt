@@ -236,6 +236,13 @@ class LyricsActivity : ComponentActivity() {
     private var pipAutoEnter = false
     /** The window's shape from Settings (`AppSettings.pipShape`). */
     private val pipRatio = MutableStateFlow(Rational(16, 9))
+    /**
+     * The last shape the system took. It refuses shape changes that come too often ("Too many PiP
+     * aspect ratio change requests"), and then refuses entering with the new shape too, so the
+     * window enters with this one until the new shape is taken.
+     */
+    private var pipAcceptedRatio = Rational(16, 9)
+    private var pipRatioApplied = false
     private val pipSupported by lazy { PictureInPicture.supported(this) }
 
     // The window's own buttons come back as broadcasts.
@@ -268,10 +275,23 @@ class LyricsActivity : ComponentActivity() {
                         playbackViewModel.state.map { it.isPlaying to (it.sourcePackage != null) }.distinctUntilChanged(),
                         pipRatio,
                     ) { allowed, (playing, hasSession), ratio -> Triple(playing, allowed && hasSession, ratio) }
-                        .collect { (playing, autoEnter, ratio) ->
+                        .collectLatest { (playing, autoEnter, ratio) ->
                             pipAutoEnter = autoEnter
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                                runCatching { setPictureInPictureParams(PictureInPicture.params(this@LyricsActivity, playing, autoEnter, ratio)) }
+                            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return@collectLatest
+                            // A refused shape is asked for again a little later, with the shape the
+                            // system already took in the meantime.
+                            while (true) {
+                                val sent = runCatching {
+                                    setPictureInPictureParams(PictureInPicture.params(this@LyricsActivity, playing, autoEnter, ratio))
+                                }
+                                if (sent.isSuccess) {
+                                    pipAcceptedRatio = ratio
+                                    break
+                                }
+                                runCatching {
+                                    setPictureInPictureParams(PictureInPicture.params(this@LyricsActivity, playing, autoEnter, pipAcceptedRatio))
+                                }
+                                delay(PIP_RATIO_RETRY_MS)
                             }
                         }
                 }
@@ -282,6 +302,10 @@ class LyricsActivity : ComponentActivity() {
             // A change in Settings shows or hides the bars at once.
             LaunchedEffect(settings.systemBars) { applySystemBars(settings.systemBars) }
             LaunchedEffect(settings.pipShape, settings.pipCustomRatio) {
+                // Dragging the custom shape's slider changes it many times a second; only the shape
+                // it settles on goes to the system, which refuses changes that come too often.
+                if (pipRatioApplied) delay(PIP_RATIO_SETTLE_MS)
+                pipRatioApplied = true
                 pipRatio.value = PictureInPicture.ratio(settings.pipShape, settings.pipCustomRatio)
             }
             MaterialTheme(colorScheme = darkColorScheme()) {
@@ -321,6 +345,7 @@ class LyricsActivity : ComponentActivity() {
         if (!pipSupported || Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val playing = playbackViewModel.state.value.isPlaying
         runCatching { enterPictureInPictureMode(PictureInPicture.params(this, playing, pipAutoEnter, pipRatio.value)) }
+            .recoverCatching { enterPictureInPictureMode(PictureInPicture.params(this, playing, pipAutoEnter, pipAcceptedRatio)) }
     }
 
     // Android 12+ enters the window on its own (see PictureInPicture.params); before that, here.
@@ -1622,3 +1647,7 @@ private fun LyricsPanelContent(
     }
 }
 
+/** How long the custom PiP shape has to stay put before it's sent. */
+private const val PIP_RATIO_SETTLE_MS = 600L
+/** How long to wait before asking again for a PiP shape the system refused. */
+private const val PIP_RATIO_RETRY_MS = 5_000L

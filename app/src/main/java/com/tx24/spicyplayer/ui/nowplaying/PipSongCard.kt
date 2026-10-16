@@ -1,5 +1,7 @@
 package com.tx24.spicyplayer.ui.nowplaying
 
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.runtime.withFrameMillis
 import androidx.compose.runtime.remember
@@ -66,23 +68,26 @@ internal fun PipSongCard(
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Cover(cover?.bitmap, coverSize)
                 Column(Modifier.weight(1f)) {
-                    Text(title, style = titleStyle, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    Text(artist, style = artistStyle, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    CardLine(title, titleStyle, Color.White, Alignment.CenterStart)
+                    CardLine(artist, artistStyle, SpicyColors.TextSecondary, Alignment.CenterStart)
                 }
             }
         } else {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Cover(cover?.bitmap, coverSize)
-                Text(
-                    title,
-                    modifier = Modifier.padding(top = 8.dp),
-                    style = titleStyle.copy(textAlign = TextAlign.Center),
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(artist, style = artistStyle.copy(textAlign = TextAlign.Center), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Spacer(Modifier.height(8.dp))
+                CardLine(title, titleStyle, Color.White)
+                CardLine(artist, artistStyle, SpicyColors.TextSecondary)
             }
         }
+    }
+}
+
+/** One line of the card, scrolling like the song header's when it's too long to fit. */
+@Composable
+private fun CardLine(text: String, style: TextStyle, color: Color, alignment: Alignment = Alignment.Center) {
+    BoxWithConstraints(Modifier.fillMaxWidth(), contentAlignment = alignment) {
+        MarqueeLine(text, style, color, constraints.maxWidth.toFloat())
     }
 }
 
