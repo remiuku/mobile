@@ -102,16 +102,19 @@ object AppleMusicMotion {
         val bob = sin(bobX * PI).toFloat() * WORD_LIFT_EM * (if (background) 2f else 1f)
         val a = amount.toFloat()
         return LetterPose(
-            xOffset = -grow * 0.015f * a * (n / 2f - index),
-            yOffset = -grow * 0.04f * a - bob,
+            xOffset = -grow * 0.026f * a * (n / 2f - index),
+            yOffset = -grow * 0.107f * a - bob,
             scale = 1f + grow * 0.1f * a,
             glow = grow * blur.toFloat(),
             glowRadiusEm = minOf(0.3f, blur.toFloat() * 0.3f),
         )
     }
 
-    /** Measured held letters swell about 16% on a 3.7s word, rising another 0.12em. */
-    const val EMPHASIS_STRENGTH = 2f
+    /**
+     * A fully held word's letters swell to about 1.07x and rise about 0.075em above the word, as
+     * two references agree on; a recreation's 1.16x swell read as overdone next to them.
+     */
+    const val EMPHASIS_STRENGTH = 0.7f
 
     /** One letter's pose on top of its word's rise: offsets in em, [glow] its halo's opacity. */
     data class LetterPose(
@@ -139,30 +142,34 @@ object AppleMusicMotion {
     const val SCALE_OUT_MS = 700
 
     /**
-     * Line opacity: every line but the active one alike (measured at 0.29 of a lit line's brightness,
+     * Line opacity: every line but the active one alike (measured at 0.35 of a lit line's brightness,
      * which is this times [DIM_ALPHA]); distance shows through the blur instead. While the user
      * scrolls, a little brighter.
      */
     fun lineOpacity(distance: Int, userScrolling: Boolean): Float = when {
         distance == 0 -> 1f
         userScrolling -> 0.8f
-        else -> 0.53f
+        else -> 0.64f
     }
 
     /**
      * Distance blur, as a Gaussian deviation in em: [signedDistance] is negative above the active
-     * line. Joint scale/blur fits of screen recordings give about 0.05em for the next line,
-     * 0.08em for previous lines and the second upcoming line. Farther lines stay softly capped.
+     * line. The shape (steep over the first lines, then level) is measured off older recordings,
+     * whose compression made it read too strong; [BLUR_STRENGTH] brings the next line to the
+     * 0.04-0.05em measured on iOS 26.
      */
-    fun blurEm(signedDistance: Int): Float = when {
+    fun blurEm(signedDistance: Int): Float = BLUR_STRENGTH * when {
         signedDistance == 0 -> 0f
         signedDistance == -1 -> 0.08f
-        signedDistance < 0 -> 0.08f
-        signedDistance == 1 -> 0.05f
-        signedDistance == 2 -> 0.08f
-        signedDistance == 3 -> 0.08f
-        else -> 0.09f
+        signedDistance < 0 -> 0.12f
+        signedDistance == 1 -> 0.07f
+        signedDistance == 2 -> 0.11f
+        signedDistance == 3 -> 0.13f
+        else -> 0.15f
     }
+
+    /** How much of the older recordings' blur is used, matching iOS 26. */
+    const val BLUR_STRENGTH = 0.6f
 
     /** Background vocals take this share of their distance's blur, and none while their line is sung. */
     const val BACKGROUND_BLUR_SHARE = 0.5f
@@ -197,8 +204,8 @@ object AppleMusicMotion {
 
     // ── Scrolling ───────────────────────────────────────────────────────────────────
 
-    /** Four measured lead lines move together, with no detectable per-line delay. */
-    const val STAGGER_S = 0f
+    /** Lines past the active one start their scroll this much later each, up to [STAGGER_STEPS]. */
+    const val STAGGER_S = 0.05f
     const val STAGGER_STEPS = 4
     /** The scroll's spring: mass 1, stiffness 100, damping 18 (ω 10 rad/s, damping ratio 0.9). */
     const val SCROLL_FREQUENCY_HZ = 1.5915494f // 10 / 2π
@@ -209,7 +216,7 @@ object AppleMusicMotion {
     /**
      * The breathing dots over an instrumental break [durationMs] long, at [t] ms into it: they
      * fade in at resting size, breathe slowly, dip and rise once just before the singing comes
-     * back, then pop away; each dot lights from 16% to full in turn across the break.
+     * back, then pop away; each dot lights from 20% to full in turn across the break.
      */
     class Dots(private val durationMs: Float, private val count: Int = 3) {
         private val factor = (durationMs / (ENTER + DIP + STILL + EXIT)).coerceAtMost(1f)
@@ -242,7 +249,7 @@ object AppleMusicMotion {
         }
 
         fun dotAlpha(index: Int, t: Float): Float =
-            0.16f + 0.84f * ((t - enterEnd - dotSpan * index) / dotSpan).coerceIn(0f, 1f)
+            0.2f + 0.8f * ((t - enterEnd - dotSpan * index) / dotSpan).coerceIn(0f, 1f)
 
         private fun smooth(v: Float): Float {
             val x = v.coerceIn(0f, 1f)
@@ -250,7 +257,7 @@ object AppleMusicMotion {
         }
 
         private companion object {
-            const val ENTER = 1000f
+            const val ENTER = 800f
             const val DIP = 3000f
             const val STILL = 200f
             const val EXIT = 200f
