@@ -90,7 +90,7 @@ object AppleMusicMotion {
         blur *= 0.5
         // A line's last word is held a little longer, but no bigger.
         if (lastWord) du *= 1.2
-        amount = minOf(1.2, amount) * EMPHASIS_STRENGTH
+        amount = minOf(1.2, amount) * EMPHASIS_STRENGTH * (if (background) BACKGROUND_EMPHASIS else 1f)
         blur = minOf(0.8, blur)
 
         // Each letter starts a 2.5th of the word's length over the letter count after the one before.
@@ -99,7 +99,7 @@ object AppleMusicMotion {
         val grow = emphasisEasing(((t - start) / du).coerceIn(0.0, 1.0).toFloat())
         // The bob: up and back down over 1.4 times that, starting 400ms ahead.
         val bobX = ((t - (start - 400.0)) / (du * 1.4)).coerceIn(0.0, 1.0)
-        val bob = sin(bobX * PI).toFloat() * WORD_LIFT_EM * (if (background) 2f else 1f)
+        val bob = sin(bobX * PI).toFloat() * WORD_LIFT_EM
         val a = amount.toFloat()
         return LetterPose(
             xOffset = -grow * 0.026f * a * (n / 2f - index),
@@ -115,6 +115,12 @@ object AppleMusicMotion {
      * two references agree on; a recreation's 1.16x swell read as overdone next to them.
      */
     const val EMPHASIS_STRENGTH = 0.7f
+
+    /**
+     * Background vocals' share of it: they're small and already rise twice as far as a word, so the
+     * full swell and lift on top made the whole word fly off.
+     */
+    const val BACKGROUND_EMPHASIS = 0.35f
 
     /** One letter's pose on top of its word's rise: offsets in em, [glow] its halo's opacity. */
     data class LetterPose(

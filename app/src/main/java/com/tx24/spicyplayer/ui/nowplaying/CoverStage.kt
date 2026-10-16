@@ -1,5 +1,8 @@
 package com.tx24.spicyplayer.ui.nowplaying
 
+import kotlin.math.PI
+import kotlin.math.cos
+import androidx.compose.animation.core.Easing
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
@@ -124,7 +127,7 @@ fun CoverStage(
                 },
         ) {
             Box(Modifier.fillMaxSize().clipToBounds().graphicsLayer { alpha = STAGE_OPACITY }) {
-                Crossfade(resting, animationSpec = tween(STAGE_FADE_MS), label = "stageCover") { cover ->
+                Crossfade(resting, animationSpec = tween(COVER_CHANGE_MS, easing = HalfCosine), label = "stageCover") { cover ->
                     if (cover != null) {
                         val bitmap = remember(cover) { cover.bitmap.asImageBitmap() }
                         Image(bitmap, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop, alignment = CropAlignment)
@@ -166,12 +169,11 @@ fun CoverStage(
                     drawRect(
                         Brush.verticalGradient(
                             0f to Color.Transparent,
-                            0.35f to Color.Transparent,
-                            0.50f to Color.Black.copy(alpha = 0.06f),
-                            0.62f to Color.Black.copy(alpha = 0.16f),
-                            0.75f to Color.Black.copy(alpha = 0.29f),
-                            0.88f to Color.Black.copy(alpha = 0.39f),
-                            1f to Color.Black.copy(alpha = 0.45f),
+                            0.45f to Color.Transparent,
+                            0.60f to Color.Black.copy(alpha = 0.04f),
+                            0.72f to Color.Black.copy(alpha = 0.11f),
+                            0.84f to Color.Black.copy(alpha = 0.19f),
+                            1f to Color.Black.copy(alpha = 0.26f),
                         ),
                     )
                 },
@@ -301,4 +303,8 @@ private const val TOP_FEATHER = 0.18f
 private val FEATHER_STOPS = listOf(0f to 0f, 0.18f to 0.10f, 0.38f to 0.36f, 0.72f to 0.85f, 1f to 1f)
 
 const val STAGE_FADE_MS = 900
+
+/** A song change, on the dynamic background's own crossfade: a second, eased by half a cosine. */
+private const val COVER_CHANGE_MS = 1000
+private val HalfCosine = Easing { 0.5f - 0.5f * cos(PI.toFloat() * it) }
 private const val STAGE_ARTWORK_MAX_PX = 1024

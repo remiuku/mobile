@@ -1,5 +1,6 @@
 package com.tx24.spicyplayer.ui.controls
 
+import kotlin.math.abs
 import com.tx24.spicyplayer.ui.components.LocalGlassCast
 import androidx.compose.runtime.CompositionLocalProvider
 import com.tx24.spicyplayer.ui.components.LocalGlyphPressed
@@ -1027,9 +1028,24 @@ private fun Timeline(controls: PlaybackControlsState, shown: () -> Float, modifi
                 .height(BAR_TOUCH_HEIGHT)
                 .pointerInput(seekable, duration) {
                     if (!seekable) return@pointerInput
-                    detectTapGestures {
-                        haptics.performHapticFeedback(HapticFeedbackType.ContextClick)
-                        current.onSeek((it.x / size.width * duration).toLong().coerceIn(0L, duration))
+                    // A tap seeks where it went down. Only sideways movement makes it a drag: the
+                    // cover stage's dock rises as the same tap brings the controls up, moving the
+                    // bar under a finger that hasn't moved, which a plain tap detector would cancel.
+                    awaitEachGesture {
+                        val down = awaitFirstDown()
+                        var tapped = false
+                        while (true) {
+                            val change = awaitPointerEvent().changes.firstOrNull { it.id == down.id } ?: break
+                            if (change.isConsumed || abs(change.position.x - down.position.x) > viewConfiguration.touchSlop) break
+                            if (!change.pressed) {
+                                tapped = true
+                                break
+                            }
+                        }
+                        if (tapped) {
+                            haptics.performHapticFeedback(HapticFeedbackType.ContextClick)
+                            current.onSeek((down.position.x / size.width * duration).toLong().coerceIn(0L, duration))
+                        }
                     }
                 }
                 .pointerInput(seekable, duration) {
