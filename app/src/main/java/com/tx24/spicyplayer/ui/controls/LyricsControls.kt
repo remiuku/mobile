@@ -1,5 +1,6 @@
 package com.tx24.spicyplayer.ui.controls
 
+import com.tx24.spicyplayer.ui.components.LocalGlassCast
 import androidx.compose.runtime.CompositionLocalProvider
 import com.tx24.spicyplayer.ui.components.LocalGlyphPressed
 import androidx.compose.ui.graphics.vector.PathNode
@@ -686,10 +687,13 @@ fun StageControls(
                     translationY = -(1f - lift) * side.toPx() * 0.015f
                 },
         ) {
-            FloatingButtons(
-                floatingActions(controls, others, romanizeAvailable, romanized, onToggleRomanize, onOpenSettings, onOpenLyricsManager, onOpenQuickSettings, expanded, onToggleExpanded, onSwapSide, onRight, showResync, showExpand, onOpenQueue = onOpenQueue, onOpenSource = onOpenSource, onEnterPip = onEnterPip),
-                side - gutter * 2, minSize = COVER_BUTTON_MIN, maxSize = COVER_BUTTON_MAX, minGap = COVER_BUTTON_GAP, maxGap = SpicySpacing.S3,
-            )
+            // Over the cover's own picture, often bright, the usual shadow reads as a smudge.
+            CompositionLocalProvider(LocalGlassCast provides STAGE_GLASS_CAST) {
+                FloatingButtons(
+                    floatingActions(controls, others, romanizeAvailable, romanized, onToggleRomanize, onOpenSettings, onOpenLyricsManager, onOpenQuickSettings, expanded, onToggleExpanded, onSwapSide, onRight, showResync, showExpand, onOpenQueue = onOpenQueue, onOpenSource = onOpenSource, onEnterPip = onEnterPip),
+                    side - gutter * 2, minSize = COVER_BUTTON_MIN, maxSize = COVER_BUTTON_MAX, minGap = COVER_BUTTON_GAP, maxGap = SpicySpacing.S3,
+                )
+            }
         }
         Box(
             Modifier
@@ -709,18 +713,22 @@ fun StageControls(
                     Timeline(controls, { 1f }, Modifier)
                 }
                 Spacer(Modifier.height(side * STAGE_GAP))
-                PlaybackRow(
-                    controls, shuffle, repeat,
-                    Modifier
-                        .onSizeChanged { reservePx = it.height }
-                        .graphicsLayer { alpha = shown() * 0.985f },
-                    skipWidth = side * 0.15f, fillSlots = true,
-                )
-            }
-            if (!interactive) {
-                Box(Modifier.matchParentSize().pointerInput(Unit) {
-                    awaitPointerEventScope { while (true) awaitPointerEvent().changes.forEach { it.consume() } }
-                })
+                Box {
+                    PlaybackRow(
+                        controls, shuffle, repeat,
+                        Modifier
+                            .onSizeChanged { reservePx = it.height }
+                            .graphicsLayer { alpha = shown() * 0.985f },
+                        skipWidth = side * 0.15f, fillSlots = true,
+                    )
+                    // Hidden, the transport takes no taps; the timeline above still seeks, and the
+                    // same tap brings the controls up.
+                    if (!interactive) {
+                        Box(Modifier.matchParentSize().pointerInput(Unit) {
+                            awaitPointerEventScope { while (true) awaitPointerEvent().changes.forEach { it.consume() } }
+                        })
+                    }
+                }
             }
         }
     }
@@ -730,6 +738,8 @@ fun StageControls(
 private const val STAGE_GUTTER = 0.04f
 private const val STAGE_BOTTOM = 0.05f
 private const val STAGE_GAP = 0.025f
+/** The stage's glass buttons' shadow, against the usual's. */
+private const val STAGE_GLASS_CAST = 0.3f
 
 private val SIDE_MARGIN = 28.dp
 /** The bottom controls' widest, so they don't stretch across a landscape or tablet screen. */
@@ -1167,15 +1177,10 @@ internal object SpicyIcons {
         "M 4.427 19.963 C 5.513 19.963 6.06 19.416 6.06 18.33 L 6.06 1.66 C 6.06 0.545 5.513 0.037 4.427 0.037 L 1.633 0.037 C 0.548 0.037 0 0.575 0 1.66 L 0 18.331 C -0.009 19.416 0.538 19.963 1.633 19.963 L 4.427 19.963 Z M 13.377 19.963 C 14.462 19.963 15 19.416 15 18.33 L 15 1.66 C 15 0.545 14.462 0.037 13.376 0.037 L 10.573 0.037 C 9.487 0.037 8.949 0.575 8.949 1.66 L 8.949 18.331 C 8.949 19.416 9.487 19.963 10.573 19.963 L 13.376 19.963 L 13.377 19.963 Z",
     )
     // A and ア are both "a": the script a tap switches to is drawn at full strength, the one it
-    // leaves dimmed.
-    val DisableRomanization = line(
-        DIM to "M2.5 18 6.75 6 11 18", DIM to "M4 14h5.5",
-        1f to "M13.5 6.5h8L19 9.75", 1f to "M17.25 9.75v1.75c0 2.75-1.25 5-3.75 6.5",
-    )
-    val EnableRomanization = line(
-        1f to "M2.5 18 6.75 6 11 18", 1f to "M4 14h5.5",
-        DIM to "M13.5 6.5h8L19 9.75", DIM to "M17.25 9.75v1.75c0 2.75-1.25 5-3.75 6.5",
-    )
+    // leaves dimmed. Each letter is one path, so where its strokes meet a dimmed one isn't drawn
+    // twice (two overlapping translucent strokes would show a brighter dot there).
+    val DisableRomanization = line(DIM to LATIN_A, 1f to KANA_A)
+    val EnableRomanization = line(1f to LATIN_A, DIM to KANA_A)
 
     /** Lucide's refresh-cw, for resyncing with the player. */
     val Resync = lucide(
@@ -1214,6 +1219,8 @@ internal object SpicyIcons {
 
     /** How strongly the script a romanize tap leaves is drawn. */
     private const val DIM = 0.4f
+    private const val LATIN_A = "M2.5 18 6.75 6 11 18M4 14h5.5"
+    private const val KANA_A = "M13.5 6.5h8L19 9.75M17.25 9.75v1.75c0 2.75-1.25 5-3.75 6.5"
 
     private fun icon(width: Float, height: Float, vararg paths: String): ImageVector =
         ImageVector.Builder(defaultWidth = width.dp, defaultHeight = height.dp, viewportWidth = width, viewportHeight = height)

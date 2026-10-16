@@ -145,15 +145,19 @@ fun CoverStage(
                     },
                 )
             }
-            // White on 60% black keeps the dock at 4.5:1 over the brightest frames.
+            // Darkens under the dock so its white text reads over bright frames, eased in over the
+            // lower half: a straight ramp over a short span showed as a dark band.
             Box(
                 Modifier.fillMaxSize().drawBehind {
                     drawRect(
                         Brush.verticalGradient(
                             0f to Color.Transparent,
-                            0.42f to Color.Transparent,
-                            0.70f to Color.Black.copy(alpha = 0.6f),
-                            1f to Color.Black.copy(alpha = 0.6f),
+                            0.35f to Color.Transparent,
+                            0.50f to Color.Black.copy(alpha = 0.06f),
+                            0.62f to Color.Black.copy(alpha = 0.16f),
+                            0.75f to Color.Black.copy(alpha = 0.29f),
+                            0.88f to Color.Black.copy(alpha = 0.39f),
+                            1f to Color.Black.copy(alpha = 0.45f),
                         ),
                     )
                 },

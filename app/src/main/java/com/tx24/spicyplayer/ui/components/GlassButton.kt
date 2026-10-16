@@ -68,16 +68,17 @@ fun Modifier.glassCircle(fill: () -> Color = { SpicyGlass.Fill }): Modifier = dr
 }
 
 /** `.ViewControl`'s cast shadow, `0 10px 24px -8px`: a disc shrunk by the spread, blurred, moved down. */
-fun Modifier.glassCast(): Modifier = drawWithCache {
+fun Modifier.glassCast(strength: Float = 1f): Modifier = drawWithCache {
     val radius = size.minDimension / 2f
     val center = Offset(size.width / 2f, size.height / 2f + SpicyGlass.CastOffsetY.toPx())
     val castRadius = radius + SpicyGlass.CastSpread.toPx()
     val sigma = SpicyGlass.CastBlur.toPx() / 2f
     val outer = castRadius + sigma * 2f
+    val color = SpicyGlass.CastColor.copy(alpha = SpicyGlass.CastColor.alpha * strength)
     val cast = Brush.radialGradient(
-        0f to SpicyGlass.CastColor,
-        ((castRadius - sigma) / outer).coerceAtLeast(0f) to SpicyGlass.CastColor,
-        (castRadius / outer) to SpicyGlass.CastColor.copy(alpha = SpicyGlass.CastColor.alpha / 2f),
+        0f to color,
+        ((castRadius - sigma) / outer).coerceAtLeast(0f) to color,
+        (castRadius / outer) to color.copy(alpha = color.alpha / 2f),
         1f to Color.Transparent,
         center = center,
         radius = outer,
@@ -120,7 +121,7 @@ fun GlassButton(
                 scaleX = scale.value
                 scaleY = scale.value
             }
-            .glassCast()
+            .glassCast(LocalGlassCast.current)
             .then(
                 backdrop?.let {
                     Modifier
@@ -158,6 +159,9 @@ fun GlassButton(
         contentAlignment = Alignment.Center,
     ) { CompositionLocalProvider(LocalGlyphPressed provides pressed) { content() } }
 }
+
+/** How dark glass buttons' shadows are drawn, 1 the usual: less over a bright picture, where it shows as a smudge. */
+val LocalGlassCast = compositionLocalOf { 1f }
 
 /** Whether the button a glyph sits on is held down, for glyphs with a motion of their own. */
 val LocalGlyphPressed = compositionLocalOf { false }
