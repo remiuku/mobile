@@ -26,6 +26,8 @@ internal data class LyricsLayoutMetrics(
      * 1cqw was only ~14% of the text and the two looked the same.
      */
     val lineGapPx = baseFontSizeSp * density * 0.4f
+    fun lineGapPx(refreshedSimple: Boolean) = if (refreshedSimple)
+        baseFontSizeSp * density * com.tx24.spicyplayer.lyrics.spicy.animation.RefreshedMotion.GAP_EM else lineGapPx
     val lineHeightMultiplier = 1.1818182f
 
     fun lineHeightPx(fontSizeSp: Float): Float = fontSizeSp * density * lineHeightMultiplier

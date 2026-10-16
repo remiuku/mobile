@@ -33,6 +33,7 @@ import kotlin.math.sin
  *   (200ms cubic-bezier(0.61,1,0.88,1)); distance blur is recomputed only when the active
  *   line index changes.
  *
+ * Refreshed Simple computes word and letter poses directly from time, including sung tails.
  * Springs are [SpringSimulation] (exact spr.lua port); dt is in **seconds**, positions in ms.
  */
 class LyricsAnimator(
@@ -342,10 +343,17 @@ class LyricsAnimator(
                 cachedLineGradient[lineIdx] = lineGradient
                 cachedLineGlow[lineIdx] = lineGlow
                 wordStates = if (isActive && romanization != null) romanization.words.mapIndexed { wordIdx, word ->
-                    animateWord(word, processedPosition, deltaTime, lineIdx, wordIdx)
+                    if (config.isRefreshedSimple) refreshedWord(word, processedPosition, wordIdx == romanization.words.lastIndex)
+                    else animateWord(word, processedPosition, deltaTime, lineIdx, wordIdx)
                 } else emptyList()
             } else {
                 wordStates = when {
+                    config.isRefreshedSimple && !line.isSongwriter -> {
+                        if (line.isInterlude) animateInterludeDots(line, processedPosition, deltaTime, lineIdx, finalize = false)
+                        else line.words.mapIndexed { index, word -> refreshedWord(word,
+                            if (lineState == ElementState.NotSung) Double.NEGATIVE_INFINITY else processedPosition,
+                            index == line.words.lastIndex) }
+                    }
                     line.isSongwriter -> cachedWordStates.getOrPut(lineIdx) {
                         line.words.map { songwriterWordState(it) }
                     }
@@ -390,6 +398,8 @@ class LyricsAnimator(
                 opacity = opacity,
                 blur = blur,
                 scale = lineScale,
+                groupScale = if (config.isRefreshedSimple && line.isInterlude)
+                    RefreshedMotion.dotBreath(processedPosition - line.startMs, line.duration) else 1f,
                 isActive = isActive,
                 wordStates = wordStates,
                 isBackground = line.isBackground,
@@ -809,6 +819,34 @@ class LyricsAnimator(
         )
     }
 
+    /** Held letters share a flame and return to their word on a time-based envelope. */
+    private fun refreshedWord(word: Word, t: Double, lastWord: Boolean): WordAnimState {
+        val state = elementState(t, word.startMs, word.endMs)
+        val pct = progress(t, word.startMs, word.endMs)
+        val group = word.isLetterGroup && word.letters.isNotEmpty()
+        val offset = if (state == ElementState.NotSung) 0f else RefreshedMotion.wordOffset(t, word.startMs, word.endMs)
+        val letters = if (!group) emptyList() else {
+            val strength = RefreshedMotion.waveStrength(word.duration, lastWord)
+            val flame = RefreshedMotion.flame(t, word.letters.map { it.startMs }, word.letters.map { it.endMs })
+            val held = 1f - RefreshedMotion.release(t - word.endMs)
+            val wordLift = 0.043f * pct
+            word.letters.mapIndexed { index, letter ->
+                val curve = RefreshedMotion.curve(t - word.startMs, word.duration, index, word.letters.size)
+                val glow = (strength.glow * RefreshedMotion.glow(flame, index)).coerceAtMost(1f)
+                LetterAnimState(
+                    gradientPosition = -50f + 150f * easeSinOut(progress(t, letter.startMs, letter.endMs)),
+                    scale = 1f + RefreshedMotion.SCALE * strength.motion * curve.scale * held,
+                    yOffset = -(RefreshedMotion.LIFT * strength.motion * curve.lift - wordLift) * held / 2f,
+                    glow = glow,
+                    glowRadius = RefreshedMotion.glowRadius(glow),
+                )
+            }
+        }
+        return WordAnimState(scale = 1f, yOffset = offset, glow = 0f,
+            gradientPosition = -50f + 150f * pct, state = state,
+            isLetterGroup = group, letterStates = letters)
+    }
+
     private fun animateLetters(
         word: Word,
         wordState: ElementState,
@@ -973,6 +1011,13 @@ class LyricsAnimator(
         lineIndex: Int,
         finalize: Boolean,
     ): List<WordAnimState> {
+        if (config.isRefreshedSimple) return (0 until 3).map { index ->
+            WordAnimState(
+                scale = 1f, yOffset = 0f,
+                glow = RefreshedMotion.dotAlpha(processedPosition - line.startMs, line.duration, index),
+                gradientPosition = 0f, state = elementState(processedPosition, line.startMs, line.endMs),
+            )
+        }
         // Dot timing: each dot ends slightly early (applier: dotPadding = -550/3 per dot).
         val span = ((line.duration - 550L).coerceAtLeast(90L)).toFloat() / 3f
         return (0 until 3).map { dotIdx ->

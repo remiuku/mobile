@@ -172,6 +172,9 @@ fun LyricsView(
     val scrollManager = remember(shownId) { ScrollManager().also { it.reset() } }
     scrollManager.smoothScrolling = config.scroll.smooth
     scrollManager.appleMusic = config.isAppleMusic
+    scrollManager.refreshedSimple = config.isRefreshedSimple
+    val refreshedUpdated by rememberUpdatedState(config.isRefreshedSimple)
+    val ripple = remember(shownId, config.isRefreshedSimple) { RippleScroll() }
     val appleMusicUpdated by rememberUpdatedState(config.isAppleMusic)
     // The Apple Music style's staggered scroll: lines past the active one follow the view late.
     val scrollTrail = remember(shownId) { ScrollTrail() }
@@ -199,7 +202,7 @@ fun LyricsView(
             LyricsLayoutMetrics(canvasWidth, density.density, lyricsType, fontSizeScale)
         }
         val footerSlot = footerMetrics.contentSlot(false, false, false)
-        val lineGapUpdated by rememberUpdatedState(footerMetrics.lineGapPx)
+        val lineGapUpdated by rememberUpdatedState(footerMetrics.lineGapPx(config.isRefreshedSimple))
         val rowHeightUpdated by rememberUpdatedState(footerMetrics.lineHeightPx(footerMetrics.baseFontSizeSp))
         // Credits are sized from the synced lyric size whatever the lyrics type, so static lyrics
         // (drawn smaller) get the same credits.
@@ -254,10 +257,12 @@ fun LyricsView(
                         letterConfig.wideDuetPadding,
                         if (letterConfig.isAppleMusic) AppleMusicMotion.BACKGROUND_SIZE else 0.75f,
                         romanizationMode,
+                        refreshedSimple = letterConfig.isRefreshedSimple,
                     ) else LyricsLayoutCalculator.calculateLineLayouts(
                         display, canvasWidth, textMeasurer, density.density, incomingType, fontSizeScale, romanized, letterConfig.isSimple,
                         letterConfig.wideDuetPadding,
                         if (letterConfig.isAppleMusic) AppleMusicMotion.BACKGROUND_SIZE else 0.75f,
+                        refreshedSimple = letterConfig.isRefreshedSimple,
                     ), romanizationLines = originals.takeIf {
                         presentation?.mode == TranslationMode.Replace && romanized && romanizationMode == RomanizationMode.UnderLine
                     })
@@ -281,13 +286,14 @@ fun LyricsView(
         val hostView = LocalView.current
         
         // The high-frequency animation loop, restarted with each new document's animator and scroll.
-        LaunchedEffect(shownId) {
+        LaunchedEffect(shownId, ripple) {
             // Reused per-frame scratch for the dynamic Y offsets: filled every frame but only
             // published to state when its contents actually change, so a paused/idle screen stops
             // invalidating the Canvas (a fresh FloatArray each frame was forcing a redraw via array
             // identity-equality even when nothing moved).
             var dynamicYScratch = FloatArray(0)
             var settledYScratch = FloatArray(0)
+            var rippleHeights = FloatArray(0)
             var stillFrames = 0
             var lastLayouts: List<LineLayout>? = null
             // The first frame of a document, and the first after a rest, carry no real gap.
@@ -309,7 +315,9 @@ fun LyricsView(
                     val currentLines = linesUpdated
                     // The same lyrics laid out again (romanized, resized): seen here, on the frame
                     // that first draws the new layouts, so the scroll jumps with them.
-                    if (lastLayouts != null && currentLayouts !== lastLayouts) scrollManager.onRelayout()
+                    val relaid = currentLayouts !== lastLayouts
+                    if (relaid) rippleHeights = FloatArray(currentLayouts.size) { currentLayouts[it].height }
+                    if (lastLayouts != null && relaid) scrollManager.onRelayout()
                     lastLayouts = currentLayouts
                     val currentTime = currentTimeProvider()
 
@@ -465,12 +473,20 @@ fun LyricsView(
                             }
                         }
                         contentHeightForDrag[0] = totalContentHeight
+                        val beforeScroll = scrollManager.animScrollY
                         scrollManager.updateScroll(
                             deltaTime, totalContentHeight, scrollIndex.takeIf { targetY != null }, targetY,
                             snap = decision.motion == ScrollMotion.SNAP,
                             targetVisiblePx = scrollVisiblePx,
                         )
-                        if (appleMusicUpdated) {
+                        if (refreshedUpdated) {
+                            val moving = ripple.update(beforeScroll, scrollManager.animScrollY, scrollIndex,
+                                newDynamicYOffsets, rippleHeights, centerYUpdated, canvasHeightUpdated,
+                                deltaTime, decision.motion == ScrollMotion.SNAP || relaid,
+                                scrollManager.hideLineBlur)
+                            val now = if (moving) frameTimeNanos else 0L
+                            if (trailNow != now) trailNow = now
+                        } else if (appleMusicUpdated) {
                             targetIndex?.let { scrollTrail.reference = it }
                             scrollTrail.record(frameTimeNanos, scrollManager.animScrollY)
                             val behind = !scrollManager.hideLineBlur && scrollTrail.catchingUp(frameTimeNanos)
@@ -531,15 +547,17 @@ fun LyricsView(
                 }
                 // Tapping a credit leaves the controls as they are.
                 .keepsControlsHidden(tapsOnly = true) { position ->
-                    footerProfileAt(footerLayouts, footerRowTops(), position.y - (centerYUpdated + scrollManager.animScrollY)) != null
+                    footerProfileAt(footerLayouts, footerRowTops(), position.y - (centerYUpdated + scrollManager.animScrollY) -
+                        (if (refreshedUpdated) ripple.offset(lineLayouts.size) else 0f)) != null
                 }
-                .pointerInput(isStatic, footerLayouts, shown) {
+                .pointerInput(isStatic, footerLayouts, shown, ripple) {
                     detectTapGestures { tapOffset ->
                         val currentScrollY = scrollManager.animScrollY
                         val adjustedTapY = tapOffset.y - (centerYUpdated + currentScrollY)
 
                         // A credit with a profile asks the screen to open it.
-                        footerProfileAt(footerLayouts, footerRowTops(), adjustedTapY)?.let { line ->
+                        footerProfileAt(footerLayouts, footerRowTops(), adjustedTapY -
+                            (if (refreshedUpdated) ripple.offset(lineLayouts.size) else 0f))?.let { line ->
                             viewState?.requestProfile(line)
                             return@detectTapGestures
                         }
@@ -549,7 +567,8 @@ fun LyricsView(
 
                         for (i in lineLayouts.indices) {
                             val layout = lineLayouts[i]
-                            val layoutDynamicY = dynamicYOffsets.getOrElse(i) { layout.yOffset }
+                            val layoutDynamicY = dynamicYOffsets.getOrElse(i) { layout.yOffset } +
+                                (if (refreshedUpdated) ripple.offset(i) else 0f)
                             if (adjustedTapY >= layoutDynamicY && adjustedTapY <= layoutDynamicY + layout.height) {
                                 if (layout.isInterlude || layout.isSongwriter) continue
                                 // Folded background vocals sit under the next line: that one takes the tap.
@@ -575,7 +594,8 @@ fun LyricsView(
             val viewScrollOffset = centerY + scrollManager.animScrollY
             // Where a line is drawn: with the view, or a little behind it while it catches up.
             val trailTime = trailNow
-            fun scrollOffsetFor(index: Int) = if (trailTime == 0L) viewScrollOffset
+            fun scrollOffsetFor(index: Int) = if (config.isRefreshedSimple) viewScrollOffset + ripple.offset(index)
+                else if (trailTime == 0L) viewScrollOffset
                 else centerY + scrollTrail.at(trailTime - scrollTrail.delayNanos(index))
 
             lineLayouts.forEachIndexed { lineIdx, layout ->

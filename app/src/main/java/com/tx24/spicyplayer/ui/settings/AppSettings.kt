@@ -44,6 +44,7 @@ class AppSettings(private val prefs: SharedPreferences) {
 
     var lyricsStyle by enum("lyricsStyle", LyricsStyle.Spicy)
     var simpleLyricsMode by boolean("simpleLyricsMode", false)
+    var refreshedSimpleLyrics by boolean("refreshedSimpleLyrics", false)
     var minimalLyricsMode by boolean("minimalLyricsMode", false)
     var originalWordMotion by boolean("originalWordMotion", false)
     var lyricsSize by enum("lyricsSize", LyricsSize.Default)

@@ -66,6 +66,7 @@ fun configSnapshot(settings: AppSettings): Map<String, Any> = with(settings) {
     mapOf(
         "lyrics_style" to lyricsStyle.name,
         "simple_mode" to simpleLyricsMode,
+        "refreshed_simple_lyrics" to refreshedSimpleLyrics,
         "minimal_mode" to minimalLyricsMode,
         "original_word_motion" to originalWordMotion,
         "lyrics_size" to lyricsSize.name,

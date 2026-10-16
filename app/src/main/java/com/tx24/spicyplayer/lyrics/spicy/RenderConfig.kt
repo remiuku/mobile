@@ -38,6 +38,7 @@ data class RenderConfig(
      * letters, line fades and scroll. Simple and Minimal don't apply with it.
      */
     val appleMusic: Boolean = false,
+    val refreshedSimple: Boolean = false,
     /** Mixed.css `--gradient-alpha`: 1 under `.SimpleLyricsMode`. Background vocals keep 0.6. */
     val gradientAlphaBright: Float = if (simpleLyricsMode) 1f else 0.85f,
     /** `--gradient-alpha-end` on words and letters: 0.3 under `.SimpleLyricsMode`. */
@@ -58,6 +59,7 @@ data class RenderConfig(
     val letterMaxLength: Int = when {
         // The Apple Music style picks its held words itself (AppleMusicMotion.emphasizes).
         appleMusic -> Int.MAX_VALUE
+        refreshedSimple && simpleLyricsMode -> 7
         simpleLyricsMode -> 12
         else -> Int.MAX_VALUE
     },
@@ -73,6 +75,9 @@ data class RenderConfig(
     val creditsFollowLastLine: Boolean = false,
     val scroll: ScrollConfig = ScrollConfig(),
 ) {
+    val isRefreshedSimple: Boolean get() = refreshedSimple && simpleLyricsMode && !appleMusic
+    /** The brighter unsung tail applies only inside the line being sung. */
+    val activeGradientAlphaDim: Float get() = if (isRefreshedSimple) 0.4f else gradientAlphaDim
     val isSimple: Boolean get() = simpleLyricsMode
     val isMinimal: Boolean get() = minimalLyricsMode
     val isAppleMusic: Boolean get() = appleMusic

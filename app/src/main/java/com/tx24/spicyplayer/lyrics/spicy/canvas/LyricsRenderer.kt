@@ -16,6 +16,7 @@ import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.drawText
 import com.tx24.spicyplayer.lyrics.spicy.RenderConfig
 import com.tx24.spicyplayer.lyrics.spicy.animation.AppleMusicMotion
+import com.tx24.spicyplayer.lyrics.spicy.animation.RefreshedMotion
 import com.tx24.spicyplayer.lyrics.spicy.animation.LineAnimState
 import com.tx24.spicyplayer.lyrics.spicy.animation.WordAnimState
 
@@ -49,6 +50,7 @@ internal fun DrawScope.drawWipeText(
     shadow: Shadow?,
     rtl: Boolean = false,
     gradientOffsetPercent: Float = 0f,
+    fixedEdgePx: Float = 0f,
 ) {
     val bright = Color.White.copy(alpha = brightAlpha.coerceIn(0f, 1f))
     val dim = Color.White.copy(alpha = dimAlpha.coerceIn(0f, 1f))
@@ -60,8 +62,9 @@ internal fun DrawScope.drawWipeText(
     // mode but 30% for Simple-mode words/letters, which widens the fade band from 20% to 50% so
     // the sweep reaches the word's trailing edge smoothly instead of snapping the last ~30% from
     // dim straight to bright at the Active→Sung flip.
-    val stop1Frac = gradientPositionPercent / 100f
-    val stop2Frac = (gradientPositionPercent + 20f + gradientOffsetPercent) / 100f
+    val edge = refreshedWipe(gradientPositionPercent, fw, fixedEdgePx)
+    val stop1Frac = if (fixedEdgePx > 0f) edge.first else gradientPositionPercent / 100f
+    val stop2Frac = if (fixedEdgePx > 0f) edge.second else (gradientPositionPercent + 20f + gradientOffsetPercent) / 100f
     // RTL mirrors the whole sweep: bright grows from the right instead of the left, so both the
     // band's position and its colour order flip.
     val loFrac = if (rtl) 1f - stop2Frac else stop1Frac
@@ -318,6 +321,9 @@ private const val REFERENCE_LYRIC_SIZE_CSS_PX = 56f
  * One desktop CSS px in our px, relative to the text: effects keep the same size next to the
  * letters as on a desktop page, whatever the screen density.
  */
+private fun textSizePx(layout: TextLayoutResult): Float =
+    with(layout.layoutInput) { with(density) { style.fontSize.toPx() } }
+
 private fun cssPx(layout: TextLayoutResult, isBackground: Boolean): Float =
     lyricSizePx(layout, isBackground) / REFERENCE_LYRIC_SIZE_CSS_PX
 
@@ -404,7 +410,7 @@ private fun DrawScope.drawSyllabicLetterFragment(
     val wordPivotX = wordLeftX + wLayout.fullWordWidth * anchor
     // Offsets are in lyric font sizes (--DefaultLyricsSize); a letter's is applied ×2.
     val lyricSize = lyricSizePx(wLayout.textLayoutResult, lineAnim.isBackground)
-    val boost = config.wordMotionBoost
+    val boost = if (config.isRefreshedSimple) 1f else config.wordMotionBoost
     val lYShift = boostedLift(lState.yOffset, boost) * lyricSize * 2f
     val containerYShift = boostedLift(wordAnim.yOffset, boost) * lyricSize
     val wordScale = boostedScale(wordAnim.scale, boost)
@@ -413,11 +419,12 @@ private fun DrawScope.drawSyllabicLetterFragment(
     // Glow shadow tracks the spring in every state (not gated to Active): the animator keeps
     // stepping scale/glow/yOffset toward their Sung targets after EndTime (checkNextLine), so a
     // held word's settle tail must stay visible instead of being amputated the instant it's Sung.
-    val lGlowBlur = 4f + 12f * lState.glow
-    val lGlowOpacity = (lState.glow * 1.85f).coerceIn(0f, 1f)  // LetterGlowMultiplier_Opacity = 185%
+    val lGlowBlur = if (config.isRefreshedSimple) lState.glowRadius * textSizePx(wLayout.textLayoutResult)
+        else (4f + 12f * lState.glow) * cssPx(wLayout.textLayoutResult, lineAnim.isBackground)
+    val lGlowOpacity = (lState.glow * (if (config.isRefreshedSimple) RefreshedMotion.ALPHA else 1.85f)).coerceIn(0f, 1f)  // LetterGlowMultiplier_Opacity = 185%
     val lShadow = when {
         !lineAnim.suppressShadows && lGlowOpacity > 0.02f ->
-            Shadow(color = Color.White.copy(alpha = lGlowOpacity * lineAnim.opacity), blurRadius = lGlowBlur * cssPx(wLayout.textLayoutResult, lineAnim.isBackground))
+            Shadow(color = Color.White.copy(alpha = lGlowOpacity * lineAnim.opacity), blurRadius = lGlowBlur)
         else -> null
     }
 
@@ -428,7 +435,7 @@ private fun DrawScope.drawSyllabicLetterFragment(
     // side (0.85×0.497≈0.42) can never render darker than an inactive line's dim stop
     // (0.35×0.51≈0.18).
     val isBg = lineAnim.isBackground
-    val dim = (if (isBg) 0.3f else config.gradientAlphaDim) * lineAnim.opacity
+    val dim = (if (isBg) 0.3f else config.activeGradientAlphaDim) * lineAnim.opacity
     val bright = (if (isBg) 0.6f else config.gradientAlphaBright) * lineAnim.opacity
 
     withTransform({
@@ -439,22 +446,26 @@ private fun DrawScope.drawSyllabicLetterFragment(
         scale(letterScale, letterScale, Offset(sPivotX, sPivotY))
         translate(top = lYShift)
     }) {
-        if (paintPlan is LyricPaintPlan.InactiveShadow) drawInactiveText(
-            wLayout.textLayoutResult, xPos, yPos + scrollOffset, paintPlan, lineAnim.suppressShadows,
-            cssPx(wLayout.textLayoutResult, lineAnim.isBackground),
-        ) else drawWipeText(
+        if (paintPlan is LyricPaintPlan.InactiveShadow) drawGlowThenText(
+            wLayout.textLayoutResult, Offset(xPos, yPos + scrollOffset), if (config.isRefreshedSimple) lShadow else null,
+        ) {
+            drawInactiveText(wLayout.textLayoutResult, xPos, yPos + scrollOffset, paintPlan,
+                lineAnim.suppressShadows, cssPx(wLayout.textLayoutResult, lineAnim.isBackground))
+        } else drawWipeText(
             layoutResult = wLayout.textLayoutResult,
             xPos = xPos,
             yPos = yPos + scrollOffset,
             fragmentWidth = textWidth,
-            fullWidth = wLayout.fullWordWidth,
-            startXOffset = wLayout.startXOffset,
+            fullWidth = if (config.isRefreshedSimple) textWidth else wLayout.fullWordWidth,
+            startXOffset = if (config.isRefreshedSimple) 0f else wLayout.startXOffset,
             gradientPositionPercent = lState.gradientPosition,
             brightAlpha = bright,
             dimAlpha = dim,
             shadow = lShadow,
             rtl = rtl,
             gradientOffsetPercent = if (config.isSimple) 30f else 0f,
+            fixedEdgePx = if (config.isRefreshedSimple) RefreshedMotion.LETTER_EDGE_EM *
+                textSizePx(wLayout.textLayoutResult) else 0f,
         )
     }
 }
@@ -485,14 +496,14 @@ private fun DrawScope.drawStandardWord(
     }
 
     val wordScale = boostedScale(wordAnim.scale, config.wordMotionBoost)
-    val wordYShift = boostedLift(wordAnim.yOffset, config.wordMotionBoost) * lyricSizePx(wLayout.textLayoutResult, lineAnim.isBackground)
+    val wordYShift = boostedLift(wordAnim.yOffset, if (config.isRefreshedSimple) 1f else config.wordMotionBoost) * lyricSizePx(wLayout.textLayoutResult, lineAnim.isBackground)
     val pivotX = xPos + textWidth * anchor
     val pivotY = yPos + textHeight / 2f
 
     // Reference gradient stops are fixed for every state (bright 0.85/0.6bg, dim 0.35/0.3bg);
     // only --gradient-position moves. Multiplying by line opacity is the only "fade" layer.
     val isBg = lineAnim.isBackground
-    val dim = (if (isBg) 0.3f else config.gradientAlphaDim) * lineAnim.opacity
+    val dim = (if (isBg) 0.3f else config.activeGradientAlphaDim) * lineAnim.opacity
     val bright = (if (isBg) 0.6f else config.gradientAlphaBright) * lineAnim.opacity
 
     withTransform({
@@ -516,6 +527,8 @@ private fun DrawScope.drawStandardWord(
             shadow = shadow,
             rtl = rtl,
             gradientOffsetPercent = if (config.isSimple) 30f else 0f,
+            fixedEdgePx = if (config.isRefreshedSimple) RefreshedMotion.WORD_EDGE_EM *
+                textSizePx(wLayout.textLayoutResult) else 0f,
         )
     }
 }
@@ -725,4 +738,11 @@ internal fun DrawScope.drawStaticLine(
             topLeft = Offset(xPos, yPos),
         )
     }
+}
+
+/** Fixed-width soft edge in normalized coordinates, including its travel beyond both ends. */
+internal fun refreshedWipe(position: Float, width: Float, edge: Float): Pair<Float, Float> {
+    val w = width.coerceAtLeast(1f)
+    val start = (position + 50f) / 150f * (w + edge) - edge
+    return start / w to (start + edge) / w
 }

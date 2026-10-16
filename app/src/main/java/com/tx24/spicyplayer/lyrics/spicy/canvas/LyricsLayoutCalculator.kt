@@ -48,9 +48,10 @@ internal object LyricsLayoutCalculator {
         wideDuet: Boolean,
         backgroundScale: Float,
         romanizationMode: RomanizationMode = RomanizationMode.Replace,
+        refreshedSimple: Boolean = false,
     ): List<LineLayout> {
         val base = calculateLineLayouts(originals, canvasWidth, textMeasurer, density, lyricsType, fontSizeScale,
-            romanize && romanizationMode == RomanizationMode.Replace, simpleMode, wideDuet, backgroundScale)
+            romanize && romanizationMode == RomanizationMode.Replace, simpleMode, wideDuet, backgroundScale, refreshedSimple)
         val metrics = LyricsLayoutMetrics(canvasWidth, density, lyricsType, fontSizeScale)
         val hasDuet = originals.any { it.oppositeAligned }
         var extraY = 0f
@@ -268,12 +269,13 @@ internal object LyricsLayoutCalculator {
         wideDuet: Boolean = true,
         /** Background vocals' size against the lead's: 0.75, or the Apple Music style's own. */
         backgroundScale: Float = 0.75f,
+        refreshedSimple: Boolean = false,
     ): List<LineLayout> {
 
         val layouts = mutableListOf<LineLayout>()
         var currentY = 0f
         val metrics = LyricsLayoutMetrics(canvasWidth, density, lyricsType, fontSizeScale)
-        val lineSpacing = metrics.lineGapPx
+        val lineSpacing = metrics.lineGapPx(refreshedSimple)
         
         val hasDuet = lines.any { it.oppositeAligned }
         val baseFontSize = metrics.baseFontSizeSp.sp

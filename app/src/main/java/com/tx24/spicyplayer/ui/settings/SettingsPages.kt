@@ -296,6 +296,14 @@ internal fun LyricsContent(state: PlayerUiState, viewModel: ExternalPlaybackView
         enabled = spicyStyle,
     )
     ToggleRow(
+        label = "Refreshed Simple Lyrics",
+        checked = settings.refreshedSimpleLyrics,
+        onCheckedChange = { settings.refreshedSimpleLyrics = it },
+        description = "Softer fill, flowing letters and rippling scroll.",
+        icon = Icons.Rounded.AutoFixOff,
+        enabled = spicyStyle && settings.simpleLyricsMode,
+    )
+    ToggleRow(
         label = "Minimal Lyrics Mode",
         checked = settings.minimalLyricsMode,
         onCheckedChange = { settings.minimalLyricsMode = it },

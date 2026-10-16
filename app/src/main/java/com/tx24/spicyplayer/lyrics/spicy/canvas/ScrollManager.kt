@@ -77,6 +77,8 @@ internal class ScrollManager(
             settle(animScrollY)
             spring = newSpring()
         }
+    /** Refreshed rows animate their own offsets instead of moving the view as one block. */
+    var refreshedSimple = false
     private var spring = newSpring()
     private fun newSpring() = if (appleMusic) {
         SpringSimulation(0f, AppleMusicMotion.SCROLL_FREQUENCY_HZ, AppleMusicMotion.SCROLL_DAMPING)
@@ -214,6 +216,7 @@ internal class ScrollManager(
 
     /** Steps the glide toward [goal], starting a new one from [y] when the goal moves. */
     private fun glide(y: Float, goal: Float, dt: Float): Float {
+        if (refreshedSimple) return goal
         if (smoothScrolling || appleMusic) return springGlide(y, goal, dt)
         if (abs(goal - glideTo) > 0.5f) {
             glideFrom = y

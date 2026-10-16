@@ -627,6 +627,7 @@ private fun LyricsApp(
         simpleLyricsMode = settings.simpleLyricsMode && !appleMusicStyle,
         minimalLyricsMode = settings.minimalLyricsMode && !appleMusicStyle,
         appleMusic = appleMusicStyle,
+        refreshedSimple = settings.refreshedSimpleLyrics && settings.simpleLyricsMode && !appleMusicStyle,
         wordMotionBoost = settings.wordMotionBoost,
         wideDuetPadding = settings.duetLinePadding,
         creditsFollowLastLine = settings.creditsFollowLastLine,

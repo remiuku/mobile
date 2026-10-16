@@ -101,7 +101,7 @@ object LetterSynthesizer {
         }
         return config.lettersEnabled &&
             word.duration >= config.letterDurationThresholdMs &&
-            GraphemeSegmenter.segment(display).size in 1..config.letterMaxLength &&
+            GraphemeSegmenter.segment(display).size in 1..(if (config.isRefreshedSimple) minOf(7, config.letterMaxLength) else config.letterMaxLength) &&
             !RtlDetector.isRtl(display)
     }
 
@@ -114,9 +114,9 @@ object LetterSynthesizer {
             return if (word.isLetterGroup) word.copy(isLetterGroup = false, letters = emptyList()) else word
         }
 
-        // Reference (Emphasize.ts) Subtractions: the emphasized WORD's own window is shrunk too,
-        // not just the letters — normal mode trims 250ms off the tail (the "breather"); simple
-        // mode nudges the window by {Start:-21, End:-40} (i.e. +21ms/+40ms).
+        // The word and its letters share one emphasis window: normal mode trims the tail by
+        // 250ms; Simple shifts its start by 21ms and its end by 40ms. Refreshed keeps that full
+        // window, with no additional trim.
         // The Apple Music style times its letters off the word's own window.
         val subStartMs = if (config.isSimple) -21L else 0L
         val subEndMs = when {
