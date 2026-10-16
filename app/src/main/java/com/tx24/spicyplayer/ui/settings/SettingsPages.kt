@@ -105,6 +105,7 @@ import androidx.compose.material.icons.rounded.BlurOn
 import androidx.compose.material.icons.rounded.Flare
 import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.Wallpaper
+import androidx.compose.material.icons.rounded.Panorama
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.SlowMotionVideo
 import androidx.compose.material.icons.rounded.BlurLinear
@@ -641,6 +642,14 @@ internal fun NowPlayingContent(settings: AppSettings) {
         onCheckedChange = { settings.animatedCover = it },
         description = "Play the album's animated cover from Apple Music, where it has one.",
         icon = Icons.Rounded.Animation,
+        enabled = !settings.lowPerformance,
+    )
+    ToggleRow(
+        label = "Cover stage",
+        checked = settings.coverStage && !settings.lowPerformance,
+        onCheckedChange = { settings.coverStage = it },
+        description = "In landscape, the cover fills its side of the screen, with the song docked along its bottom.",
+        icon = Icons.Rounded.Panorama,
         enabled = !settings.lowPerformance,
     )
     SettingsSection("Credits") {

@@ -104,6 +104,11 @@ class AppSettings(private val prefs: SharedPreferences) {
     var expandWithoutLyrics by boolean("expandWithoutLyrics", false)
     /** The record's looping Apple Music cover in place of the still one, where it has one. */
     var animatedCover by boolean("animatedCover", false)
+    /**
+     * Landscape, beside the lyrics: the cover (or its animation) fills its side of the screen, with
+     * the song docked along its bottom.
+     */
+    var coverStage by boolean("coverStage", true)
     /** Cover Art background: the record's looping Apple Music cover in place of the still one. */
     var animatedBackground by boolean("animatedBackground", false)
     /**
