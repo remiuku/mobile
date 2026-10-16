@@ -110,6 +110,10 @@ import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.MotionPhotosPaused
 import androidx.compose.material.icons.rounded.Album
+import androidx.compose.material.icons.rounded.AspectRatio
+import androidx.compose.material.icons.rounded.Crop
+import androidx.compose.material.icons.rounded.Lyrics
+import java.util.Locale
 import androidx.compose.material.icons.rounded.PictureInPictureAlt
 import androidx.compose.material.icons.rounded.Source
 import androidx.compose.material.icons.rounded.StayCurrentPortrait
@@ -814,7 +818,7 @@ internal fun DeviceContent(settings: AppSettings) {
             Icons.Rounded.PictureInPictureAlt,
             when {
                 !supported -> "Not available on this phone"
-                settings.autoPip -> "Opens when you leave the app"
+                settings.autoPip -> "Opens when you leave the app · ${settings.pipShape.name}"
                 else -> "Off"
             },
         )
@@ -848,14 +852,70 @@ internal fun DeviceContent(settings: AppSettings) {
 
 @Composable
 internal fun FloatingLyricsContent(settings: AppSettings) {
+    val supported = PictureInPicture.supported(LocalContext.current)
     ToggleRow(
         label = "Floating lyrics",
         checked = settings.autoPip,
         onCheckedChange = { settings.autoPip = it },
         description = "Leave the app while a song plays and the lyrics shrink into a small floating window.",
         icon = Icons.Rounded.PictureInPictureAlt,
-        enabled = PictureInPicture.supported(LocalContext.current),
+        enabled = supported,
     )
+    SettingRow(
+        label = "Shape",
+        description = "The floating window's width to height.",
+        icon = Icons.Rounded.AspectRatio,
+        enabled = supported,
+    ) {
+        SpicySelect(
+            value = settings.pipShape.name,
+            options = PipShape.entries.map { it.name },
+            labels = PipShape.entries.map { it.label },
+            onChange = { settings.pipShape = PipShape.valueOf(it) },
+            enabled = supported,
+        )
+    }
+    if (settings.pipShape == PipShape.Custom) {
+        SettingRow(
+            label = "Custom shape",
+            description = "Width to height, from tall (0.42 : 1) to wide (2.39 : 1).",
+            icon = Icons.Rounded.Crop,
+            enabled = supported,
+            stacked = true,
+        ) {
+            SpicyBipolarSlider(
+                value = settings.pipCustomRatio,
+                range = PIP_RATIO_RANGE,
+                step = 1,
+                onValueChange = { settings.pipCustomRatio = it },
+                default = 100,
+                enabled = supported,
+                valueText = { String.format(Locale.ROOT, "%.2f : 1", it / 100f) },
+            )
+        }
+    }
+    ToggleRow(
+        label = "Show lyrics",
+        checked = settings.pipShowLyrics,
+        onCheckedChange = { settings.pipShowLyrics = it },
+        description = "Off shows the song instead: cover, title and artist.",
+        icon = Icons.Rounded.Lyrics,
+        enabled = supported,
+    )
+    SettingRow(
+        label = "Without lyrics, show",
+        description = "What the window shows for a song that has no lyrics.",
+        icon = Icons.Rounded.Album,
+        enabled = supported && settings.pipShowLyrics,
+    ) {
+        SpicySelect(
+            value = settings.pipWithoutLyrics.name,
+            options = PipWithoutLyrics.entries.map { it.name },
+            labels = PipWithoutLyrics.entries.map { it.label },
+            onChange = { settings.pipWithoutLyrics = PipWithoutLyrics.valueOf(it) },
+            enabled = supported && settings.pipShowLyrics,
+        )
+    }
 }
 
 @Composable

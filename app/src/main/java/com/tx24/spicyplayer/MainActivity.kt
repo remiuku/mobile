@@ -48,6 +48,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
+import android.util.Rational
 import android.os.SystemClock
 import android.view.Window
 import android.provider.Settings
@@ -162,6 +163,9 @@ import com.tx24.spicyplayer.ui.nowplaying.CompactHeaderMetrics
 import com.tx24.spicyplayer.ui.nowplaying.CompactNowPlayingHeader
 import com.tx24.spicyplayer.ui.nowplaying.LyricsNotice
 import com.tx24.spicyplayer.ui.nowplaying.NoticeActions
+import com.tx24.spicyplayer.ui.nowplaying.PipSongCard
+import com.tx24.spicyplayer.ui.nowplaying.PipTitleStrip
+import com.tx24.spicyplayer.ui.settings.PipWithoutLyrics
 import com.tx24.spicyplayer.ui.settings.debugReport
 import com.tx24.spicyplayer.ui.nowplaying.MotionCoverQuery
 import com.tx24.spicyplayer.ui.nowplaying.NowPlayingInfo
@@ -230,6 +234,8 @@ class LyricsActivity : ComponentActivity() {
     /** Whether the screen in front is one it's fine to shrink (not settings, a pop-up, the intro). */
     private val pipAllowed = MutableStateFlow(false)
     private var pipAutoEnter = false
+    /** The window's shape from Settings (`AppSettings.pipShape`). */
+    private val pipRatio = MutableStateFlow(Rational(16, 9))
     private val pipSupported by lazy { PictureInPicture.supported(this) }
 
     // The window's own buttons come back as broadcasts.
@@ -254,17 +260,18 @@ class LyricsActivity : ComponentActivity() {
             // the window's own state says where it starts.
             inPip = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && isInPictureInPictureMode
             addOnPictureInPictureModeChangedListener { inPip = it.isInPictureInPictureMode }
-            // Keeps the window's play/pause icon right, and whether leaving the app enters it.
+            // Keeps the window's play/pause icon and shape right, and whether leaving the app enters it.
             lifecycleScope.launch {
                 repeatOnLifecycle(Lifecycle.State.STARTED) {
                     combine(
                         pipAllowed,
                         playbackViewModel.state.map { it.isPlaying to (it.sourcePackage != null) }.distinctUntilChanged(),
-                    ) { allowed, (playing, hasSession) -> playing to (allowed && hasSession) }
-                        .collect { (playing, autoEnter) ->
+                        pipRatio,
+                    ) { allowed, (playing, hasSession), ratio -> Triple(playing, allowed && hasSession, ratio) }
+                        .collect { (playing, autoEnter, ratio) ->
                             pipAutoEnter = autoEnter
                             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                                runCatching { setPictureInPictureParams(PictureInPicture.params(this@LyricsActivity, playing, autoEnter)) }
+                                runCatching { setPictureInPictureParams(PictureInPicture.params(this@LyricsActivity, playing, autoEnter, ratio)) }
                             }
                         }
                 }
@@ -274,6 +281,9 @@ class LyricsActivity : ComponentActivity() {
             val settings = remember { AppSettings(getSharedPreferences("ui", Context.MODE_PRIVATE)) }
             // A change in Settings shows or hides the bars at once.
             LaunchedEffect(settings.systemBars) { applySystemBars(settings.systemBars) }
+            LaunchedEffect(settings.pipShape, settings.pipCustomRatio) {
+                pipRatio.value = PictureInPicture.ratio(settings.pipShape, settings.pipCustomRatio)
+            }
             MaterialTheme(colorScheme = darkColorScheme()) {
                 ProvideTouchHaptics(settings.touchHaptics) {
                     CompositionLocalProvider(
@@ -310,7 +320,7 @@ class LyricsActivity : ComponentActivity() {
     private fun enterPip() {
         if (!pipSupported || Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val playing = playbackViewModel.state.value.isPlaying
-        runCatching { enterPictureInPictureMode(PictureInPicture.params(this, playing, pipAutoEnter)) }
+        runCatching { enterPictureInPictureMode(PictureInPicture.params(this, playing, pipAutoEnter, pipRatio.value)) }
     }
 
     // Android 12+ enters the window on its own (see PictureInPicture.params); before that, here.
@@ -1139,6 +1149,8 @@ private fun LyricsApp(
 /**
  * The lyrics in the floating window: the background and the lyrics, centred, with the text sized
  * to the window (the 29.6sp minimum at 300x190dp, shrinking with it) so a few rows still fit.
+ * With the lyrics turned off for the window, or none for the song and the song card picked for
+ * that, the song's card stands in. A square or tall window names the song along its bottom.
  */
 @Composable
 private fun PipLyrics(
@@ -1171,6 +1183,13 @@ private fun PipLyrics(
             artistHeaderUrl = state.artistHeaderUrl,
             artistHeaderPending = state.artistHeaderPending,
         )
+        val songCard = !settings.pipShowLyrics ||
+            (state.lyrics is LyricsState.Error && settings.pipWithoutLyrics == PipWithoutLyrics.SongCard)
+        if (songCard) {
+            PipSongCard(state.title, state.artist, state.artwork, state.artworkUri, hasSession = state.sourcePackage != null)
+            return@BoxWithConstraints
+        }
+        val stripHeight = if (settings.pipAspect <= 1f) (maxHeight * 0.12f).coerceIn(18.dp, 28.dp) else 0.dp
         LyricsPanel(
             lyrics = state.lyrics,
             translation = state.translation.takeIf { state.translationEnabled },
@@ -1189,10 +1208,13 @@ private fun PipLyrics(
             config = config,
             fontSizeScale = fontScale,
             noticeActions = null,
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxWidth().height(maxHeight - stripHeight),
             // The page's edge fade is 64dp deep: all of a window this small.
             maskScale = 0.25f,
         )
+        if (stripHeight > 0.dp) {
+            PipTitleStrip(state.title, state.artist, stripHeight, Modifier.align(Alignment.BottomCenter))
+        }
     }
 }
 

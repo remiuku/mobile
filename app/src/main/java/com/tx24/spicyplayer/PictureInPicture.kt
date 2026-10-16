@@ -10,6 +10,8 @@ import android.graphics.drawable.Icon
 import android.os.Build
 import android.util.Rational
 import androidx.annotation.RequiresApi
+import com.tx24.spicyplayer.ui.settings.PIP_RATIO_RANGE
+import com.tx24.spicyplayer.ui.settings.PipShape
 
 /** The lyrics as a small floating window: whether the phone has one, and what it carries. */
 object PictureInPicture {
@@ -23,14 +25,18 @@ object PictureInPicture {
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
             context.packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)
 
+    /** The window's shape as Settings has it, kept inside the 1:2.39 to 2.39:1 Android allows. */
+    fun ratio(shape: PipShape, customRatio: Int): Rational =
+        if (shape == PipShape.Custom) Rational(customRatio.coerceIn(PIP_RATIO_RANGE), 100) else Rational(shape.width, shape.height)
+
     /**
-     * Landscape, like a line of lyrics. [autoEnter] makes leaving the app enter it on its own
+     * The window at [ratio] (see [ratio]). [autoEnter] makes leaving the app enter it on its own
      * (Android 12+; before that the activity enters it itself, from onUserLeaveHint).
      */
     @RequiresApi(Build.VERSION_CODES.O)
-    fun params(context: Context, isPlaying: Boolean, autoEnter: Boolean): PictureInPictureParams {
+    fun params(context: Context, isPlaying: Boolean, autoEnter: Boolean, ratio: Rational): PictureInPictureParams {
         val builder = PictureInPictureParams.Builder()
-            .setAspectRatio(Rational(16, 9))
+            .setAspectRatio(ratio)
             .setActions(
                 listOf(
                     action(context, ACTION_PREVIOUS, android.R.drawable.ic_media_previous, "Previous"),

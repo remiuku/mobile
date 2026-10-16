@@ -112,12 +112,25 @@ class AppSettings(private val prefs: SharedPreferences) {
     var systemBars by enum("systemBars", SystemBarsMode.HideBoth)
     /** Leaving the app with a song playing shrinks the lyrics into a small floating window. */
     var autoPip by boolean("autoPip", true)
+    /** The floating window's shape; [pipCustomRatio] for [PipShape.Custom]. */
+    var pipShape by enum("pipShape", PipShape.Wide)
+    /** A custom window's width over its height, times 100 (Android allows 1:2.39 to 2.39:1). */
+    var pipCustomRatio by int("pipCustomRatio", 100, PIP_RATIO_RANGE)
+    /** The floating window shows the lyrics; off, it shows the song's cover, title and artist. */
+    var pipShowLyrics by boolean("pipShowLyrics", true)
+    /** What the floating window shows for a song without lyrics. */
+    var pipWithoutLyrics by enum("pipWithoutLyrics", PipWithoutLyrics.Message)
+
+    /** The floating window's width over its height. */
+    val pipAspect: Float
+        get() = if (pipShape == PipShape.Custom) pipCustomRatio / 100f else pipShape.width.toFloat() / pipShape.height
+
+    /** The floating button that turns the screen to landscape, rotation lock or not. */
+    var rotateButton by boolean("rotateButton", true)
     /**
      * A floating button that shrinks the lyrics into that window by hand. Off by default where
      * Android 12+ enters the window on its own; before that the button is the easy way in.
      */
-    /** The floating button that turns the screen to landscape, rotation lock or not. */
-    var rotateButton by boolean("rotateButton", true)
     var pipButton by boolean("pipButton", Build.VERSION.SDK_INT < Build.VERSION_CODES.S)
     /** No song header: the lyrics fill the page and scroll with the active line near the centre. */
     var hideHeader by boolean("hideHeader", false)
@@ -240,6 +253,24 @@ const val MAX_BACKGROUND_BLUR = 67
 const val DEFAULT_DYNAMIC_BLUR = 60
 
 /** How long the controls stay after the last touch before they fade. */
+/** The floating window's shapes, as width:height; [Custom] takes `AppSettings.pipCustomRatio`. */
+enum class PipShape(val label: String, val width: Int, val height: Int) {
+    Wide("Wide (16:9)", 16, 9),
+    Classic("Classic (4:3)", 4, 3),
+    Square("Square (1:1)", 1, 1),
+    Tall("Tall (3:4)", 3, 4),
+    Custom("Custom", 1, 1),
+}
+
+/** What the floating window shows for a song without lyrics: the notice, or the song's card. */
+enum class PipWithoutLyrics(val label: String) {
+    Message("Message"),
+    SongCard("Song card"),
+}
+
+/** `AppSettings.pipCustomRatio`'s range: Android's 1:2.39 to 2.39:1, times 100. */
+val PIP_RATIO_RANGE = 42..239
+
 enum class ControlsHideDelay(val label: String, val millis: Long) {
     Short("2 seconds", 2_000L),
     Default("3 seconds", 3_000L),

@@ -821,6 +821,8 @@ fun SpicyBipolarSlider(
     enabled: Boolean = true,
     /** False leaves out the value and Reset under the groove, for a control that shows them itself. */
     showValue: Boolean = true,
+    /** The value as shown under the groove, in place of the number and [unit]. */
+    valueText: ((Int) -> String)? = null,
 ) {
     val clamped = value.coerceIn(range)
     val onChangeUpdated by rememberUpdatedState(onValueChange)
@@ -904,7 +906,7 @@ fun SpicyBipolarSlider(
         if (showValue) Row(Modifier.fillMaxWidth().heightIn(min = 18.dp), verticalAlignment = Alignment.CenterVertically) {
             val sign = if (range.first < 0 && clamped > 0) "+" else ""
             Text(
-                "$sign$clamped${unit?.let { " $it" }.orEmpty()}",
+                valueText?.invoke(clamped) ?: "$sign$clamped${unit?.let { " $it" }.orEmpty()}",
                 style = SpicyType.Caption.copy(fontWeight = FontWeight.SemiBold, fontFeatureSettings = "tnum"),
                 modifier = Modifier.weight(1f),
             )
