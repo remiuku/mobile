@@ -6,11 +6,36 @@ import androidx.annotation.RequiresApi
 object GraphemeSegmenter {
     fun segment(text: String, sdkInt: Int = Build.VERSION.SDK_INT): List<String> {
         if (text.isEmpty()) return emptyList()
-        if (sdkInt >= 24 && Build.VERSION.SDK_INT >= 24) {
-            return segmentWithIcu(text)
-        }
-        return fallback(text)
+        val graphemes = if (sdkInt >= 24 && Build.VERSION.SDK_INT >= 24) segmentWithIcu(text) else fallback(text)
+        return joinConjuncts(graphemes)
     }
+
+    /**
+     * Joins a grapheme ending in a virama (or ZWJ) to the one after it, so a conjunct such as
+     * Tamil "ஸ்ரீ" stays one unit and keeps its ligature when each unit is drawn on its own.
+     * A virama before whitespace stays put rather than swallowing the space.
+     */
+    internal fun joinConjuncts(graphemes: List<String>): List<String> {
+        if (graphemes.size < 2) return graphemes
+        val result = ArrayList<String>(graphemes.size)
+        for (grapheme in graphemes) {
+            val last = result.lastOrNull()
+            if (last != null && endsWithJoiner(last) && grapheme.isNotBlank()) {
+                result[result.lastIndex] = last + grapheme
+            } else {
+                result += grapheme
+            }
+        }
+        return result
+    }
+
+    private fun endsWithJoiner(text: String): Boolean =
+        text.isNotEmpty() && text.codePointBefore(text.length) in JOINERS
+
+    private val JOINERS = setOf(
+        0x094D, 0x09CD, 0x0A4D, 0x0ACD, 0x0B4D, 0x0BCD, 0x0C4D, 0x0CCD, 0x0D4D, 0x0DCA,
+        0x1039, 0x17D2, 0x200D,
+    )
 
     @RequiresApi(24)
     private fun segmentWithIcu(text: String): List<String> {
