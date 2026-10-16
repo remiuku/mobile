@@ -925,6 +925,14 @@ internal fun FloatingLyricsContent(settings: AppSettings) {
         icon = Icons.Rounded.Lyrics,
         enabled = supported,
     )
+    ToggleRow(
+        label = "Cover in the song bar",
+        checked = settings.pipDockCover,
+        onCheckedChange = { settings.pipDockCover = it },
+        description = "Square and tall windows show a small cover beside the title and artist.",
+        icon = Icons.Rounded.Album,
+        enabled = supported && settings.pipShowLyrics,
+    )
     SettingRow(
         label = "Without lyrics, show",
         description = "What the window shows for a song that has no lyrics.",

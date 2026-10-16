@@ -114,7 +114,13 @@ internal fun PipDock(
     durationMs: Long,
     isPlaying: Boolean,
     modifier: Modifier = Modifier,
+    /** A small cover beside the title and artist, as tall as the two of them. */
+    cover: Boolean = false,
+    artwork: Bitmap? = null,
+    artworkUri: String? = null,
+    hasSession: Boolean = true,
 ) {
+    val coverArt = if (cover) rememberSessionArtwork(artwork, artworkUri, maxDimension = PIP_DOCK_ARTWORK_PX, hasSession = hasSession) else null
     // Ticks while playing; paused, the timeline holds still.
     var now by remember { mutableLongStateOf(positionMs()) }
     LaunchedEffect(isPlaying) {
@@ -131,18 +137,27 @@ internal fun PipDock(
         val sp = (maxWidth.value * 0.05f).coerceIn(11f, 18f)
         val gutter = maxWidth * 0.06f
         Column(Modifier.fillMaxWidth().padding(start = gutter, end = gutter, top = 6.dp, bottom = gutter * 0.6f)) {
-            Text(
-                title,
-                style = SpicyType.Body.copy(fontSize = sp.sp, fontWeight = FontWeight.Bold, lineHeight = 1.15.em),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                artist,
-                style = SpicyType.Body.copy(fontSize = (sp * 0.72f).sp, color = SpicyColors.TextSecondary, lineHeight = 1.2.em),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (cover) {
+                    // The title's and artist's lines together: 1.15 × sp + 1.2 × 0.72 sp.
+                    Cover(coverArt?.bitmap, (sp * 2.05f).dp)
+                    Spacer(Modifier.size((sp * 0.55f).dp))
+                }
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        title,
+                        style = SpicyType.Body.copy(fontSize = sp.sp, fontWeight = FontWeight.Bold, lineHeight = 1.15.em),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        artist,
+                        style = SpicyType.Body.copy(fontSize = (sp * 0.72f).sp, color = SpicyColors.TextSecondary, lineHeight = 1.2.em),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
             val progress = if (durationMs > 0) (now.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
             Canvas(Modifier.fillMaxWidth().padding(top = (sp * 0.6f).dp).height((sp * 0.28f).dp.coerceAtLeast(3.dp))) {
                 val radius = CornerRadius(size.height / 2f)
@@ -166,3 +181,4 @@ private fun clock(ms: Long): String {
 }
 
 private const val PIP_ARTWORK_MAX_PX = 512
+private const val PIP_DOCK_ARTWORK_PX = 128

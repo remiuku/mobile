@@ -103,6 +103,7 @@ fun configSnapshot(settings: AppSettings): Map<String, Any> = with(settings) {
         "pip_shape" to pipShape.name,
         "pip_custom_ratio" to pipCustomRatio,
         "pip_show_lyrics" to pipShowLyrics,
+        "pip_dock_cover" to pipDockCover,
         "pip_without_lyrics" to pipWithoutLyrics.name,
         "pip_button" to pipButton,
         "hide_header" to hideHeader,

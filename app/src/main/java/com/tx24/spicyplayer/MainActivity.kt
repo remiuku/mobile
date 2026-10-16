@@ -1255,7 +1255,11 @@ private fun PipLyrics(
             maskScale = 0.25f,
         )
         if (dock) {
-            PipDock(state.title, state.artist, viewModel::currentPositionMs, state.durationMs, state.isPlaying)
+            PipDock(
+                state.title, state.artist, viewModel::currentPositionMs, state.durationMs, state.isPlaying,
+                cover = settings.pipDockCover, artwork = state.artwork, artworkUri = state.artworkUri,
+                hasSession = state.sourcePackage != null,
+            )
         }
         }
     }
