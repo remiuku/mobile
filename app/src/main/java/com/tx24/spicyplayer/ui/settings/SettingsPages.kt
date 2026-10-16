@@ -149,7 +149,6 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.tx24.spicyplayer.lyrics.LyricsState
-import com.tx24.spicyplayer.lyrics.spicy.SimpleAnimationStyle
 import com.tx24.spicyplayer.lyrics.spicy.SyllableMerge
 import com.tx24.spicyplayer.lyrics.spicy.models.LyricsType
 import androidx.compose.foundation.clickable
@@ -291,20 +290,6 @@ internal fun LyricsContent(state: PlayerUiState, viewModel: ExternalPlaybackView
         icon = Icons.Rounded.AutoFixOff,
         enabled = spicyStyle,
     )
-    SettingRow(
-        label = "Simple Mode: Text Animation Style",
-        description = "How lyrics text transitions are rendered in Simple Lyrics Mode.",
-        icon = Icons.Rounded.Animation,
-        enabled = settings.simpleLyricsMode && spicyStyle,
-    ) {
-        SpicySelect(
-            value = settings.simpleAnimationStyle.name,
-            options = SimpleAnimationStyle.entries.map { it.name },
-            labels = SimpleAnimationStyle.entries.map { it.name.lowercase() },
-            onChange = { settings.simpleAnimationStyle = SimpleAnimationStyle.valueOf(it) },
-            enabled = settings.simpleLyricsMode && spicyStyle,
-        )
-    }
     ToggleRow(
         label = "Minimal Lyrics Mode",
         checked = settings.minimalLyricsMode,

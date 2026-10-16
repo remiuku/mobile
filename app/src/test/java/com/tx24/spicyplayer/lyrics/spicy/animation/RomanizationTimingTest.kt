@@ -1,7 +1,6 @@
 package com.tx24.spicyplayer.lyrics.spicy.animation
 
 import com.tx24.spicyplayer.lyrics.spicy.RenderConfig
-import com.tx24.spicyplayer.lyrics.spicy.SimpleAnimationStyle
 import com.tx24.spicyplayer.lyrics.spicy.models.Line
 import com.tx24.spicyplayer.lyrics.spicy.models.LineRole
 import com.tx24.spicyplayer.lyrics.spicy.models.LyricsType
@@ -18,7 +17,7 @@ class RomanizationTimingTest {
     // Tests inspect synchronous word progress; line tween coroutines need no frame loop here.
     private fun animator(config: RenderConfig) = LyricsAnimator(CoroutineScope(Job().apply { cancel() }), config)
     private val configs = listOf(RenderConfig.FULL, RenderConfig.SIMPLE,
-        RenderConfig.SIMPLE.copy(simpleAnimationStyle = SimpleAnimationStyle.ANIMATE), RenderConfig.MINIMAL,
+        RenderConfig.MINIMAL,
         RenderConfig.FULL.copy(appleMusic = true))
     private val lines = listOf(
         Line(listOf(Word("ちょう", 1000, 1500, romanizedText = "chou"),

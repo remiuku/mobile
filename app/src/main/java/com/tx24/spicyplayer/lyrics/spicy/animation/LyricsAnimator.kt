@@ -9,7 +9,6 @@ import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import com.tx24.spicyplayer.lyrics.spicy.RenderConfig
-import com.tx24.spicyplayer.lyrics.spicy.SimpleAnimationStyle
 import com.tx24.spicyplayer.lyrics.spicy.models.Line
 import com.tx24.spicyplayer.lyrics.spicy.models.LyricsType
 import com.tx24.spicyplayer.lyrics.spicy.models.Word
@@ -143,8 +142,6 @@ class LyricsAnimator(
             y0 + (y1 - y0) * ((fraction - x0) / (x1 - x0).coerceAtLeast(0.0001f))
         }
         const val MUSICAL_LINE_TRANSITION_MS = 140
-        /** Where Simple mode's Animate sweep (SLM_Animation) starts, in percent. */
-        const val SLM_FROM = -27.5f
         /** `.line` opacity (and line-synced scale) transition: 0.2s. */
         const val LINE_TRANSITION_MS = 200
         /** Minimal Lyrics Mode (Mixed.css): scale 0.4s ease-in-out, opacity 0.4s linear. */
@@ -345,7 +342,7 @@ class LyricsAnimator(
                 cachedLineGradient[lineIdx] = lineGradient
                 cachedLineGlow[lineIdx] = lineGlow
                 wordStates = if (isActive && romanization != null) romanization.words.mapIndexed { wordIdx, word ->
-                    animateWord(word, romanization.words.getOrNull(wordIdx - 1), processedPosition, deltaTime, lineIdx, wordIdx)
+                    animateWord(word, processedPosition, deltaTime, lineIdx, wordIdx)
                 } else emptyList()
             } else {
                 wordStates = when {
@@ -357,7 +354,7 @@ class LyricsAnimator(
                             animateInterludeDots(line, processedPosition, deltaTime, lineIdx, finalize = false)
                         } else {
                             line.words.mapIndexed { wordIdx, word ->
-                                animateWord(word, line.words.getOrNull(wordIdx - 1), processedPosition, deltaTime, lineIdx, wordIdx)
+                                animateWord(word, processedPosition, deltaTime, lineIdx, wordIdx)
                             }
                         }
                         cachedWordStates[lineIdx] = states
@@ -752,7 +749,6 @@ class LyricsAnimator(
 
     private fun animateWord(
         word: Word,
-        previous: Word?,
         processedPosition: Double,
         deltaTime: Float,
         lineIndex: Int,
@@ -762,7 +758,6 @@ class LyricsAnimator(
         val wordState = elementState(processedPosition, word.startMs, word.endMs)
         val percentage = progress(processedPosition, word.startMs, word.endMs)
         val simple = config.isSimple
-        val animateStyle = simple && config.simpleAnimationStyle == SimpleAnimationStyle.ANIMATE
         val gradientBase = if (simple) -50f else -20f
 
         val targetScale: Float
@@ -774,17 +769,13 @@ class LyricsAnimator(
                 targetScale = scaleSpline.at(percentage)
                 targetYOffset = yOffsetSpline.at(percentage)
                 targetGlow = glowSpline.at(percentage)
-                // Animate: the SLM_Animation keyframes, -27.5% to 100% linearly over the word.
-                targetGradientPos = if (animateStyle) SLM_FROM + (100f - SLM_FROM) * percentage
-                    else gradientBase + 120f * percentage
+                targetGradientPos = gradientBase + 120f * percentage
             }
             ElementState.NotSung -> {
                 targetScale = scaleSpline.at(0f)
                 targetYOffset = yOffsetSpline.at(0f)
                 targetGlow = glowSpline.at(0f)
-                targetGradientPos = if (animateStyle && !word.isLetterGroup && previous != null) {
-                    preSweep(previous, processedPosition)
-                } else gradientBase
+                targetGradientPos = gradientBase
             }
             ElementState.Sung -> {
                 targetScale = scaleSpline.at(1f)
@@ -906,14 +897,11 @@ class LyricsAnimator(
                 targetGlow = glowSpline.at(SUNG_LETTER_GLOW)
             }
 
-            // Gradient: only the actual active letter sweeps (eased; Animate: SLM_Animation's
-            // linear -27.5% to 100%); rest hold base/final.
+            // Gradient: only the actual active letter sweeps (eased); the rest hold base/final.
             val targetGradient = when (letterState) {
                 ElementState.NotSung -> gradientBase
                 ElementState.Sung -> 100f
                 ElementState.Active -> when {
-                    simple && config.simpleAnimationStyle == SimpleAnimationStyle.ANIMATE ->
-                        SLM_FROM + (100f - SLM_FROM) * progress(processedPosition, letter.startMs, letter.endMs)
                     k == activeLetterIndex -> gradientBase + 120f * easeSinOut(activeLetterPercentage)
                     else -> gradientBase
                 }
@@ -1077,22 +1065,6 @@ class LyricsAnimator(
         ) { LetterSprings() }
 
     // ── Helpers ─────────────────────────────────────────────────────────────────────
-
-    /**
-     * Simple mode's Animate style readies a word before it is sung: once the word before it has
-     * run 60% of its length less 22ms (a held, letter-split word: 84.5% less 130ms), it eases from
-     * -50% to the SLM_Animation start of -27.5% over 125ms (250ms), then holds there
-     * (Pre_SLM_GradientAnimation, `forwards`).
-     */
-    private fun preSweep(previous: Word, t: Double): Float {
-        if (t < previous.startMs) return -50f
-        val held = previous.isLetterGroup && previous.letters.isNotEmpty()
-        val duration = previous.endMs - previous.startMs
-        val delay = (if (held) duration * 0.845 - 130 else duration * 0.6 - 22).coerceAtLeast(0.0)
-        val length = if (held) 250.0 else 125.0
-        val x = ((t - previous.startMs - delay) / length).coerceIn(0.0, 1.0).toFloat()
-        return -50f + (SLM_FROM + 50f) * x
-    }
 
     private fun elementState(t: Double, startMs: Long, endMs: Long): ElementState = when {
         t < startMs -> ElementState.NotSung

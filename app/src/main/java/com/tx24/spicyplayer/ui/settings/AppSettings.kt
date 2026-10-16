@@ -9,7 +9,6 @@ import androidx.compose.runtime.setValue
 import com.tx24.spicyplayer.BuildConfig
 import com.tx24.spicyplayer.analytics.UsageStats
 import com.tx24.spicyplayer.haptics.MusicHapticsStyle
-import com.tx24.spicyplayer.lyrics.spicy.SimpleAnimationStyle
 import com.tx24.spicyplayer.lyrics.spicy.SyllableMerge
 import com.tx24.spicyplayer.lyrics.spicy.canvas.PinnedFooterMode
 import com.tx24.spicyplayer.ui.components.ChromeTheme
@@ -45,7 +44,6 @@ class AppSettings(private val prefs: SharedPreferences) {
 
     var lyricsStyle by enum("lyricsStyle", LyricsStyle.Spicy)
     var simpleLyricsMode by boolean("simpleLyricsMode", false)
-    var simpleAnimationStyle by enum("simpleAnimationStyle", SimpleAnimationStyle.CALCULATE)
     var minimalLyricsMode by boolean("minimalLyricsMode", false)
     var originalWordMotion by boolean("originalWordMotion", false)
     var lyricsSize by enum("lyricsSize", LyricsSize.Default)

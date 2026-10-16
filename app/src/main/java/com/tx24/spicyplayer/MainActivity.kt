@@ -516,7 +516,6 @@ private fun LyricsApp(
         simpleLyricsMode = settings.simpleLyricsMode && !appleMusicStyle,
         minimalLyricsMode = settings.minimalLyricsMode && !appleMusicStyle,
         appleMusic = appleMusicStyle,
-        simpleAnimationStyle = settings.simpleAnimationStyle,
         wordMotionBoost = settings.wordMotionBoost,
         wideDuetPadding = settings.duetLinePadding,
         syllableMerge = settings.syllableMerge,

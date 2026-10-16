@@ -1,7 +1,5 @@
 package com.tx24.spicyplayer.lyrics.spicy
 
-enum class SimpleAnimationStyle { CALCULATE, ANIMATE }
-
 /** Whether a word's syllables are drawn as one word, filling evenly from its first syllable to its last. */
 enum class SyllableMerge(val label: String) {
     Off("Off"),
@@ -40,7 +38,6 @@ data class RenderConfig(
      * letters, line fades and scroll. Simple and Minimal don't apply with it.
      */
     val appleMusic: Boolean = false,
-    val simpleAnimationStyle: SimpleAnimationStyle = SimpleAnimationStyle.CALCULATE,
     /** Mixed.css `--gradient-alpha`: 1 under `.SimpleLyricsMode`. Background vocals keep 0.6. */
     val gradientAlphaBright: Float = if (simpleLyricsMode) 1f else 0.85f,
     /** `--gradient-alpha-end` on words and letters: 0.3 under `.SimpleLyricsMode`. */
@@ -86,13 +83,11 @@ data class RenderConfig(
         fun create(
             simpleLyricsMode: Boolean,
             minimalLyricsMode: Boolean,
-            simpleAnimationStyle: SimpleAnimationStyle = SimpleAnimationStyle.CALCULATE,
             fullscreen: Boolean = true,
             compact: Boolean = false,
         ) = RenderConfig(
             simpleLyricsMode = simpleLyricsMode,
             minimalLyricsMode = minimalLyricsMode && fullscreen && !compact,
-            simpleAnimationStyle = simpleAnimationStyle,
         )
     }
 }

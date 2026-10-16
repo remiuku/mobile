@@ -117,7 +117,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tx24.spicyplayer.BuildConfig
 import com.tx24.spicyplayer.haptics.withHaptic
-import com.tx24.spicyplayer.lyrics.spicy.SimpleAnimationStyle
 import com.tx24.spicyplayer.playback.ExternalPlaybackViewModel
 import com.tx24.spicyplayer.playback.PlayerUiState
 import com.tx24.spicyplayer.ui.components.GlassButton
@@ -558,7 +557,7 @@ private fun PageSkeleton(page: SettingsPage) {
             SettingsSkeleton(rows = 1, cards = true)
             SettingsSkeleton(rows = 5)
         }
-        SettingsPage.Lyrics -> SettingsSkeleton(rows = 12)
+        SettingsPage.Lyrics -> SettingsSkeleton(rows = 11)
         SettingsPage.Translation -> SettingsSkeleton(rows = 11)
         SettingsPage.ScrollSync -> SettingsSkeleton(rows = 7)
         SettingsPage.Background -> SettingsSkeleton(rows = 3)
