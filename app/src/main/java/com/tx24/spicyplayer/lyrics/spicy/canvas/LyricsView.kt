@@ -341,14 +341,18 @@ fun LyricsView(
                         // Where an open interlude's dots sit below its start: the middle of the gap
                         // before it plus its row, i.e. halfway between the lines around it.
                         val interludeCentre = (rowHeightUpdated - lineGapUpdated) / 2f
-                        // The room a folded background line gives back: what's left between the line
-                        // above and the next one, past the usual gap (background lines sit tight
-                        // under their lead, without one of their own).
+                        // The room a folded background line gives back: from the bottom of the row
+                        // above it to the top of the next, less the usual gap when the next is a
+                        // line of its own (background lines sit tight under their lead and under
+                        // each other, without one). Stacked background lines then give back
+                        // exactly their rows, leaving one gap between their lead and the next line.
                         fun slotOf(i: Int): Float {
                             val layout = currentLayouts[i]
-                            val next = currentLayouts.getOrNull(i + 1)?.yOffset ?: (layout.yOffset + layout.height + lineGapUpdated)
-                            val above = currentLayouts.getOrNull(i - 1)?.let { it.yOffset + it.height + lineGapUpdated } ?: layout.yOffset
-                            return (next - above).coerceAtLeast(0f)
+                            val nextLayout = currentLayouts.getOrNull(i + 1)
+                            val next = nextLayout?.yOffset ?: (layout.yOffset + layout.height + lineGapUpdated)
+                            val above = currentLayouts.getOrNull(i - 1)?.let { it.yOffset + it.height } ?: layout.yOffset
+                            val gap = if (nextLayout?.isBackground == true) 0f else lineGapUpdated
+                            return (next - above - gap).coerceAtLeast(0f)
                         }
                         for (i in currentLayouts.indices) {
                             val layout = currentLayouts[i]
