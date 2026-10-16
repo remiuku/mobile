@@ -85,6 +85,7 @@ fun configSnapshot(settings: AppSettings): Map<String, Any> = with(settings) {
         "glow" to glow,
         "low_performance" to lowPerformance,
         "ui_animations" to uiAnimations,
+        "peek_while_adjusting" to peekWhileAdjusting,
         "background" to backgroundType.name,
         "background_blur" to backgroundBlur,
         "dynamic_background_blur" to dynamicBackgroundBlur,

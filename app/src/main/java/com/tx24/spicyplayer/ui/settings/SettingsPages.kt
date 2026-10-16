@@ -83,6 +83,7 @@ import androidx.compose.material.icons.rounded.Animation
 import androidx.compose.material.icons.rounded.Science
 import androidx.compose.material.icons.rounded.Style
 import androidx.compose.material.icons.rounded.School
+import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material.icons.rounded.HideImage
 import androidx.compose.material.icons.rounded.Height
@@ -775,6 +776,13 @@ internal fun ThemeContent(settings: AppSettings) {
             },
         )
     }
+    ToggleRow(
+        label = "Peek While Adjusting",
+        checked = settings.peekWhileAdjusting,
+        onCheckedChange = { settings.peekWhileAdjusting = it },
+        description = "Clear this screen away while you drag a slider, so you see the change on the lyrics.",
+        icon = Icons.Rounded.Visibility,
+    )
 }
 
 @Composable

@@ -72,7 +72,13 @@ import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.Stable
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
@@ -121,6 +127,50 @@ val LocalSettingsQuery = compositionLocalOf { "" }
 
 /** Whether the interface animates (playback buttons, lists, pop-up screens): the setting, and not low performance mode. */
 val LocalUiAnimations = compositionLocalOf { true }
+
+/**
+ * Steps the settings aside so the lyrics behind them show while a setting is tried: everything
+ * goes but [keep] (the peek button, or a slider's row being dragged, drawn on a [plate]).
+ * [keep] is in root coordinates and outlives [end], so the kept part fades back in place.
+ */
+@Stable
+class SettingsPeek(private val allowRows: () -> Boolean = { true }) {
+    var active by mutableStateOf(false)
+        private set
+    var keep by mutableStateOf<Rect?>(null)
+        private set
+    var plate by mutableStateOf(false)
+        private set
+    /** Held open by a quick tap on the peek button, until the next tap anywhere. */
+    var latched by mutableStateOf(false)
+
+    fun start(keep: Rect?, plate: Boolean) {
+        this.keep = keep
+        this.plate = plate
+        active = true
+    }
+
+    /** For a row's control: peeks at everything but the row, unless the setting turns that off. */
+    fun startRow(row: Rect?) {
+        if (row != null && allowRows()) start(row, plate = true)
+    }
+
+    fun end() {
+        active = false
+        latched = false
+    }
+}
+
+/** The open settings' peek; null outside settings, where controls don't peek. */
+val LocalSettingsPeek = staticCompositionLocalOf<SettingsPeek?> { null }
+
+/** The bounds, in root coordinates, of the settings row a control sits in. */
+private val LocalRowBounds = staticCompositionLocalOf<() -> Rect?> { { null } }
+
+/** Holds a laid-out row's bounds without recomposing anything when they change. */
+private class BoundsHolder {
+    var rect: Rect? = null
+}
 
 /** Whether the label or the description contains the query, ignoring case. */
 fun settingMatches(query: String, vararg terms: String?): Boolean {
@@ -254,21 +304,25 @@ private fun RowFrame(
         tween(SpicyMotion.FAST_MS, easing = SpicyMotion.Standard),
         label = "rowPress",
     )
+    val bounds = remember { BoundsHolder() }
     val frame = modifier
         .fillMaxWidth()
+        .onGloballyPositioned { bounds.rect = it.boundsInRoot() }
         .clip(RoundedCornerShape(SpicyRadii.Md))
         .background(background)
         .padding(SpicySpacing.S3)
         .alpha(if (enabled) 1f else DISABLED_ALPHA)
-    if (stacked) {
-        Column(frame, verticalArrangement = Arrangement.spacedBy(SpicySpacing.S3)) {
-            RowLabel(label, description, Modifier.fillMaxWidth(), icon)
-            control()
-        }
-    } else {
-        Row(frame, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(SpicySpacing.S4)) {
-            RowLabel(label, description, Modifier.weight(1f), icon)
-            control()
+    CompositionLocalProvider(LocalRowBounds provides { bounds.rect }) {
+        if (stacked) {
+            Column(frame, verticalArrangement = Arrangement.spacedBy(SpicySpacing.S3)) {
+                RowLabel(label, description, Modifier.fillMaxWidth(), icon)
+                control()
+            }
+        } else {
+            Row(frame, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(SpicySpacing.S4)) {
+                RowLabel(label, description, Modifier.weight(1f), icon)
+                control()
+            }
         }
     }
 }
@@ -781,6 +835,8 @@ fun SpicyBipolarSlider(
         }
     }
     var held by remember { mutableStateOf(false) }
+    val peek by rememberUpdatedState(LocalSettingsPeek.current)
+    val rowBounds by rememberUpdatedState(LocalRowBounds.current)
     val thumbScale by animateFloatAsState(if (held) 0.92f else 1f, tween(120), label = "thumb")
     val span = (range.last - range.first).coerceAtLeast(1)
     val thumbR = 8.dp
@@ -806,14 +862,20 @@ fun SpicyBipolarSlider(
                         val slop = awaitHorizontalTouchSlopOrCancellation(down.id) { change, _ -> change.consume() }
                             ?: return@awaitEachGesture
                         held = true
+                        // Clears the rest of the settings away while dragging, so the change shows on the lyrics.
+                        peek?.startRow(rowBounds())
                         val width = size.width.toFloat()
                         val thumbPx = thumbR.toPx()
-                        currentOnChange(valueAt(slop.position.x, width, thumbPx))
-                        horizontalDrag(slop.id) {
-                            it.consume()
-                            currentOnChange(valueAt(it.position.x, width, thumbPx))
+                        try {
+                            currentOnChange(valueAt(slop.position.x, width, thumbPx))
+                            horizontalDrag(slop.id) {
+                                it.consume()
+                                currentOnChange(valueAt(it.position.x, width, thumbPx))
+                            }
+                        } finally {
+                            held = false
+                            peek?.end()
                         }
-                        held = false
                     }
                 },
         ) {

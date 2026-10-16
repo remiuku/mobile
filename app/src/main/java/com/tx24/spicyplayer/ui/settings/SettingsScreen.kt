@@ -69,6 +69,26 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import android.os.SystemClock
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Paint
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
+import com.tx24.spicyplayer.ui.components.LocalSettingsPeek
+import com.tx24.spicyplayer.ui.components.SettingsPeek
+import com.tx24.spicyplayer.ui.theme.SpicyRadii
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.collectAsState
@@ -181,6 +201,16 @@ fun SettingsScreen(
     // (0 → 1) and whether its rows have replaced its skeleton.
     val stack = remember { mutableStateListOf<OpenPage>() }
     var closing by remember { mutableStateOf(false) }
+    // Clearing the settings away to see the lyrics: the peek button, or a slider being dragged.
+    val peek = remember { SettingsPeek(allowRows = { settings.peekWhileAdjusting }) }
+    val peekAmount by animateFloatAsState(
+        if (peek.active) 1f else 0f,
+        if (animate) tween(PEEK_MS, easing = SpicyMotion.Standard) else snap(),
+        label = "peek",
+    )
+    // Moving between pages or closing ends a peek.
+    LaunchedEffect(stack.size, closing) { peek.end() }
+    var pagesOrigin by remember { mutableStateOf(Offset.Zero) }
     var query by rememberSaveable { mutableStateOf("") }
     val homeScroll = rememberScrollState()
     // Building a page's real rows can take a few hundred ms (more in debug builds), and an
@@ -255,7 +285,7 @@ fun SettingsScreen(
         Box(
             Modifier
                 .matchParentSize()
-                .graphicsLayer { alpha = open.value * (1f - BACKDROP_PEEK * backSwipe.value) }
+                .graphicsLayer { alpha = open.value * (1f - BACKDROP_PEEK * backSwipe.value) * (1f - peekAmount) }
                 .then(
                     if (backdrop != null) {
                         Modifier.hazeEffect(backdrop, SettingsBackdrop) {
@@ -276,7 +306,7 @@ fun SettingsScreen(
             Box(
                 Modifier
                     .matchParentSize()
-                    .graphicsLayer { alpha = open.value * (1f - BACKDROP_PEEK * backSwipe.value) }
+                    .graphicsLayer { alpha = open.value * (1f - BACKDROP_PEEK * backSwipe.value) * (1f - peekAmount) }
                     .drawBehind {
                         drawRect(brand.fieldDeep.copy(alpha = 0.14f))
                         drawBrandRamp(brand, fromAlpha = 0.26f, toAlpha = 0.4f)
@@ -292,6 +322,7 @@ fun SettingsScreen(
             LocalSpicyPalette provides palette,
             LocalSettingsBackdrop provides backdrop,
             LocalOpenSettingsPage provides ::show,
+            LocalSettingsPeek provides peek,
         ) {
         BoxWithConstraints(
             Modifier
@@ -303,6 +334,25 @@ fun SettingsScreen(
                     scaleY = scale
                     alpha = open.value
                     translationX = (if (swipeFromLeft) 1f else -1f) * backSwipe.value * BACK_GESTURE_SHIFT.toPx()
+                }
+                .onGloballyPositioned { pagesOrigin = it.positionInRoot() }
+                // Peeking draws the pages faded out, and only what's kept (the peek button, or the
+                // dragged slider's row on a plate of its own) at full strength.
+                .drawWithContent {
+                    val amount = peekAmount
+                    if (amount <= 0f) return@drawWithContent drawContent()
+                    if (amount < 1f) faded(1f - amount) { drawContent() }
+                    val keep = peek.keep?.translate(-pagesOrigin) ?: return@drawWithContent
+                    if (peek.plate) {
+                        val inset = SpicySpacing.S1.toPx()
+                        drawRoundRect(
+                            PEEK_PLATE.copy(alpha = PEEK_PLATE.alpha * amount),
+                            keep.topLeft - Offset(inset, inset),
+                            Size(keep.width + 2 * inset, keep.height + 2 * inset),
+                            CornerRadius(SpicyRadii.Md.toPx()),
+                        )
+                    }
+                    clipRect(keep.left, keep.top, keep.right, keep.bottom) { faded(amount) { this@drawWithContent.drawContent() } }
                 },
         ) {
             val width = constraints.maxWidth.toFloat()
@@ -356,8 +406,55 @@ fun SettingsScreen(
                 }
             }
         }
+        // While a tap holds the peek open, the next tap anywhere brings the settings back,
+        // instead of reaching rows that can't be seen.
+        if (peek.active && peek.latched) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .pointerInput(Unit) {
+                        awaitEachGesture {
+                            awaitFirstDown().consume()
+                            peek.end()
+                        }
+                    },
+            )
+        }
         }
     }
+}
+
+/** The peek button: hold it to see the lyrics behind the settings, or tap it to keep them clear. */
+@Composable
+private fun PeekButton() {
+    val peek = LocalSettingsPeek.current ?: return
+    var bounds by remember { mutableStateOf<Rect?>(null) }
+    var downAt by remember { mutableLongStateOf(0L) }
+    GlassButton(
+        onClick = {},
+        contentDescription = "Peek at the lyrics",
+        size = 40.dp,
+        modifier = Modifier.onGloballyPositioned { bounds = it.boundsInRoot() },
+        onPressChange = { down ->
+            if (down) {
+                downAt = SystemClock.uptimeMillis()
+                peek.start(bounds, plate = false)
+            } else if (SystemClock.uptimeMillis() - downAt < PEEK_TAP_MS) {
+                peek.latched = true
+            } else {
+                peek.end()
+            }
+        },
+    ) {
+        Icon(Icons.Rounded.Visibility, null, tint = SpicyColors.TextPrimary, modifier = Modifier.size(20.dp))
+    }
+}
+
+/** Draws [block] into a layer at [alpha]. */
+private inline fun DrawScope.faded(alpha: Float, block: () -> Unit) {
+    drawContext.canvas.saveLayer(Rect(Offset.Zero, size), Paint().apply { this.alpha = alpha })
+    block()
+    drawContext.canvas.restore()
 }
 
 @Composable
@@ -419,13 +516,15 @@ private fun Page(
             }
             Spacer(Modifier.size(SpicySpacing.S3))
             if (SpicyColors.brand != null) {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     SpicyBrandLine()
                     Text(title, style = SpicyType.Title.copy(fontSize = BrandTitleSize, lineHeight = 1.1.em, letterSpacing = (-0.025f).em))
                 }
             } else {
-                Text(title, style = SpicyType.Title.copy(fontSize = 22.sp, fontWeight = FontWeight.SemiBold))
+                Text(title, Modifier.weight(1f), style = SpicyType.Title.copy(fontSize = 22.sp, fontWeight = FontWeight.SemiBold))
             }
+            Spacer(Modifier.size(SpicySpacing.S3))
+            PeekButton()
         }
         header()
         if (ready) {
@@ -465,7 +564,7 @@ private fun PageSkeleton(page: SettingsPage) {
         SettingsPage.Background -> SettingsSkeleton(rows = 3)
         SettingsPage.NowPlaying -> SettingsSkeleton(rows = 8)
         SettingsPage.Controls -> SettingsSkeleton(rows = 10)
-        SettingsPage.Theme -> SettingsSkeleton(rows = 3)
+        SettingsPage.Theme -> SettingsSkeleton(rows = 4)
         SettingsPage.Sources -> SettingsSkeleton(rows = 11, cards = true)
         SettingsPage.Device -> SettingsSkeleton(rows = 9)
         SettingsPage.FloatingLyrics -> SettingsSkeleton(rows = 1)
@@ -815,6 +914,13 @@ private const val HOME_PARALLAX = 0.15f
 
 /** How far a back gesture pulls a group's page toward the first page before letting go. */
 private const val PAGE_PEEK = 0.5f
+
+/** How long the settings take to clear away for a peek, and to come back. */
+private const val PEEK_MS = 250
+/** A press on the peek button shorter than this holds the peek open instead of ending it on release. */
+private const val PEEK_TAP_MS = 250L
+/** The plate a dragged slider's row sits on while the rest of the settings are cleared away. */
+private val PEEK_PLATE = Color(0xE0141414)
 
 private const val PROJECT_URL = "https://github.com/spicylyrics/mobile"
 // Keeps the prefilled form link well under the length GitHub accepts.

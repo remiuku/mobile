@@ -93,8 +93,11 @@ fun GlassButton(
     contentDescription: String,
     modifier: Modifier = Modifier,
     size: Dp = 42.dp,
+    /** Told when a finger goes down (true) and when it lifts or slides off (false), before [onClick]. */
+    onPressChange: ((Boolean) -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
+    val currentOnPressChange by rememberUpdatedState(onPressChange)
     val scale = remember { Animatable(1f) }
     val scope = rememberCoroutineScope()
     var pressed by remember { mutableStateOf(false) }
@@ -137,9 +140,11 @@ fun GlassButton(
                 awaitEachGesture {
                     awaitFirstDown().consume()
                     pressed = true
+                    currentOnPressChange?.invoke(true)
                     scope.launch { scale.animateTo(PRESSED_SCALE, tween(280, easing = SpicyMotion.Overshoot)) }
                     val up = waitForUpOrCancellation()
                     pressed = false
+                    currentOnPressChange?.invoke(false)
                     scope.launch { scale.animateTo(1f, tween(280, easing = SpicyMotion.Overshoot)) }
                     if (up != null) {
                         up.consume()

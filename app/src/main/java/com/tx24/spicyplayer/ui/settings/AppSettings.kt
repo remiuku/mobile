@@ -74,6 +74,8 @@ class AppSettings(private val prefs: SharedPreferences) {
     var lowPerformance by boolean("lowPerformance", false)
     /** The playback buttons, the queue and pop-ups animate; off in [lowPerformance] too. */
     var uiAnimations by boolean("uiAnimations", true)
+    /** Dragging a settings slider clears the rest of the settings away, so the change shows on the lyrics. */
+    var peekWhileAdjusting by boolean("peekWhileAdjusting", true)
 
     /** Carries over the old Default/Legacy switch. */
     var backgroundType by enum(
