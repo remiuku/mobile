@@ -687,7 +687,7 @@ fun StageControls(
                 },
         ) {
             FloatingButtons(
-                floatingActions(controls, others, romanizeAvailable, romanized, onToggleRomanize, onOpenSettings, onOpenLyricsManager, onOpenQuickSettings, expanded, onToggleExpanded, onSwapSide, showResync, showExpand, onOpenQueue = onOpenQueue, onOpenSource = onOpenSource, onEnterPip = onEnterPip),
+                floatingActions(controls, others, romanizeAvailable, romanized, onToggleRomanize, onOpenSettings, onOpenLyricsManager, onOpenQuickSettings, expanded, onToggleExpanded, onSwapSide, onRight, showResync, showExpand, onOpenQueue = onOpenQueue, onOpenSource = onOpenSource, onEnterPip = onEnterPip),
                 side - gutter * 2, minSize = COVER_BUTTON_MIN, maxSize = COVER_BUTTON_MAX, minGap = COVER_BUTTON_GAP, maxGap = SpicySpacing.S3,
             )
         }
