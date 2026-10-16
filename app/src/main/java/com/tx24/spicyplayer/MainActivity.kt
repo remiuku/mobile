@@ -846,7 +846,7 @@ private fun LyricsApp(
                     label = "noticeBottom",
                 )
                 // Out of the way under settings too: their glass would keep blurring behind it.
-                val controlsTarget = controlsVisible && !showSettings
+                val controlsTarget = controlsVisible && (!showSettings || settingsPeeking)
                 // Quick to appear under the finger; a slow, soft fade when they time out.
                 val controlsShown by animateFloatAsState(
                     if (controlsTarget) 1f else 0f,
@@ -1169,7 +1169,7 @@ private fun LyricsApp(
                 CompositionLocalProvider(LocalBackdrop provides backdrop?.takeUnless { lowPerformance }) {
                     ScrollToActiveButton(
                         direction = lyricsViewState.activeLineDirection.takeIf {
-                            settings.showScrollToActive && !headerExpanded && !showSettings
+                            settings.showScrollToActive && !headerExpanded && (!showSettings || settingsPeeking)
                         },
                         onClick = lyricsViewState::scrollToActive,
                         topPx = when {
