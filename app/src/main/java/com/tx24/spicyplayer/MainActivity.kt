@@ -968,6 +968,7 @@ private fun LyricsApp(
                                     onSwapSide = if (hideHeader || headerExpanded) null else ({
                                         settings.panelSide = if (settings.panelSide == PanelSide.Left) PanelSide.Right else PanelSide.Left
                                     }),
+                                    coverOnRight = settings.panelSide == PanelSide.Right,
                                     shown = { controlsShown },
                                 )
                             }

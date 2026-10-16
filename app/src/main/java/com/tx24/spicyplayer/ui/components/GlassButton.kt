@@ -1,5 +1,7 @@
 package com.tx24.spicyplayer.ui.components
 
+import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
@@ -154,8 +156,11 @@ fun GlassButton(
                 }
             },
         contentAlignment = Alignment.Center,
-    ) { content() }
+    ) { CompositionLocalProvider(LocalGlyphPressed provides pressed) { content() } }
 }
+
+/** Whether the button a glyph sits on is held down, for glyphs with a motion of their own. */
+val LocalGlyphPressed = compositionLocalOf { false }
 
 /** `.ViewControl:active { scale: 0.94 }`. */
 private const val PRESSED_SCALE = 0.94f

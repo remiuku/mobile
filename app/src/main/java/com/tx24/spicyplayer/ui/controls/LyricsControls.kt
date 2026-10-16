@@ -1,5 +1,10 @@
 package com.tx24.spicyplayer.ui.controls
 
+import androidx.compose.runtime.CompositionLocalProvider
+import com.tx24.spicyplayer.ui.components.LocalGlyphPressed
+import androidx.compose.ui.graphics.vector.PathNode
+import androidx.compose.ui.graphics.vector.Path
+import androidx.compose.ui.graphics.vector.Group
 import androidx.compose.material.icons.rounded.ScreenRotation
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.infiniteRepeatable
@@ -468,7 +473,9 @@ private fun MoreItem(action: FloatingAction, onClick: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(SpicySpacing.S3),
     ) {
-        Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) { action.icon { it.dp } }
+        Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) {
+            CompositionLocalProvider(LocalGlyphPressed provides pressed) { action.icon { it.dp } }
+        }
         Text(action.label, style = SpicyType.Body.copy(color = SpicyColors.TextPrimary))
     }
 }
@@ -486,6 +493,8 @@ private fun floatingActions(
     onToggleExpanded: () -> Unit,
     /** Shows the button that moves the landscape panel to the other side when set. */
     onSwapSide: (() -> Unit)?,
+    /** Where the landscape cover is now, so the move button points the other way. */
+    coverOnRight: Boolean = false,
     showResync: Boolean,
     showExpand: Boolean,
     onOpenQueue: (() -> Unit)? = null,
@@ -525,10 +534,10 @@ private fun floatingActions(
         Image(rememberVectorPainter(SpicyIcons.Resync), null, Modifier.size(icon(23f)))
     })
     if (showExpand) add(FloatingAction(if (expanded) "Show lyrics" else "Show the cover", keep = 70, onToggleExpanded) { icon ->
-        Image(rememberVectorPainter(if (expanded) SpicyIcons.Collapse else SpicyIcons.Expand), null, Modifier.size(icon(23f)))
+        ExpandGlyph(expanded, Modifier.size(icon(23f)))
     })
     if (onSwapSide != null) add(FloatingAction("Move the cover to the other side", keep = 60, onSwapSide) { icon ->
-        Image(rememberVectorPainter(SpicyIcons.SwapSide), null, Modifier.size(icon(23f)))
+        SwapSideGlyph(coverOnRight, Modifier.size(icon(23f)))
     })
     if (onOpenLyricsManager != null) add(FloatingAction("Lyrics Manager", keep = 50, onOpenLyricsManager) { icon ->
         Image(rememberVectorPainter(SpicyIcons.LyricsManager), null, Modifier.size(icon(23f)))
@@ -556,7 +565,7 @@ private fun floatingActions(
         })
     }
     add(FloatingAction("Settings", keep = Int.MAX_VALUE, onOpenSettings) { icon ->
-        Image(rememberVectorPainter(SpicyIcons.Settings), null, Modifier.size(icon(23f)))
+        SettingsGlyph(Modifier.size(icon(23f)))
     })
 }
 
@@ -581,6 +590,7 @@ fun CoverControls(
     expanded: Boolean,
     onToggleExpanded: () -> Unit,
     onSwapSide: (() -> Unit)?,
+    coverOnRight: Boolean = false,
     shown: () -> Float,
     modifier: Modifier = Modifier,
     onEnterPip: (() -> Unit)? = null,
@@ -610,7 +620,7 @@ fun CoverControls(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             FloatingButtons(
-                floatingActions(controls, others, romanizeAvailable, romanized, onToggleRomanize, onOpenSettings, onOpenLyricsManager, onOpenQuickSettings, expanded, onToggleExpanded, onSwapSide, showResync, showExpand, onOpenQueue = onOpenQueue, onOpenSource = onOpenSource, onEnterPip = onEnterPip),
+                floatingActions(controls, others, romanizeAvailable, romanized, onToggleRomanize, onOpenSettings, onOpenLyricsManager, onOpenQuickSettings, expanded, onToggleExpanded, onSwapSide, coverOnRight, showResync, showExpand, onOpenQueue = onOpenQueue, onOpenSource = onOpenSource, onEnterPip = onEnterPip),
                 side * 0.88f, minSize = COVER_BUTTON_MIN, maxSize = COVER_BUTTON_MAX, minGap = COVER_BUTTON_GAP, maxGap = SpicySpacing.S3,
             )
             Spacer(Modifier.weight(1f))
@@ -963,6 +973,85 @@ internal fun formatClock(ms: Long): String {
     return if (hours > 0L) "%d:%02d:%02d".format(hours, minutes, seconds) else "%d:%02d".format(minutes, seconds)
 }
 
+/*
+ * The glyphs with a motion of their own, on the same 24-unit line grid as [SpicyIcons]. Each part
+ * moves over 0.25 s (0.2 s for the corners' nudge, 0.3 s for the gear), easing out. Phones have
+ * no hover, so what a pointer resting on the button would do happens while it's held.
+ */
+private object Glyphs {
+    private fun nodes(path: String) = PathParser().parsePathString(path).toNodes()
+    val Gear = nodes("M10.07 5.69L10.48 3.38A8.75 8.75 0 0 1 13.52 3.38L13.93 5.69A6.6 6.6 0 0 1 15.1 6.17L17.02 4.83A8.75 8.75 0 0 1 19.17 6.98L17.83 8.9A6.6 6.6 0 0 1 18.31 10.07L20.62 10.48A8.75 8.75 0 0 1 20.62 13.52L18.31 13.93A6.6 6.6 0 0 1 17.83 15.1L19.17 17.02A8.75 8.75 0 0 1 17.02 19.17L15.1 17.83A6.6 6.6 0 0 1 13.93 18.31L13.52 20.62A8.75 8.75 0 0 1 10.48 20.62L10.07 18.31A6.6 6.6 0 0 1 8.9 17.83L6.98 19.17A8.75 8.75 0 0 1 4.83 17.02L6.17 15.1A6.6 6.6 0 0 1 5.69 13.93L3.38 13.52A8.75 8.75 0 0 1 3.38 10.48L5.69 10.07A6.6 6.6 0 0 1 6.17 8.9L4.83 6.98A8.75 8.75 0 0 1 6.98 4.83L8.9 6.17A6.6 6.6 0 0 1 10.07 5.69Z")
+    val Hub = nodes("M14.75 12a2.75 2.75 0 1 1-5.5 0a2.75 2.75 0 1 1 5.5 0Z")
+    // Four rounded corners at the edges, each with the way it nudges: outward to show the
+    // cover, toward the middle (the same corners turned inside out) to go back.
+    val ExpandCorners = listOf(
+        nodes("M3.5 8.5V6A2.5 2.5 0 0 1 6 3.5h2.5") to Offset(-1f, -1f),
+        nodes("M15.5 3.5H18A2.5 2.5 0 0 1 20.5 6v2.5") to Offset(1f, -1f),
+        nodes("M20.5 15.5V18a2.5 2.5 0 0 1-2.5 2.5h-2.5") to Offset(1f, 1f),
+        nodes("M8.5 20.5H6A2.5 2.5 0 0 1 3.5 18v-2.5") to Offset(-1f, 1f),
+    )
+    val CollapseCorners = listOf(
+        nodes("M8.5 3.5V6A2.5 2.5 0 0 1 6 8.5H3.5") to Offset(1f, 1f),
+        nodes("M20.5 8.5H18A2.5 2.5 0 0 1 15.5 6V3.5") to Offset(-1f, 1f),
+        nodes("M15.5 20.5V18a2.5 2.5 0 0 1 2.5-2.5h2.5") to Offset(-1f, -1f),
+        nodes("M3.5 15.5H6A2.5 2.5 0 0 1 8.5 18v2.5") to Offset(1f, -1f),
+    )
+    val Screen = nodes("M6 4h12a3 3 0 0 1 3 3v10a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3Z")
+    val Cover = nodes("M7.25 9.5h2.5a1.25 1.25 0 0 1 1.25 1.25v2.5a1.25 1.25 0 0 1-1.25 1.25h-2.5A1.25 1.25 0 0 1 6 13.25v-2.5A1.25 1.25 0 0 1 7.25 9.5Z")
+    val Arrow = nodes("M14 12h4m-1.75-1.75L18 12l-1.75 1.75")
+}
+
+private val GlyphEase = CubicBezierEasing(0.23f, 1f, 0.32f, 1f)
+
+@Composable
+private fun lineGlyph(content: @Composable (Float, Float) -> Unit) =
+    rememberVectorPainter(24.dp, 24.dp, 24f, 24f, content = content)
+
+@Composable
+private fun LinePath(nodes: List<PathNode>) = Path(
+    nodes,
+    stroke = SolidColor(SpicyPalette.Neutral.TextPrimary),
+    strokeLineWidth = 2f,
+    strokeLineCap = StrokeCap.Round,
+    strokeLineJoin = StrokeJoin.Round,
+)
+
+/** The gear, turning an eighth while its button is held. */
+@Composable
+private fun SettingsGlyph(modifier: Modifier) {
+    val turn by animateFloatAsState(if (LocalGlyphPressed.current) 45f else 0f, tween(300, easing = GlyphEase), label = "gear")
+    Image(lineGlyph { _, _ ->
+        Group(rotation = turn, pivotX = 12f, pivotY = 12f) { LinePath(Glyphs.Gear) }
+        LinePath(Glyphs.Hub)
+    }, null, modifier)
+}
+
+/** Corners out to show the cover, in to go back; each nudges its own way while held. */
+@Composable
+private fun ExpandGlyph(expanded: Boolean, modifier: Modifier) {
+    val nudge by animateFloatAsState(if (LocalGlyphPressed.current) 1f else 0f, tween(200, easing = GlyphEase), label = "corners")
+    val corners = if (expanded) Glyphs.CollapseCorners else Glyphs.ExpandCorners
+    Image(lineGlyph { _, _ ->
+        corners.forEach { (nodes, way) ->
+            Group(translationX = way.x * nudge, translationY = way.y * nudge) { LinePath(nodes) }
+        }
+    }, null, modifier)
+}
+
+/**
+ * The screen with the cover on the side it's on now and an arrow to the other: when the cover
+ * moves, it slides across and the arrow turns to point back.
+ */
+@Composable
+private fun SwapSideGlyph(coverOnRight: Boolean, modifier: Modifier) {
+    val side by animateFloatAsState(if (coverOnRight) 1f else 0f, tween(250, easing = GlyphEase), label = "swapSide")
+    Image(lineGlyph { _, _ ->
+        LinePath(Glyphs.Screen)
+        Group(translationX = 7f * side) { LinePath(Glyphs.Cover) }
+        Group(rotation = 180f * side, pivotX = 16f, pivotY = 12f, translationX = -8f * side) { LinePath(Glyphs.Arrow) }
+    }, null, modifier)
+}
+
 /** The controls' glyphs, in white. */
 internal object SpicyIcons {
     val TrackSkip = icon(
@@ -988,37 +1077,12 @@ internal object SpicyIcons {
         DIM to "M13.5 6.5h8L19 9.75", DIM to "M17.25 9.75v1.75c0 2.75-1.25 5-3.75 6.5",
     )
 
-    /** A gear with eight teeth around a small hub. */
-    val Settings = lucide(
-        "M10.07 5.69L10.48 3.38A8.75 8.75 0 0 1 13.52 3.38L13.93 5.69A6.6 6.6 0 0 1 15.1 6.17L17.02 4.83A8.75 8.75 0 0 1 19.17 6.98L17.83 8.9A6.6 6.6 0 0 1 18.31 10.07L20.62 10.48A8.75 8.75 0 0 1 20.62 13.52L18.31 13.93A6.6 6.6 0 0 1 17.83 15.1L19.17 17.02A8.75 8.75 0 0 1 17.02 19.17L15.1 17.83A6.6 6.6 0 0 1 13.93 18.31L13.52 20.62A8.75 8.75 0 0 1 10.48 20.62L10.07 18.31A6.6 6.6 0 0 1 8.9 17.83L6.98 19.17A8.75 8.75 0 0 1 4.83 17.02L6.17 15.1A6.6 6.6 0 0 1 5.69 13.93L3.38 13.52A8.75 8.75 0 0 1 3.38 10.48L5.69 10.07A6.6 6.6 0 0 1 6.17 8.9L4.83 6.98A8.75 8.75 0 0 1 6.98 4.83L8.9 6.17A6.6 6.6 0 0 1 10.07 5.69Z",
-        "M14.75 12a2.75 2.75 0 1 1-5.5 0a2.75 2.75 0 1 1 5.5 0Z",
-    )
-
-    /** Four rounded corners pulled out to the edges, for growing the song header. */
-    val Expand = lucide(
-        "M3.5 8.5V6A2.5 2.5 0 0 1 6 3.5h2.5", "M15.5 3.5H18A2.5 2.5 0 0 1 20.5 6v2.5",
-        "M20.5 15.5V18a2.5 2.5 0 0 1-2.5 2.5h-2.5", "M8.5 20.5H6A2.5 2.5 0 0 1 3.5 18v-2.5",
-    )
-
-    /** The same corners turned inside out, for shrinking it back. */
-    val Collapse = lucide(
-        "M8.5 3.5V6A2.5 2.5 0 0 1 6 8.5H3.5", "M20.5 8.5H18A2.5 2.5 0 0 1 15.5 6V3.5",
-        "M15.5 20.5V18a2.5 2.5 0 0 1 2.5-2.5h2.5", "M3.5 15.5H6A2.5 2.5 0 0 1 8.5 18v2.5",
-    )
-
     /** Lucide's refresh-cw, for resyncing with the player. */
     val Resync = lucide(
         "M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8",
         "M21 3v5h-5",
         "M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16",
         "M8 16H3v5",
-    )
-
-    /** The screen with the cover on one side, pointing at the side it will move to. */
-    val SwapSide = lucide(
-        "M6 4h12a3 3 0 0 1 3 3v10a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3Z",
-        "M7.25 9.5h2.5a1.25 1.25 0 0 1 1.25 1.25v2.5a1.25 1.25 0 0 1-1.25 1.25h-2.5A1.25 1.25 0 0 1 6 13.25v-2.5A1.25 1.25 0 0 1 7.25 9.5Z",
-        "M14 12h4m-1.75-1.75L18 12l-1.75 1.75",
     )
 
     /** A lyric sheet in front of another, for the Lyrics Manager. */
