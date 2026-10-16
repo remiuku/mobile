@@ -926,7 +926,7 @@ private const val PROJECT_URL = "https://github.com/spicylyrics/mobile"
 private const val MAX_PREFILLED_DEBUG = 3000
 
 // The server invite, not the thread link: a thread link only opens for people already in the server.
-private const val DISCORD_URL = "https://discord.com/invite/uqgXU5wh8j"
+internal const val DISCORD_URL = "https://discord.com/invite/uqgXU5wh8j"
 
 internal fun openUrl(context: Context, url: String) {
     runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }

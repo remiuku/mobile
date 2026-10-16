@@ -35,6 +35,12 @@ sealed interface LyricsState {
         /** The source brought its own romanization (TTML), which a human one from Genius doesn't replace. */
         val sourceRomanized: Boolean = false,
     ) : LyricsState
-    /** [message] is the headline, [detail] the smaller line under it (which sources, which codes). */
-    data class Error(val message: String, val detail: String? = null) : LyricsState
+    /**
+     * A notice in place of lyrics. [kind] gives its headline and explanation; [detail] says which
+     * sources answered what, and [code] is a short code for a report (an HTTP status, an exception).
+     */
+    data class Error(val kind: NoticeKind, val detail: String? = null, val code: String? = null) : LyricsState {
+        val message: String get() = kind.title
+        val body: String get() = kind.body
+    }
 }

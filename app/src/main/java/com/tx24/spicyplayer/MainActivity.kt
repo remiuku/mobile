@@ -8,7 +8,7 @@ import com.tx24.spicyplayer.ui.settings.AppIcon
 import com.tx24.spicyplayer.ui.components.LocalPopupPalette
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberCoroutineScope
-import com.tx24.spicyplayer.lyrics.LyricsNotices
+import com.tx24.spicyplayer.lyrics.NoticeKind
 import com.tx24.spicyplayer.ui.spotifysearch.SpotifySearchModal
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -160,6 +160,9 @@ import androidx.compose.ui.unit.IntOffset
 import com.tx24.spicyplayer.ui.controls.PlaybackControlsState
 import com.tx24.spicyplayer.ui.nowplaying.CompactHeaderMetrics
 import com.tx24.spicyplayer.ui.nowplaying.CompactNowPlayingHeader
+import com.tx24.spicyplayer.ui.nowplaying.LyricsNotice
+import com.tx24.spicyplayer.ui.nowplaying.NoticeActions
+import com.tx24.spicyplayer.ui.settings.debugReport
 import com.tx24.spicyplayer.ui.nowplaying.MotionCoverQuery
 import com.tx24.spicyplayer.ui.nowplaying.NowPlayingInfo
 import com.tx24.spicyplayer.ui.nowplaying.forgetMotionCover
@@ -471,10 +474,11 @@ private fun LyricsApp(
         onDispose { window?.let { setPreferredRefreshRate(it, null) } }
     }
     // The big cover: the button (or a tap on the cover) asks for it; the setting brings it up on
-    // its own while a song has no lyrics, until it's put away for that song.
+    // its own while a song has no lyrics, until it's put away for that song. Errors stay in view.
     var userExpanded by remember { mutableStateOf(false) }
     var dismissedForSong by remember(state.title, state.artist) { mutableStateOf(false) }
-    val autoExpanded = settings.expandWithoutLyrics && state.lyrics is LyricsState.Error && !dismissedForSong
+    val autoExpanded = settings.expandWithoutLyrics && (state.lyrics as? LyricsState.Error)?.kind == NoticeKind.NoLyrics &&
+        !dismissedForSong
     val headerExpanded = userExpanded || autoExpanded
     val toggleExpanded = {
         if (headerExpanded) {
@@ -550,6 +554,13 @@ private fun LyricsApp(
     var showQuickSettings by remember { mutableStateOf(false) }
     var quickStart by remember { mutableStateOf(QuickScreen.Main) }
     var showSpotifySearch by remember { mutableStateOf(false) }
+    val noticeActions = remember(viewModel, context) {
+        NoticeActions(
+            onRetry = { viewModel.loadLyrics(force = true) },
+            report = { debugReport(context, viewModel.state.value) },
+            onSearchSpotify = { showSpotifySearch = true },
+        )
+    }
     // Leaving the app only shrinks the lyrics when nothing else is half done in front of them.
     val pipAllowed = settings.autoPip && state.accessGranted && !showIntro && !showSettings && !showLyricsManager &&
         !showQuickSettings && !showSpotifySearch && state.limitNotice == null && lyricsViewState.profileRequest == null
@@ -854,7 +865,7 @@ private fun LyricsApp(
                             maskBottomPx = { if (pinnedHeightPx > 0) pinnedGapPx + pinnedHeightPx + pinnedClearPx else 0f },
                             config = renderConfig,
                             fontSizeScale = lyricsFontScale,
-                            onSearchSpotify = { showSpotifySearch = true },
+                            noticeActions = noticeActions,
                             modifier = Modifier.weight(1f),
                         )
                     }
@@ -1177,7 +1188,7 @@ private fun PipLyrics(
             maskBottomPx = { 0f },
             config = config,
             fontSizeScale = fontScale,
-            onSearchSpotify = {},
+            noticeActions = null,
             modifier = Modifier.fillMaxSize(),
             // The page's edge fade is 64dp deep: all of a window this small.
             maskScale = 0.25f,
@@ -1210,51 +1221,6 @@ private val PINNED_FOOTER_GAP = 20.dp
 private const val CONTROLS_SHOW_MS = 350
 private const val CONTROLS_HIDE_MS = 700
 private val CssEaseOut = CubicBezierEasing(0f, 0f, 0.58f, 1f)
-
-/**
- * A notice in place of lyrics: centred in the lyrics area, 80% of its width, centre-aligned. The
- * message is semibold primary text at clamp(1.25rem, 3.5cqw, 2.5rem); the detail sits 1cqh
- * under it, regular secondary text at clamp(0.95rem, 3.5cqw, 1.45rem).
- * [bottomPx] is how much of the panel's bottom the controls cover right now.
- */
-@Composable
-private fun LyricsNotice(
-    message: String,
-    detail: String?,
-    bottomPx: () -> Float,
-    modifier: Modifier,
-    onSearchSpotify: (() -> Unit)? = null,
-) {
-    BoxWithConstraints(modifier.fillMaxSize()) {
-        val cqw = maxWidth.value / 100f
-        val cqh = maxHeight / 100f
-        Column(
-            Modifier
-                .align(Alignment.Center)
-                .width(maxWidth * 0.8f)
-                .graphicsLayer { translationY = -bottomPx() / 2f },
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            val base = SpicyType.Body.copy(letterSpacing = (-0.01f).em, textAlign = TextAlign.Center)
-            Text(message, style = base.copy(fontSize = (cqw * 3.5f).coerceIn(20f, 40f).sp, fontWeight = FontWeight.SemiBold, lineHeight = 1.25.em))
-            if (detail != null) {
-                Text(
-                    detail,
-                    modifier = Modifier.padding(top = cqh),
-                    style = base.copy(
-                        fontSize = (cqw * 3.5f).coerceIn(15.2f, 23.2f).sp,
-                        fontWeight = FontWeight.Normal,
-                        letterSpacing = 0.sp,
-                        color = SpicyColors.TextSecondary,
-                    ),
-                )
-            }
-            if (onSearchSpotify != null) {
-                SpicyButton("Find on Spotify", onClick = onSearchSpotify, modifier = Modifier.padding(top = cqh * 3))
-            }
-        }
-    }
-}
 
 /**
  * The arrow that takes the lyrics back to the line being sung once it has been scrolled out of
@@ -1485,7 +1451,8 @@ private fun LyricsPanel(
     maskBottomPx: () -> Float,
     config: RenderConfig,
     fontSizeScale: Float,
-    onSearchSpotify: () -> Unit,
+    /** The notice's buttons; null draws the floating window's compact notice. */
+    noticeActions: NoticeActions?,
     modifier: Modifier = Modifier,
     maskScale: Float = 1f,
     translation: TranslationResult? = null,
@@ -1497,7 +1464,7 @@ private fun LyricsPanel(
     Box(modifier) {
         LyricsPanelContent(
             lyrics, currentTimeMs, onSeek, romanize, isPlaying, activeLineTopPx, centredLiftPx, noticeBottomPx,
-            viewState, pinnedFooter, maskBottomPx, config, fontSizeScale, onSearchSpotify, Modifier.fillMaxSize(),
+            viewState, pinnedFooter, maskBottomPx, config, fontSizeScale, noticeActions, Modifier.fillMaxSize(),
             maskScale = maskScale,
             translation = translation,
             translationMode = translationMode,
@@ -1538,7 +1505,8 @@ private fun LyricsPanelContent(
     maskBottomPx: () -> Float,
     config: RenderConfig,
     fontSizeScale: Float,
-    onSearchSpotify: () -> Unit,
+    /** The notice's buttons; null draws the floating window's compact notice. */
+    noticeActions: NoticeActions?,
     modifier: Modifier = Modifier,
     maskScale: Float = 1f,
     translation: TranslationResult? = null,
@@ -1546,13 +1514,9 @@ private fun LyricsPanelContent(
     romanizationMode: RomanizationMode = RomanizationMode.Replace,
 ) {
     when (lyrics) {
-        LyricsState.Idle -> LyricsNotice("Waiting for a song", null, noticeBottomPx, modifier)
+        LyricsState.Idle -> LyricsNotice("Waiting for a song", modifier, bottomPx = noticeBottomPx, compact = noticeActions == null)
         LyricsState.Loading -> Unit
-        // A song that was looked up and missed may just be matched to the wrong recording.
-        is LyricsState.Error -> LyricsNotice(
-            lyrics.message, lyrics.detail, noticeBottomPx, modifier,
-            onSearchSpotify = onSearchSpotify.takeIf { lyrics !== LyricsNotices.missingMetadata },
-        )
+        is LyricsState.Error -> LyricsNotice(lyrics, noticeActions, noticeBottomPx, modifier)
         is LyricsState.Ready -> {
             val originalLines = remember(lyrics.lines) {
                 lyrics.lines.map { line ->
