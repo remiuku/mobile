@@ -233,7 +233,7 @@ class LyricsAnimator(
     /**
      * Computes the animation state for all lines at [currentTimeMs].
      *
-     * @param deltaTime seconds since the last frame (unclamped).
+     * @param deltaTime seconds since the last frame, capped at two frame intervals.
      * @param suppressBlur true from the user's first touch until auto-scroll resumes.
      */
     fun animate(

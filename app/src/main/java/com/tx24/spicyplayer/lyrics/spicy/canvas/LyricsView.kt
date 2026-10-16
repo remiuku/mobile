@@ -12,6 +12,7 @@ import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.buildAnnotatedString
@@ -277,6 +278,7 @@ fun LyricsView(
         var animStates by remember { mutableStateOf<List<LineAnimState>>(emptyList()) }
         var dynamicYOffsets by remember { mutableStateOf(FloatArray(0)) }
         var lastFrameTimeNanos by remember { mutableLongStateOf(0L) }
+        val hostView = LocalView.current
         
         // The high-frequency animation loop, restarted with each new document's animator and scroll.
         LaunchedEffect(shownId) {
@@ -288,9 +290,14 @@ fun LyricsView(
             var settledYScratch = FloatArray(0)
             var stillFrames = 0
             var lastLayouts: List<LineLayout>? = null
+            // The first frame of a document, and the first after a rest, carry no real gap.
+            var resumed = true
+            var frameIntervalS = nominalFrameIntervalS(hostView.display?.refreshRate)
             while (true) {
                 if (stillFrames >= REST_AFTER_STILL_FRAMES) {
                     withTimeoutOrNull(REST_POLL_MS) { wake.receive() }
+                    resumed = true
+                    frameIntervalS = nominalFrameIntervalS(hostView.display?.refreshRate)
                 }
                 withFrameNanos { frameTimeNanos ->
                     val previousStates = animStates
@@ -306,13 +313,9 @@ fun LyricsView(
                     lastLayouts = currentLayouts
                     val currentTime = currentTimeProvider()
 
-                    // Unclamped: springs integrate analytically over any dt.
-                    val deltaTime = if (lastFrameTimeNanos == 0L) {
-                        0.016f
-                    } else {
-                        ((frameTimeNanos - lastFrameTimeNanos) / 1_000_000_000f).coerceAtLeast(0f)
-                    }
+                    val deltaTime = frameDeltaSeconds(frameTimeNanos, lastFrameTimeNanos, frameIntervalS, resumed)
                     lastFrameTimeNanos = frameTimeNanos
+                    resumed = false
 
                     if (currentLayouts.size == currentLines.size && currentLines.isNotEmpty()) {
                         // 1. Step the animator for visual properties (scale, opacity, glow).
@@ -652,6 +655,20 @@ private class ShownLyrics(
 private const val REST_AFTER_STILL_FRAMES = 30
 /** How often a resting frame loop looks for a change (a seek while paused). */
 private const val REST_POLL_MS = 150L
+
+/** The nominal frame interval in seconds for a display refresh rate; 60 Hz when it's unknown. */
+internal fun nominalFrameIntervalS(refreshRate: Float?): Float =
+    1f / (refreshRate?.takeIf { it >= 1f } ?: 60f)
+
+/**
+ * Seconds to advance the animation by for this frame. A late frame advances by at most two
+ * nominal intervals, so a stall doesn't leap the springs by the whole gap; the first frame
+ * after a rest (or with no previous frame) advances by one interval.
+ */
+internal fun frameDeltaSeconds(frameTimeNanos: Long, lastFrameTimeNanos: Long, nominalIntervalS: Float, resumed: Boolean): Float {
+    if (resumed || lastFrameTimeNanos == 0L) return nominalIntervalS
+    return ((frameTimeNanos - lastFrameTimeNanos) / 1_000_000_000f).coerceIn(0f, 2f * nominalIntervalS)
+}
 
 /** The desktop lyric size (its 3.5rem cap), in CSS px. */
 private const val REFERENCE_LYRIC_SIZE_PX = 56f
