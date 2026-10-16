@@ -31,6 +31,7 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
@@ -78,6 +79,10 @@ class LyricsViewState {
 
     /** The credits of the lyrics on screen, null while none are shown. */
     var shownFooter by mutableStateOf<LyricsFooter?>(null)
+        internal set
+
+    /** Whether those credits sit on the right, following a song that ends on a duet line sung from there. */
+    var footerAlignEnd by mutableStateOf(false)
         internal set
 
     /** A tapped credit whose profile the screen asks about before opening; null otherwise. */
@@ -130,6 +135,7 @@ internal fun measureFooterRows(
     density: Float,
     maxWidthPx: Float,
     firstMarginTop: Boolean = true,
+    alignEnd: Boolean = false,
 ): List<FooterRow> {
     val lyricPx = creditBaseSp * density
     return lines.mapIndexed { index, line ->
@@ -158,6 +164,7 @@ internal fun measureFooterRows(
                 fontFamily = LyricsLayoutCalculator.spicyFontFamily,
                 fontSize = fontSp.sp,
                 fontWeight = if (line.kind == FooterLine.Kind.NOTE) FontWeight.Bold else FontWeight.SemiBold,
+                textAlign = if (alignEnd) TextAlign.End else TextAlign.Start,
             ),
             constraints = Constraints(maxWidth = (maxWidthPx - avatar).roundToInt().coerceAtLeast(1)),
         )
@@ -181,8 +188,21 @@ internal fun footerRowTops(rows: List<FooterRow>, startY: Float): List<Float> {
     return rows.map { row -> (y + row.marginTop).also { y = it + row.height } }
 }
 
-internal fun DrawScope.drawFooterRows(rows: List<FooterRow>, tops: List<Float>, x: Float, avatars: Map<String, ImageBitmap>) {
+/**
+ * Draws the rows from [startX], or, with [alignEnd], each flush against [endX] (the name, then
+ * its avatar, ending at the slot's right edge).
+ */
+internal fun DrawScope.drawFooterRows(
+    rows: List<FooterRow>,
+    tops: List<Float>,
+    startX: Float,
+    endX: Float,
+    alignEnd: Boolean,
+    avatars: Map<String, ImageBitmap>,
+) {
     rows.zip(tops).forEach { (row, y) ->
+        val avatarWidth = if (row.line.avatarUrl != null) row.avatarGap + row.avatarSize else 0f
+        val x = if (alignEnd) endX - row.text.size.width - avatarWidth else startX
         val textHeight = row.text.size.height.toFloat()
         drawText(
             textLayoutResult = row.text,
@@ -243,8 +263,9 @@ fun PinnedLyricsFooter(
         val width = constraints.maxWidth.toFloat()
         val slot = LyricsLayoutMetrics(width, density, LyricsType.Syllable, fontSizeScale).contentSlot(false, false, false)
         val baseSp = creditBaseSp(width, density, fontSizeScale)
-        val rows = remember(lines, baseSp, slot.widthPx, LyricsLayoutCalculator.fontKey) {
-            measureFooterRows(lines, textMeasurer, baseSp, density, slot.widthPx, firstMarginTop = false)
+        val alignEnd = state.footerAlignEnd
+        val rows = remember(lines, baseSp, slot.widthPx, LyricsLayoutCalculator.fontKey, alignEnd) {
+            measureFooterRows(lines, textMeasurer, baseSp, density, slot.widthPx, firstMarginTop = false, alignEnd = alignEnd)
         }
         val tops = remember(rows) { footerRowTops(rows, 0f) }
         val height = rows.sumOf { (it.marginTop + it.height).toDouble() }.toFloat()
@@ -262,7 +283,7 @@ fun PinnedLyricsFooter(
                         },
                 ),
         ) {
-            drawFooterRows(rows, tops, slot.startPx, avatars)
+            drawFooterRows(rows, tops, slot.startPx, slot.startPx + slot.widthPx, alignEnd, avatars)
         }
     }
 }

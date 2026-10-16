@@ -57,6 +57,8 @@ class AppSettings(private val prefs: SharedPreferences) {
     /** A credit's profile opens in the browser (after asking) rather than in a pop-up. */
     var profilesInBrowser by boolean("profilesInBrowser", false)
     var duetLinePadding by boolean("duetLinePadding", true)
+    /** A song ending on a duet line sung from the right has its credits there too. */
+    var creditsFollowLastLine by boolean("creditsFollowLastLine", false)
     var syllableMerge by enum("syllableMerge", SyllableMerge.Off)
 
     var scrollLeadEnabled by boolean("scrollLeadEnabled", false)

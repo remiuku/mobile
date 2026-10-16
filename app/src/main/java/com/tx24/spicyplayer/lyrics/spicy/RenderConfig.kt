@@ -69,6 +69,8 @@ data class RenderConfig(
     val wordMotionBoost: Float = 1f,
     /** Duet Line Padding: duet lines inset 15cqw on the side they lean away from, not 5cqw. */
     val wideDuetPadding: Boolean = true,
+    /** Credits Follow the Last Singer: a song ending on a duet line sung from the right has its credits there too. */
+    val creditsFollowLastLine: Boolean = false,
     val scroll: ScrollConfig = ScrollConfig(),
 ) {
     val isSimple: Boolean get() = simpleLyricsMode

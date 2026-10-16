@@ -88,6 +88,7 @@ import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material.icons.rounded.HideImage
 import androidx.compose.material.icons.rounded.Height
 import androidx.compose.material.icons.rounded.FormatSize
+import androidx.compose.material.icons.rounded.FormatAlignRight
 import androidx.compose.material.icons.rounded.FormatIndentIncrease
 import androidx.compose.material.icons.rounded.FontDownload
 import androidx.compose.material.icons.rounded.FolderOpen
@@ -324,6 +325,13 @@ internal fun LyricsContent(state: PlayerUiState, viewModel: ExternalPlaybackView
         onCheckedChange = { settings.duetLinePadding = it },
         description = "Indents lyrics lines on the side they lean away from when a song has duet lines, so the two voices read as separate columns. Disable to give every line the same slight padding.",
         icon = Icons.Rounded.FormatIndentIncrease,
+    )
+    ToggleRow(
+        label = "Credits Follow the Last Singer",
+        checked = settings.creditsFollowLastLine,
+        onCheckedChange = { settings.creditsFollowLastLine = it },
+        description = "When a song ends on a duet line sung from the right, move the credits under it to the right too.",
+        icon = Icons.Rounded.FormatAlignRight,
     )
     SettingsSection("Effects") {
         ToggleRow(

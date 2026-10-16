@@ -136,6 +136,12 @@ fun LyricsView(
     } else measuredShown
     val shownId = shown?.documentId
     val lineLayouts = shown?.layouts.orEmpty()
+    // Credits Follow the Last Singer: a song that ends on a duet line sung from the right (not
+    // just a right-to-left line) takes its credits over there too.
+    val footerAlignEnd = config.creditsFollowLastLine && shown != null && run {
+        val last = shown.lines.indexOfLast { !it.isBackground }
+        shown.lines.getOrNull(last)?.oppositeAligned == true && lineLayouts.getOrNull(last)?.isRtl == false
+    }
     // The type and credits of what is shown, not of what is still being measured.
     val incomingType = lyricsType
     val incomingFooter = footer
@@ -202,14 +208,17 @@ fun LyricsView(
         scrollManager.pxPerReferencePx = creditBaseSp * density.density / REFERENCE_LYRIC_SIZE_PX
         // The rows the screen pins are drawn there instead.
         val footerLines = remember(footer, pinnedFooter) { footer.lines().filterNot { pinnedFooter.pins(it.kind) } }
-        val footerLayouts = remember(footerLines, creditBaseSp, footerSlot.widthPx, canvasWidth, fontKey) {
-            measureFooterRows(footerLines, textMeasurer, creditBaseSp, density.density, footerSlot.widthPx)
+        val footerLayouts = remember(footerLines, creditBaseSp, footerSlot.widthPx, canvasWidth, fontKey, footerAlignEnd) {
+            measureFooterRows(footerLines, textMeasurer, creditBaseSp, density.density, footerSlot.widthPx, alignEnd = footerAlignEnd)
         }
         val footerHeight = footerLayouts.sumOf { (it.marginTop + it.height).toDouble() }.toFloat()
         val footerHeightUpdated by rememberUpdatedState(footerHeight)
         val avatars = rememberFooterAvatars(footerLines)
         if (viewState != null) {
-            SideEffect { viewState.shownFooter = footer }
+            SideEffect {
+                viewState.shownFooter = footer
+                viewState.footerAlignEnd = footerAlignEnd
+            }
             DisposableEffect(viewState) {
                 onDispose {
                     viewState.shownFooter = null
@@ -599,7 +608,7 @@ fun LyricsView(
             }
 
             val footerScroll = scrollOffsetFor(lineLayouts.size)
-            drawFooterRows(footerLayouts, footerRowTops().map { it + footerScroll }, footerSlot.startPx, avatars)
+            drawFooterRows(footerLayouts, footerRowTops().map { it + footerScroll }, footerSlot.startPx, footerSlot.startPx + footerSlot.widthPx, footerAlignEnd, avatars)
         }
     }
 }

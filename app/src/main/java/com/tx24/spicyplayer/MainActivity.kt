@@ -518,6 +518,7 @@ private fun LyricsApp(
         appleMusic = appleMusicStyle,
         wordMotionBoost = settings.wordMotionBoost,
         wideDuetPadding = settings.duetLinePadding,
+        creditsFollowLastLine = settings.creditsFollowLastLine,
         syllableMerge = settings.syllableMerge,
         distanceBlurEnabled = settings.distanceBlur && !lowPerformance,
         glowEnabled = settings.glow && !lowPerformance,
