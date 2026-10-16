@@ -13,6 +13,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
@@ -29,6 +30,9 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
 import kotlinx.coroutines.launch
 import kotlin.math.max
 import kotlin.math.roundToInt
@@ -38,12 +42,14 @@ import kotlin.math.roundToInt
  * has one, the still cover otherwise) fills the panel's side of the screen edge to edge, fading
  * into the page toward the lyrics and over its top. It sits behind the lyrics, translucent so the
  * background carries through it, dimmed by a veil that deepens while the controls show
- * ([controlsShown]), and darkened along the bottom for the [dock], which goes in a box as wide as
- * the cover at the page's outer edge.
+ * ([controlsShown]), and darkened along the bottom for the dock ([CoverStageDock]).
+ *
+ * [centred] (0..1) moves it from the panel's side to the middle of the page, where it stands in
+ * for the big cover: as wide as the cover plus a feather on both sides, faded toward both.
  *
  * [shown] (0..1) fades the whole stage; [swapAlpha] and [swapX] carry it through a side swap.
  * [onRight] says which side it is on. [startInsetPx]/[endInsetPx] are the cutout's insets: the
- * picture runs under them, the dock keeps clear of them.
+ * picture runs under them.
  */
 @Composable
 fun CoverStage(
@@ -57,8 +63,8 @@ fun CoverStage(
     controlsShown: () -> Float,
     swapAlpha: () -> Float,
     swapX: () -> Float,
+    centred: () -> Float,
     modifier: Modifier = Modifier,
-    dock: @Composable BoxScope.() -> Unit,
 ) {
     val artwork = rememberSessionArtwork(info.artwork, info.artworkUri, maxDimension = STAGE_ARTWORK_MAX_PX, hasSession = info.hasSession)
     // The last cover stays up while the player has none to show.
@@ -68,8 +74,6 @@ fun CoverStage(
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val motionQuery = MotionCoverQuery(info.artists, info.album, info.title)
-    val outerInset = if (onRight) endInsetPx else startInsetPx
-    val widthPx = outerInset + metrics.stageWidthPx
     val featherPx = metrics.stageFeatherPx
     Box(
         modifier
@@ -82,22 +86,32 @@ fun CoverStage(
         Box(
             Modifier
                 .layout { measurable, constraints ->
-                    val width = widthPx.roundToInt().coerceAtMost(constraints.maxWidth)
+                    val (left, right) = stageSpan(metrics, onRight, startInsetPx, endInsetPx, constraints.maxWidth.toFloat(), centred())
+                    val width = (right - left).roundToInt().coerceIn(1, constraints.maxWidth)
                     val placeable = measurable.measure(Constraints.fixed(width, constraints.maxHeight))
                     layout(constraints.maxWidth, constraints.maxHeight) {
-                        placeable.place(if (onRight) constraints.maxWidth - width else 0, 0)
+                        placeable.place(left.roundToInt(), 0)
                     }
                 }
                 // Feathered toward the lyrics and over the top, on eased stops: a straight ramp
-                // leaves a visible line where it reaches full strength.
+                // leaves a visible line where it reaches full strength. Centring, the outer edge
+                // grows the same feather, mirrored.
                 .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
                 .drawWithContent {
                     drawContent()
-                    val inner = if (onRight) 0f else size.width
+                    val innerEdge = if (onRight) 0f else size.width
+                    val outerEdge = size.width - innerEdge
                     val toward = if (onRight) 1f else -1f
+                    val outerFeather = featherPx * centred()
                     val stops = FEATHER_STOPS.map { (at, a) ->
-                        ((inner + toward * at * featherPx) / size.width).coerceIn(0f, 1f) to Color.Black.copy(alpha = a)
-                    }.sortedBy { it.first }
+                        ((innerEdge + toward * at * featherPx) / size.width).coerceIn(0f, 1f) to Color.Black.copy(alpha = a)
+                    }.toMutableList()
+                    if (outerFeather >= 1f) {
+                        FEATHER_STOPS.mapTo(stops) { (at, a) ->
+                            ((outerEdge - toward * at * outerFeather) / size.width).coerceIn(0f, 1f) to Color.Black.copy(alpha = a)
+                        }
+                    }
+                    stops.sortBy { it.first }
                     drawRect(Brush.horizontalGradient(*stops.toTypedArray()), blendMode = BlendMode.DstIn)
                     drawRect(
                         Brush.verticalGradient(
@@ -163,30 +177,97 @@ fun CoverStage(
                 },
             )
         }
-        Box(
-            Modifier.layout { measurable, constraints ->
-                val width = metrics.coverSizePx.roundToInt().coerceAtMost(constraints.maxWidth)
-                val placeable = measurable.measure(Constraints.fixed(width, constraints.maxHeight))
-                layout(constraints.maxWidth, constraints.maxHeight) {
-                    val x = if (onRight) {
-                        constraints.maxWidth - endInsetPx - metrics.dockInsetPx - width
-                    } else {
-                        startInsetPx + metrics.dockInsetPx
-                    }
-                    placeable.place(x.roundToInt(), 0)
-                }
-            },
-            content = dock,
-        )
     }
 }
 
 /**
- * The song for the stage's dock: name over artists, caption-sized, on the side the stage is on;
+ * The stage's dock: the song, timeline and transport in a box as wide as the cover, at the
+ * page's outer edge beside the lyrics, or under the middle of the stage as it centres
+ * ([centred]). Drawn apart from the picture so it can sit over the lyrics' layer and take
+ * touches there. [shown], [swapAlpha] and [swapX] fade and move it with the stage; it keeps
+ * clear of the cutout's insets.
+ */
+@Composable
+fun CoverStageDock(
+    metrics: LandscapeMetrics,
+    onRight: Boolean,
+    startInsetPx: Float,
+    endInsetPx: Float,
+    shown: () -> Float,
+    swapAlpha: () -> Float,
+    swapX: () -> Float,
+    centred: () -> Float,
+    modifier: Modifier = Modifier,
+    content: @Composable BoxScope.() -> Unit,
+) {
+    Box(
+        modifier
+            .fillMaxSize()
+            .graphicsLayer {
+                alpha = shown() * swapAlpha()
+                translationX = swapX()
+            }
+            .layout { measurable, constraints ->
+                val width = metrics.coverSizePx.roundToInt().coerceAtMost(constraints.maxWidth)
+                val placeable = measurable.measure(Constraints.fixed(width, constraints.maxHeight))
+                layout(constraints.maxWidth, constraints.maxHeight) {
+                    val side = if (onRight) {
+                        constraints.maxWidth - endInsetPx - metrics.dockInsetPx - width
+                    } else {
+                        startInsetPx + metrics.dockInsetPx
+                    }
+                    val middle = pageCentre(metrics, startInsetPx) - width / 2f
+                    placeable.place((side + (middle - side) * centred()).roundToInt(), 0)
+                }
+            },
+        content = content,
+    )
+}
+
+/** The page's middle on the screen, where the big cover sits. */
+private fun pageCentre(metrics: LandscapeMetrics, startInsetPx: Float) =
+    startInsetPx + metrics.centred.artLeftPx + metrics.coverSizePx / 2f
+
+/**
+ * The stage's left and right edges on a [screenWidthPx]-wide screen: from the outer screen edge
+ * to past the panel beside the lyrics, or the cover plus a feather each side around the page's
+ * middle, [centred] of the way between.
+ */
+private fun stageSpan(
+    metrics: LandscapeMetrics,
+    onRight: Boolean,
+    startInsetPx: Float,
+    endInsetPx: Float,
+    screenWidthPx: Float,
+    centred: Float,
+): Pair<Float, Float> {
+    val sideWidth = (if (onRight) endInsetPx else startInsetPx) + metrics.stageWidthPx
+    val sideLeft = if (onRight) screenWidthPx - sideWidth else 0f
+    val middleHalf = metrics.coverSizePx / 2f + metrics.stageFeatherPx
+    val middle = pageCentre(metrics, startInsetPx)
+    val left = sideLeft + (middle - middleHalf - sideLeft) * centred
+    val right = sideLeft + sideWidth + (middle + middleHalf - sideLeft - sideWidth) * centred
+    return left to right
+}
+
+/**
+ * A horizontal alignment that slides with [bias] (-1 start, 0 centre, 1 end), read while
+ * placing, so the dock's rows glide between the stage's side and its middle without recomposing.
+ */
+class SlidingAlignment(private val bias: () -> Float) : Alignment, Alignment.Horizontal {
+    override fun align(size: Int, space: Int, layoutDirection: LayoutDirection): Int =
+        BiasAlignment.Horizontal(bias()).align(size, space, layoutDirection)
+
+    override fun align(size: IntSize, space: IntSize, layoutDirection: LayoutDirection): IntOffset =
+        IntOffset(align(size.width, space.width, layoutDirection), 0)
+}
+
+/**
+ * The song for the stage's dock: name over artists, caption-sized, lined up by [alignment];
  * long lines scroll.
  */
 @Composable
-fun StageMetadata(info: NowPlayingInfo, metrics: LandscapeMetrics, onRight: Boolean, widthPx: Float) {
+fun StageMetadata(info: NowPlayingInfo, metrics: LandscapeMetrics, alignment: Alignment.Horizontal, widthPx: Float) {
     val title = metrics.stageTitleSizeSp
     val artists = metrics.stageArtistsSizeSp
     HeaderMetadata(
@@ -198,7 +279,7 @@ fun StageMetadata(info: NowPlayingInfo, metrics: LandscapeMetrics, onRight: Bool
         titleWidthPx = widthPx,
         artistsWidthPx = widthPx,
         centered = false,
-        end = onRight,
+        alignment = alignment,
         modifier = Modifier,
     )
 }

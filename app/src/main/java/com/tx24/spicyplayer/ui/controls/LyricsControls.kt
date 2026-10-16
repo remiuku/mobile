@@ -134,6 +134,7 @@ import com.tx24.spicyplayer.lyrics.spicy.canvas.LyricsLayoutCalculator
 import com.tx24.spicyplayer.ui.components.GlassButton
 import com.tx24.spicyplayer.ui.components.LocalBackdrop
 import com.tx24.spicyplayer.ui.nowplaying.SessionCustomAction
+import com.tx24.spicyplayer.ui.nowplaying.SlidingAlignment
 import com.tx24.spicyplayer.ui.theme.SpicyColors
 import com.tx24.spicyplayer.ui.theme.SpicyMotion
 import com.tx24.spicyplayer.ui.theme.SpicySpacing
@@ -639,7 +640,9 @@ fun CoverControls(
  * player's: [metadata] (the song), the timeline with its times under it, and the transport. The
  * transport and the glass buttons (in the box's top outer corner) fade with [shown]; while they're
  * gone the song and timeline settle into the transport's place, and they rise again with the
- * controls, falling back only once those have faded. [onRight] puts the buttons in the top right.
+ * controls, falling back only once those have faded. [align] lines the buttons (along the top)
+ * and the song up across the box: -1 at its start, 0 in its middle, 1 at its end; it may move
+ * while it plays. [onRight] orders the buttons for the right side.
  * Off [interactive], the timeline and transport leave touches to the stage, which brings the
  * controls up.
  */
@@ -660,12 +663,15 @@ fun StageControls(
     shown: () -> Float,
     interactive: Boolean,
     onRight: Boolean,
+    align: () -> Float,
     metadata: @Composable () -> Unit,
     modifier: Modifier = Modifier,
     onEnterPip: (() -> Unit)? = null,
     showResync: Boolean = true,
     showExpand: Boolean = true,
 ) {
+    val currentAlign by rememberUpdatedState(align)
+    val sliding = remember { SlidingAlignment { currentAlign() } }
     val shuffle = controls.customActions.firstOrNull { it.kind == ActionKind.Shuffle }
     val repeat = controls.customActions.firstOrNull { it.kind == ActionKind.Repeat }
     val others = controls.customActions.filter { it.kind == ActionKind.Other }
@@ -679,7 +685,7 @@ fun StageControls(
         val gutter = side * STAGE_GUTTER
         if (!gone) Box(
             Modifier
-                .align(if (onRight) Alignment.TopEnd else Alignment.TopStart)
+                .align(sliding)
                 .padding(top = gutter + side * 0.01f, start = gutter, end = gutter)
                 // Drops in from the top while the dock rises from the bottom.
                 .graphicsLayer {
@@ -706,7 +712,7 @@ fun StageControls(
                     Modifier
                         .fillMaxWidth()
                         .graphicsLayer { translationY = (1f - lift) * (reservePx + side.toPx() * STAGE_GAP) },
-                    horizontalAlignment = if (onRight) Alignment.End else Alignment.Start,
+                    horizontalAlignment = sliding,
                 ) {
                     metadata()
                     Spacer(Modifier.height(side * STAGE_GAP))
