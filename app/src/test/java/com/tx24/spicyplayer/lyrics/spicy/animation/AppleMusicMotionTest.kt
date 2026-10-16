@@ -52,10 +52,29 @@ class AppleMusicMotionTest {
         assertEquals(1f, done.scale, 1e-4f)
         assertEquals(0f, done.glow, 1e-4f)
         assertEquals(0f, done.yOffset, 1e-3f)
-        // Toned down: never past a 1.08 swell, and a line's last word no bigger.
-        assertTrue((0..40).all { pose(it * 100.0, 0).scale <= 1.08f })
+        // Last-word timing stretches, without boosting its peak amplitude.
+        assertTrue((0..40).all { pose(it * 100.0, 0).scale <= 1.13f })
         val last = AppleMusicMotion.emphasisLetter(1200.0, 0, 2000, 0, 4, lastWord = true, background = false)
-        assertTrue(last.scale <= 1.08f)
+        assertTrue(last.scale <= 1.13f)
+    }
+
+    @Test
+    fun `held final word matches measured letter size and lift at fixed recording times`() {
+        fun pose(t: Double, i: Int) = AppleMusicMotion.emphasisLetter(
+            t, 8200, 11900, i, 4, lastWord = true, background = false,
+        )
+        // On 40.4px text, the first letter peaks near 1.16 and 6.9px above rest.
+        val peak = pose(10_800.0, 0)
+        val wordLift = AppleMusicMotion.WORD_LIFT_EM * AppleMusicMotion.wordRise(10_800.0, 8200, 11900, null)
+        assertEquals(1.16f, peak.scale, 0.025f)
+        assertEquals(6.9f / 40.4f, wordLift - peak.yOffset, 0.025f)
+        assertEquals(-2.14f / 40.4f, peak.xOffset, 0.015f)
+        assertTrue(pose(8700.0, 0).scale > pose(8700.0, 1).scale)
+        assertTrue(pose(11_900.0, 0).scale < peak.scale)
+        // Seeking past the envelope and back must reproduce exactly the same pose.
+        pose(30_000.0, 0)
+        assertEquals(peak, pose(10_800.0, 0))
+        assertEquals(1f, pose(30_000.0, 0).scale, 0f)
     }
 
     @Test
@@ -64,6 +83,11 @@ class AppleMusicMotionTest {
         assertEquals(0f, dots.alpha(0f), 1e-4f)
         assertEquals(1f, dots.alpha(5000f), 1e-4f)
         assertEquals(0f, dots.alpha(10_000f), 1e-4f)
+        // The recorded entrance fades in over ~1s while already near full size.
+        assertEquals(0.5f, dots.alpha(500f), 0.05f)
+        assertEquals(1f, dots.alpha(1000f), 1e-4f)
+        assertEquals(0.92f, dots.scale(500f), 0.02f)
+        assertEquals(0.16f, dots.dotAlpha(2, 1000f), 0.02f)
         // Breathing gently, as measured: no more than ~8% across.
         assertTrue((30..60).all { dots.scale(it * 100f) in 0.92f..1f })
         // They light in turn.
@@ -74,8 +98,13 @@ class AppleMusicMotionTest {
     fun `other lines dim alike and blur more with distance, as measured`() {
         assertEquals(1f, AppleMusicMotion.lineOpacity(0, false), 0f)
         assertEquals(AppleMusicMotion.lineOpacity(1, false), AppleMusicMotion.lineOpacity(5, false), 0f)
-        // 0.35 of a lit line's brightness.
-        assertEquals(0.35f, AppleMusicMotion.lineOpacity(1, false) * AppleMusicMotion.DIM_ALPHA, 0.01f)
+        // Joint fits: 0.27-0.30 of a lit line's brightness, scale 0.981-0.982.
+        assertEquals(0.29f, AppleMusicMotion.lineOpacity(1, false) * AppleMusicMotion.DIM_ALPHA, 0.02f)
+        assertEquals(0.982f, AppleMusicMotion.INACTIVE_SCALE, 0.005f)
+        assertEquals(2.014f / 40.4f, AppleMusicMotion.blurEm(1), 0.01f)
+        assertEquals(3.105f / 40.4f, AppleMusicMotion.blurEm(-1), 0.01f)
+        assertEquals(3.209f / 40.4f, AppleMusicMotion.blurEm(-2), 0.01f)
+        assertEquals(3.345f / 40.4f, AppleMusicMotion.blurEm(2), 0.01f)
         val coming = (1..5).map { AppleMusicMotion.blurEm(it) }
         assertTrue(coming.zipWithNext().all { (a, b) -> b >= a })
         assertEquals(0f, AppleMusicMotion.blurEm(0), 0f)
