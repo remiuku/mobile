@@ -62,11 +62,15 @@ fun SpicySessionBackground(
     hasSession: Boolean = true,
     /** Changes crossfade in place, a change of [type] too (Settings → Background → Refined Background). */
     refined: Boolean = false,
+    /** Default only: the animated cover the moving background follows while it plays. */
+    followMotionUrl: String? = null,
+    onFollowMotionFailed: () -> Unit = {},
 ) {
     @Composable
     fun background(type: BackgroundType, modifier: Modifier, retired: Boolean) = BackgroundOfType(
         artwork, artworkUri, isPlaying, modifier, type, animate && !retired, blurDp, artistHeaderUrl,
         artistHeaderPending, speed, motionCoverUrl, onMotionCoverFailed, hasSession, refined, retired,
+        followMotionUrl, onFollowMotionFailed,
     )
     if (!refined) {
         background(type, modifier, retired = false)
@@ -128,6 +132,8 @@ private fun BackgroundOfType(
     hasSession: Boolean,
     refined: Boolean,
     retired: Boolean,
+    followMotionUrl: String?,
+    onFollowMotionFailed: () -> Unit,
 ) {
     when (type) {
         BackgroundType.Default, BackgroundType.Legacy -> {
@@ -142,6 +148,8 @@ private fun BackgroundOfType(
                     animate = animate,
                     blurIntensity = blurDp,
                     speed = speed,
+                    // Held still (or on its way out), it shows the cover.
+                    videoFrames = rememberMotionFrames(followMotionUrl?.takeIf { animate }, onFollowMotionFailed),
                 )
             } else {
                 DynamicBackgroundView(

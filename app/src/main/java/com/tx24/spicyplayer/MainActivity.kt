@@ -808,6 +808,14 @@ private fun LyricsApp(
                     backgroundMotionQuery,
                 )
                 var failedBackgroundMotionUrl by remember { mutableStateOf<String?>(null) }
+                // The animated cover the moving background follows: the header's own stream, so
+                // only while that setting is on.
+                val followMotionUrl = rememberMotionCoverUrl(
+                    backgroundType == BackgroundType.Default && settings.backgroundFollowsMotion && settings.animatedCover &&
+                        !lowPerformance && !settings.staticBackground && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU,
+                    backgroundMotionQuery,
+                )
+                var failedFollowMotionUrl by remember { mutableStateOf<String?>(null) }
                 val motionScope = rememberCoroutineScope()
                 // Everything the glass controls blur.
                 Box(Modifier.fillMaxSize().then(backdrop?.let { Modifier.hazeSource(it) } ?: Modifier)) {
@@ -824,6 +832,11 @@ private fun LyricsApp(
                         artistHeaderPending = state.artistHeaderPending,
                         speed = if (beatReactive) viewModel::backgroundSpeed else null,
                         refined = settings.refinedBackground,
+                        followMotionUrl = followMotionUrl?.takeIf { it != failedFollowMotionUrl },
+                        onFollowMotionFailed = {
+                            failedFollowMotionUrl = followMotionUrl
+                            motionScope.launch { forgetMotionCover(context, backgroundMotionQuery) }
+                        },
                         motionCoverUrl = backgroundMotionUrl?.takeIf { it != failedBackgroundMotionUrl },
                         onMotionCoverFailed = {
                             failedBackgroundMotionUrl = backgroundMotionUrl

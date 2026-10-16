@@ -106,6 +106,7 @@ import androidx.compose.material.icons.rounded.Flare
 import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.Wallpaper
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.SlowMotionVideo
 import androidx.compose.material.icons.rounded.BlurLinear
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.CalendarMonth
@@ -575,6 +576,20 @@ internal fun BackgroundContent(settings: AppSettings) {
             description = "Speed the background up and down with the song's tempo, loudness and beats, where Spotify has them.",
             icon = Icons.Rounded.GraphicEq,
             enabled = !settings.staticBackground && !settings.lowPerformance,
+        )
+        val held = settings.staticBackground || settings.lowPerformance
+        ToggleRow(
+            label = "Follow the Animated Cover",
+            checked = settings.backgroundFollowsMotion && settings.animatedCover && !held,
+            onCheckedChange = { settings.backgroundFollowsMotion = it },
+            description = when {
+                held -> "Off while the background is held still."
+                !settings.animatedCover -> "Needs Animated Cover (Now Playing) on, whose video it follows."
+                else -> "When the song has an animated cover, the background moves with it."
+            },
+            icon = Icons.Rounded.SlowMotionVideo,
+            enabled = settings.animatedCover && !held,
+            searchDescription = "When the song has an animated cover, the background moves with it.",
         )
     }
 }

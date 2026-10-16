@@ -73,6 +73,61 @@ object KawarpBlurCore {
         return read
     }
 
+    /**
+     * [process] for video frames, several times faster and equal to it but for float rounding.
+     * A Kawase pass's taps sit exactly between texels, so each is a 2×2 average, and clamping is
+     * per axis: the pass splits into a horizontal and a vertical one of four reads each, instead
+     * of sixteen reads a pixel. Takes no tint (the background has none).
+     */
+    fun processFast(src: FloatArray, srcW: Int, srcH: Int, blurPasses: Int): FloatArray {
+        val n = BLUR_SIZE
+        var read = FloatArray(n * n * 4)
+        val temp = FloatArray(n * n * 4)
+        var write = FloatArray(n * n * 4)
+        val sample = FloatArray(4)
+        var idx = 0
+        for (y in 0 until n) {
+            val v = (y + 0.5f) / n
+            for (x in 0 until n) {
+                val u = (x + 0.5f) / n
+                bilinearSample(src, srcW, srcH, u * srcW - 0.5f, v * srcH - 0.5f, sample)
+                read[idx] = sample[0]; read[idx + 1] = sample[1]; read[idx + 2] = sample[2]; read[idx + 3] = sample[3]
+                idx += 4
+            }
+        }
+        val passes = blurPasses.coerceIn(1, 40)
+        val last = n - 1
+        for (i in 0 until passes) {
+            // Pass i's taps at ±(i + 0.5) average texels i + 1 and i to one side, i and i + 1 to the other.
+            for (y in 0 until n) {
+                val row = y * n
+                for (x in 0 until n) {
+                    val a = (row + (x - i - 1).coerceIn(0, last)) * 4
+                    val b = (row + (x - i).coerceIn(0, last)) * 4
+                    val c = (row + (x + i).coerceIn(0, last)) * 4
+                    val d = (row + (x + i + 1).coerceIn(0, last)) * 4
+                    val o = (row + x) * 4
+                    for (ch in 0 until 4) temp[o + ch] = (read[a + ch] + read[b + ch] + read[c + ch] + read[d + ch]) * 0.25f
+                }
+            }
+            for (y in 0 until n) {
+                val a = (y - i - 1).coerceIn(0, last) * n
+                val b = (y - i).coerceIn(0, last) * n
+                val c = (y + i).coerceIn(0, last) * n
+                val d = (y + i + 1).coerceIn(0, last) * n
+                for (x in 0 until n) {
+                    val o = (y * n + x) * 4
+                    for (ch in 0 until 4) {
+                        write[o + ch] = (temp[(a + x) * 4 + ch] + temp[(b + x) * 4 + ch] +
+                            temp[(c + x) * 4 + ch] + temp[(d + x) * 4 + ch]) * 0.25f
+                    }
+                }
+            }
+            val swap = read; read = write; write = swap
+        }
+        return read
+    }
+
     /** Clamp-to-edge bilinear sample at pixel-space (px, py); texel centers at integers. */
     private fun bilinearSample(
         img: FloatArray, w: Int, h: Int, px: Float, py: Float, out: FloatArray,

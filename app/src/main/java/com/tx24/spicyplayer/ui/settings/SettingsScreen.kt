@@ -631,6 +631,10 @@ private fun HomeGroups(state: PlayerUiState, settings: AppSettings, updater: Upd
                 },
                 "still".takeIf { settings.backgroundType.moving && (settings.staticBackground || settings.lowPerformance) },
                 "animated".takeIf { settings.backgroundType == BackgroundType.CoverArt && settings.animatedBackground && !settings.lowPerformance },
+                "follows the animated cover".takeIf {
+                    settings.backgroundType == BackgroundType.Default && settings.backgroundFollowsMotion && settings.animatedCover &&
+                        !settings.staticBackground && !settings.lowPerformance
+                },
             ).joinToString(),
         ) { onOpen(SettingsPage.Background) }
         GroupDivider()

@@ -111,6 +111,8 @@ class AppSettings(private val prefs: SharedPreferences) {
      * Cover Colors uses the cover's two deepest shades.
      */
     var refinedBackground by boolean("refinedBackground", true)
+    /** Default background: follows the record's animated cover while the header plays one ([animatedCover]). */
+    var backgroundFollowsMotion by boolean("backgroundFollowsMotion", true)
 
     var keepScreenOn by boolean("keepScreenOn", true)
     /** Which of the phone's bars stay on screen. */

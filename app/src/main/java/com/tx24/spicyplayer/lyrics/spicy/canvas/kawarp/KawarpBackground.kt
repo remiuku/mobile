@@ -19,6 +19,7 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -30,6 +31,11 @@ import androidx.compose.ui.graphics.ShaderBrush
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.Flow
+import android.util.Log
+import com.tx24.spicyplayer.BuildConfig
+import java.util.Locale
+import kotlin.math.exp
 import android.graphics.ColorSpace
 import android.util.Half
 import java.nio.ByteBuffer
@@ -224,6 +230,11 @@ fun KawarpBackground(
     blurIntensity: Int = 60,
     /** How fast to move while playing, read every frame; null (or returning null) is the normal speed. */
     speed: (() -> Float?)? = null,
+    /**
+     * Small frames of a video to follow instead of the cover (the animated cover), or null. Once
+     * one has come in they own the page; when they stop (null again) the cover crossfades back.
+     */
+    videoFrames: Flow<KawarpVideoFrame>? = null,
 ) {
     // Kawarp's default is blurPasses=8; this app exposes one shared
     // slider for both engines. Kawase blur passes are much stronger per-step than the
@@ -253,35 +264,105 @@ fun KawarpBackground(
         engine.transitionDuration = KAWARP_TRANSITION_DURATION_MS
     }
 
+    // The blurred pixels behind currentAlbum and nextAlbum, so what's shown can be worked out
+    // when a video frame arrives. Black (opaque) to begin with, like blackAlbum.
+    val albumPixels = remember { AlbumPixels() }
+    // While video frames come in: when the latest went in (0: a still cover is shown). Each one
+    // eases in from what was shown at that moment, exponentially, rather than crossfading.
+    var videoSince by remember { mutableLongStateOf(0L) }
+    // Bumped by every still change, so the frame loop wakes for its crossfade when held still.
+    var stillChanges by remember { mutableIntStateOf(0) }
+    fun shownBlend(nowMs: Long): Float = if (videoSince != 0L) {
+        1f - exp(-(nowMs - videoSince).coerceAtLeast(0L) / VIDEO_SMOOTHING_MS)
+    } else {
+        // render(): the crossfade is eased with a half cosine.
+        0.5f - 0.5f * cos(engine.blendFactor(nowMs) * PI.toFloat())
+    }
+
     // processNewImage(): blur off the UI thread, swap FBOs, start the transition. The first
-    // cover shows at once; a blur change re-blurs in place (reblurCurrentImage()).
+    // cover shows at once; a blur change re-blurs in place (reblurCurrentImage()). While video
+    // frames come in they own the page, and the cover waits until they stop.
     var lastCover by remember { mutableStateOf<Bitmap?>(null) }
-    LaunchedEffect(coverArtBitmap, blurPasses) {
-        val src = coverArtBitmap ?: return@LaunchedEffect
-        val blurred = withContext(Dispatchers.Default) {
-            val (floats, w, h) = bitmapToFloats(src)
-            val out = KawarpBlurCore.process(
-                floats, w, h,
-                blurPasses = blurPasses,
-                tintColor = SPICY_OPTIONS.tintColor,
-                tintIntensity = SPICY_OPTIONS.tintIntensity,
-            )
-            floatsToF16Bitmap(out, KawarpBlurCore.BLUR_SIZE)
-        }
-        when {
-            nextAlbum === blackAlbum -> { currentAlbum = blurred; nextAlbum = blurred }
-            src === lastCover -> nextAlbum = blurred
-            else -> {
-                currentAlbum = nextAlbum
-                nextAlbum = blurred
-                engine.startTransition(System.currentTimeMillis())
+    var lastPasses by remember { mutableIntStateOf(0) }
+    LaunchedEffect(coverArtBitmap, blurPasses, videoFrames) {
+        val src = coverArtBitmap
+        val videoShown = videoSince != 0L
+        val stillWanted = src != null && !(videoShown && videoFrames != null) &&
+            (videoShown || src !== lastCover || blurPasses != lastPasses)
+        if (stillWanted && src != null) {
+            val (pixels, blurred) = withContext(Dispatchers.Default) {
+                val (floats, w, h) = bitmapToFloats(src)
+                val out = KawarpBlurCore.process(
+                    floats, w, h,
+                    blurPasses = blurPasses,
+                    tintColor = SPICY_OPTIONS.tintColor,
+                    tintIntensity = SPICY_OPTIONS.tintIntensity,
+                )
+                out to floatsToF16Bitmap(out, KawarpBlurCore.BLUR_SIZE)
             }
+            when {
+                // Back from video: from whatever it showed last.
+                videoSince != 0L -> {
+                    val shown = shownBlend(System.currentTimeMillis())
+                    val (from, fromAlbum) = withContext(Dispatchers.Default) {
+                        val mixed = albumPixels.shown(shown)
+                        mixed to floatsToF16Bitmap(mixed, KawarpBlurCore.BLUR_SIZE)
+                    }
+                    currentAlbum = fromAlbum
+                    albumPixels.current = from
+                    nextAlbum = blurred
+                    albumPixels.next = pixels
+                    videoSince = 0L
+                    engine.startTransition(System.currentTimeMillis())
+                }
+                nextAlbum === blackAlbum -> {
+                    currentAlbum = blurred; nextAlbum = blurred
+                    albumPixels.current = pixels; albumPixels.next = pixels
+                }
+                src === lastCover -> { nextAlbum = blurred; albumPixels.next = pixels }
+                else -> {
+                    currentAlbum = nextAlbum
+                    albumPixels.current = albumPixels.next
+                    nextAlbum = blurred
+                    albumPixels.next = pixels
+                    engine.startTransition(System.currentTimeMillis())
+                }
+            }
+            lastCover = src
+            lastPasses = blurPasses
+            stillChanges++
         }
-        lastCover = src
+        val frames = videoFrames ?: return@LaunchedEffect
+        val stats = if (BuildConfig.DEBUG) VideoFrameStats() else null
+        frames.collect { frame ->
+            val blurStart = System.nanoTime()
+            val pixels = withContext(Dispatchers.Default) {
+                KawarpBlurCore.processFast(argbToFloats(frame.pixels), frame.width, frame.height, blurPasses)
+            }
+            val blurNanos = System.nanoTime() - blurStart
+            // What's on screen now becomes the picture the new frame eases in from.
+            val shown = shownBlend(System.currentTimeMillis())
+            val packStart = System.nanoTime()
+            val (from, fromAlbum, toAlbum) = withContext(Dispatchers.Default) {
+                val mixed = albumPixels.shown(shown)
+                Triple(
+                    mixed,
+                    floatsToF16Bitmap(mixed, KawarpBlurCore.BLUR_SIZE),
+                    floatsToF16Bitmap(pixels, KawarpBlurCore.BLUR_SIZE),
+                )
+            }
+            val mainStart = System.nanoTime()
+            currentAlbum = fromAlbum
+            nextAlbum = toAlbum
+            albumPixels.current = from
+            albumPixels.next = pixels
+            videoSince = System.currentTimeMillis()
+            stats?.add(frame.copyNanos, blurNanos, mainStart - packStart, System.nanoTime() - mainStart)
+        }
     }
 
     val isPlayingUpdated by rememberUpdatedState(isPlaying)
-    LaunchedEffect(animate, nextAlbum) {
+    LaunchedEffect(animate, stillChanges) {
         var last = 0L
         // Still (low performance mode): frames only while a new cover fades in.
         while (animate || engine.blendFactor(System.currentTimeMillis()) < 1f) {
@@ -330,8 +411,7 @@ fun KawarpBackground(
                 },
         ) {
             @Suppress("UNUSED_EXPRESSION") frameTick
-            // render(): the crossfade is eased with a half cosine.
-            val blend = 0.5f - 0.5f * cos(engine.blendFactor(System.currentTimeMillis()) * PI.toFloat())
+            val blend = shownBlend(System.currentTimeMillis())
             shader.setFloatUniform("uResolution", size.width, size.height)
             shader.setFloatUniform("uTime", engine.accumulatedTime)
             shader.setFloatUniform("uBlend", blend)
@@ -345,6 +425,82 @@ fun KawarpBackground(
         }
     }
 }
+
+/** A small video frame for [KawarpBackground] to follow: ARGB, top row first, and how long it took to copy. */
+class KawarpVideoFrame(val pixels: IntArray, val width: Int, val height: Int, val copyNanos: Long = 0L)
+
+/**
+ * The time constant each video frame eases in with, in ms. Frames come about every 83 ms (12 a
+ * second), so each is a little over halfway in when the next arrives: the picture flows rather than
+ * stepping, and a cut in the video eases across instead of flashing.
+ */
+private const val VIDEO_SMOOTHING_MS = 150f
+
+/** The blurred pixels (straight RGBA floats) behind the two album textures. */
+private class AlbumPixels {
+    @Volatile var current = opaqueBlack()
+    @Volatile var next = current
+
+    /** What the shader shows at [blend] between them. */
+    fun shown(blend: Float): FloatArray {
+        val a = current
+        val b = next
+        if (blend >= 1f) return b
+        if (blend <= 0f) return a
+        return FloatArray(a.size) { a[it] + (b[it] - a[it]) * blend }
+    }
+
+    private fun opaqueBlack() = FloatArray(KawarpBlurCore.BLUR_SIZE * KawarpBlurCore.BLUR_SIZE * 4) {
+        if (it % 4 == 3) 1f else 0f
+    }
+}
+
+private fun argbToFloats(ints: IntArray): FloatArray {
+    val out = FloatArray(ints.size * 4)
+    for (i in ints.indices) {
+        val p = ints[i]
+        out[i * 4] = ((p shr 16) and 0xFF) / 255f
+        out[i * 4 + 1] = ((p shr 8) and 0xFF) / 255f
+        out[i * 4 + 2] = (p and 0xFF) / 255f
+        out[i * 4 + 3] = ((p ushr 24) and 0xFF) / 255f
+    }
+    return out
+}
+
+/**
+ * Debug builds: what following a video costs, averaged and logged every [VIDEO_LOG_EVERY] frames
+ * under [VIDEO_LOG_TAG] (`adb logcat -s KawarpVideo`). Copy runs on the video's own GL thread, blur
+ * and pack on a background thread; main is all the main thread spends on a frame. Uploading the two
+ * textures happens on the render thread and isn't counted.
+ */
+private class VideoFrameStats {
+    private var frames = 0
+    private var copy = 0L
+    private var blur = 0L
+    private var pack = 0L
+    private var main = 0L
+    private var since = System.nanoTime()
+
+    fun add(copyNanos: Long, blurNanos: Long, packNanos: Long, mainNanos: Long) {
+        frames++
+        copy += copyNanos; blur += blurNanos; pack += packNanos; main += mainNanos
+        if (frames < VIDEO_LOG_EVERY) return
+        val now = System.nanoTime()
+        fun ms(total: Long) = total / 1e6 / frames
+        Log.d(
+            VIDEO_LOG_TAG,
+            String.format(
+                Locale.ROOT,
+                "%.1f frames/s | per frame: copy %.2f ms (GL thread), blur %.2f ms + pack %.2f ms (background), main %.3f ms",
+                frames * 1e9 / (now - since), ms(copy), ms(blur), ms(pack), ms(main),
+            ),
+        )
+        frames = 0; copy = 0; blur = 0; pack = 0; main = 0; since = now
+    }
+}
+
+private const val VIDEO_LOG_TAG = "KawarpVideo"
+private const val VIDEO_LOG_EVERY = 60
 
 /** An unsized WebGL canvas's default 300x150 backbuffer. */
 private const val CANVAS_WIDTH = 300

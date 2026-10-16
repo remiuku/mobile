@@ -2,12 +2,17 @@ package com.tx24.spicyplayer.ui.nowplaying
 
 import android.content.Context
 import android.graphics.Paint
+import android.graphics.SurfaceTexture
+import android.os.Handler
+import android.os.Looper
 import android.view.TextureView
 import androidx.annotation.OptIn
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.RememberObserver
+import androidx.compose.runtime.key
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -65,11 +70,11 @@ fun rememberMotionCoverUrl(enabled: Boolean, query: MotionCoverQuery): String? {
 /**
  * Loops [url] muted, filling its box. Nothing shows until the first frame has been drawn, then it
  * fades in over whatever is beneath (the still cover); [visible] false fades it back out without
- * stopping it. A stream that fails to play calls [onFailed].
+ * stopping it. A stream that fails to play calls [onFailed]. Every view of one [url] shows the
+ * same decode ([MotionCoverStream]).
  *
  * A TextureView rather than a SurfaceView, so the cover's rounded clip and alpha apply to it.
  */
-@OptIn(UnstableApi::class)
 @Composable
 fun MotionCoverVideo(
     url: String,
@@ -78,51 +83,80 @@ fun MotionCoverVideo(
     modifier: Modifier = Modifier,
     /** Drawn through this paint, e.g. a colour filter. */
     layerPaint: Paint? = null,
-) {
-    val context = LocalContext.current
-    val latestOnFailed by rememberUpdatedState(onFailed)
-    var firstFrame by remember(url) { mutableStateOf(false) }
-    val player = remember(url) { MotionCovers.player(context, url) }
-    val lifecycle = LocalLifecycleOwner.current.lifecycle
-
-    DisposableEffect(player) {
-        player.addListener(object : Player.Listener {
-            override fun onRenderedFirstFrame() {
-                firstFrame = true
-            }
-
-            override fun onPlayerError(error: PlaybackException) {
-                latestOnFailed()
-            }
-        })
-        onDispose { player.release() }
-    }
-    DisposableEffect(player, lifecycle) {
-        // Only loops while the app is on screen.
-        val observer = LifecycleEventObserver { _, event ->
-            when (event) {
-                Lifecycle.Event.ON_START -> player.play()
-                Lifecycle.Event.ON_STOP -> player.pause()
-                else -> Unit
-            }
-        }
-        lifecycle.addObserver(observer)
-        onDispose { lifecycle.removeObserver(observer) }
-    }
-
+) = key(url) {
+    val stream = rememberMotionCoverStream(url, onFailed)
+    var firstFrame by remember { mutableStateOf(false) }
     val alpha by animateFloatAsState(
         targetValue = if (firstFrame && visible) 1f else 0f,
         animationSpec = tween(FADE_MS),
         label = "motionCoverAlpha",
     )
     AndroidView(
-        factory = { TextureView(it) },
-        update = {
-            player.setVideoTextureView(it)
-            it.setLayerPaint(layerPaint)
+        factory = {
+            TextureView(it).apply {
+                surfaceTextureListener = object : TextureView.SurfaceTextureListener {
+                    override fun onSurfaceTextureAvailable(surface: SurfaceTexture, width: Int, height: Int) {
+                        stream.addView(surface) { firstFrame = true }
+                    }
+
+                    override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture, width: Int, height: Int) {
+                        stream.resizeView(surface)
+                    }
+
+                    // The stream releases it, after it has stopped drawing into it.
+                    override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean {
+                        stream.removeView(surface)
+                        return false
+                    }
+
+                    override fun onSurfaceTextureUpdated(surface: SurfaceTexture) = Unit
+                }
+            }
         },
+        update = { it.setLayerPaint(layerPaint) },
         modifier = modifier.graphicsLayer { this.alpha = alpha },
     )
+}
+
+/**
+ * The shared stream of [url], held while this is composed: one player for every view and sampler
+ * of it, looping only while the app is on screen. A stream that fails to play calls [onFailed].
+ */
+@Composable
+internal fun rememberMotionCoverStream(url: String, onFailed: () -> Unit): MotionCoverStream {
+    val context = LocalContext.current
+    val stream = remember(url) { MotionCoverLease(MotionCovers.acquire(context, url)) }.stream
+    val latestOnFailed by rememberUpdatedState(onFailed)
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    DisposableEffect(stream) {
+        val listener = object : Player.Listener {
+            override fun onPlayerError(error: PlaybackException) {
+                latestOnFailed()
+            }
+        }
+        stream.player.addListener(listener)
+        onDispose { stream.player.removeListener(listener) }
+    }
+    DisposableEffect(stream, lifecycle) {
+        // Only loops while the app is on screen.
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_START -> stream.player.play()
+                Lifecycle.Event.ON_STOP -> stream.player.pause()
+                else -> Unit
+            }
+        }
+        lifecycle.addObserver(observer)
+        onDispose { lifecycle.removeObserver(observer) }
+    }
+    return stream
+}
+
+/** Gives the stream back when it leaves the composition, or never made it in. */
+private class MotionCoverLease(val stream: MotionCoverStream) : RememberObserver {
+    override fun onRemembered() = Unit
+    override fun onForgotten() = MotionCovers.release(stream)
+    override fun onAbandoned() = MotionCovers.release(stream)
 }
 
 /**
@@ -135,9 +169,9 @@ internal fun leadArtist(artists: String): String =
 
 private const val FADE_MS = 600
 
-/** The process-wide finder and stream cache, and the players built on them. */
+/** The process-wide finder and stream cache, and the shared streams built on them. */
 @OptIn(UnstableApi::class)
-private object MotionCovers {
+internal object MotionCovers {
     @Volatile private var finder: MotionCoverFinder? = null
     @Volatile private var cache: SimpleCache? = null
 
@@ -160,7 +194,28 @@ private object MotionCovers {
         ).also { cache = it }
     }
 
-    fun player(context: Context, url: String): ExoPlayer {
+    /** Streams by URL, with how many hold each. Main thread. */
+    private val streams = HashMap<String, MotionCoverStream>()
+    private val main = Handler(Looper.getMainLooper())
+
+    fun acquire(context: Context, url: String): MotionCoverStream =
+        streams.getOrPut(url) { MotionCoverStream(url, player(context.applicationContext, url)) }.also { it.users++ }
+
+    /**
+     * Lets go of [stream]; the last one out releases it a moment later, so a view handing over to
+     * another (a background type swap) keeps the same player.
+     */
+    fun release(stream: MotionCoverStream) {
+        stream.users--
+        if (stream.users > 0) return
+        main.post {
+            if (stream.users > 0) return@post
+            if (streams[stream.url] === stream) streams.remove(stream.url)
+            stream.release()
+        }
+    }
+
+    private fun player(context: Context, url: String): ExoPlayer {
         val upstream = DefaultHttpDataSource.Factory().setUserAgent(BROWSER_UA).setTransferListener(CountedTransfers)
         val source = CacheDataSource.Factory()
             .setCache(cache(context))
