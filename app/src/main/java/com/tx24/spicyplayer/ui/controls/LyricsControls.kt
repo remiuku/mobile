@@ -1,5 +1,6 @@
 package com.tx24.spicyplayer.ui.controls
 
+import androidx.compose.ui.zIndex
 import kotlin.math.abs
 import com.tx24.spicyplayer.ui.components.LocalGlassCast
 import androidx.compose.runtime.CompositionLocalProvider
@@ -710,6 +711,9 @@ fun StageControls(
             Column(Modifier.fillMaxWidth()) {
                 Column(
                     Modifier
+                        // Hidden, the rows settle into the transport's slot; above it, they take the
+                        // touches there, so a tap on the timeline seeks instead of landing on the row.
+                        .zIndex(1f)
                         .fillMaxWidth()
                         .graphicsLayer { translationY = (1f - lift) * (reservePx + side.toPx() * STAGE_GAP) },
                     horizontalAlignment = sliding,
@@ -727,8 +731,7 @@ fun StageControls(
                             .graphicsLayer { alpha = shown() * 0.985f },
                         skipWidth = side * 0.15f, fillSlots = true,
                     )
-                    // Hidden, the transport takes no taps; the timeline above still seeks, and the
-                    // same tap brings the controls up.
+                    // Hidden, the transport takes no taps; the same tap brings the controls up.
                     if (!interactive) {
                         Box(Modifier.matchParentSize().pointerInput(Unit) {
                             awaitPointerEventScope { while (true) awaitPointerEvent().changes.forEach { it.consume() } }
@@ -744,8 +747,8 @@ fun StageControls(
 private const val STAGE_GUTTER = 0.04f
 private const val STAGE_BOTTOM = 0.05f
 private const val STAGE_GAP = 0.025f
-/** The stage's glass buttons' shadow, against the usual's. */
-private const val STAGE_GLASS_CAST = 0.3f
+/** The stage's glass buttons cast no shadow: over the cover's own picture, often bright, any reads as a smudge. */
+private const val STAGE_GLASS_CAST = 0f
 
 private val SIDE_MARGIN = 28.dp
 /** The bottom controls' widest, so they don't stretch across a landscape or tablet screen. */
