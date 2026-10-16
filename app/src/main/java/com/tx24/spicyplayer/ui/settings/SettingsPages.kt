@@ -1,5 +1,6 @@
 package com.tx24.spicyplayer.ui.settings
 
+import androidx.compose.material.icons.rounded.ScreenRotation
 import com.tx24.spicyplayer.ui.components.drawBrandRamp
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clip
@@ -696,6 +697,13 @@ internal fun ControlsContent(settings: AppSettings) {
             onCheckedChange = { settings.quickSettingsButton = it },
             description = "Show the button that opens the delays, the Lyrics Manager and the queue without leaving the lyrics.",
             icon = Icons.Rounded.Tune,
+        )
+        ToggleRow(
+            label = "Rotate button",
+            checked = settings.rotateButton,
+            onCheckedChange = { settings.rotateButton = it },
+            description = "Show the button that turns the lyrics to landscape and back, even with rotation locked.",
+            icon = Icons.Rounded.ScreenRotation,
         )
         ToggleRow(
             label = "Floating lyrics button",

@@ -1,5 +1,6 @@
 package com.tx24.spicyplayer.ui.controls
 
+import androidx.compose.material.icons.rounded.ScreenRotation
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.animateFloat
@@ -159,6 +160,9 @@ class PlaybackControlsState(
     val translated: Boolean = false,
     /** A translation is on its way: the button pulses until it lands. */
     val translating: Boolean = false,
+    /** Turns the screen to landscape, or back once [rotated]; null hides the button. */
+    val onRotate: (() -> Unit)? = null,
+    val rotated: Boolean = false,
 )
 
 /**
@@ -535,6 +539,11 @@ private fun floatingActions(
     if (onOpenQueue != null) add(FloatingAction("Queue", keep = 40, onOpenQueue) { icon ->
         Image(rememberVectorPainter(Icons.AutoMirrored.Rounded.QueueMusic), null, Modifier.size(icon(23f)), colorFilter = white)
     })
+    controls.onRotate?.let { rotate ->
+        add(FloatingAction(if (controls.rotated) "Back to portrait" else "Turn to landscape", keep = 25, rotate) { icon ->
+            Image(rememberVectorPainter(Icons.Rounded.ScreenRotation), null, Modifier.size(icon(22f)), colorFilter = white)
+        })
+    }
     if (onEnterPip != null) add(FloatingAction("Picture-in-picture", keep = 20, onEnterPip) { icon ->
         Image(rememberVectorPainter(Icons.Rounded.PictureInPictureAlt), null, Modifier.size(icon(23f)), colorFilter = white)
     })

@@ -86,6 +86,7 @@ fun configSnapshot(settings: AppSettings): Map<String, Any> = with(settings) {
         "ui_animations" to uiAnimations,
         "peek_while_adjusting" to peekWhileAdjusting,
         "credits_follow_last_line" to creditsFollowLastLine,
+        "rotate_button" to rotateButton,
         "background" to backgroundType.name,
         "background_blur" to backgroundBlur,
         "dynamic_background_blur" to dynamicBackgroundBlur,

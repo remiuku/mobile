@@ -1,5 +1,8 @@
 package com.tx24.spicyplayer
 
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.lifecycle.LifecycleEventObserver
+import android.content.pm.ActivityInfo
 import com.tx24.spicyplayer.ui.settings.LocalAppIcon
 import com.tx24.spicyplayer.ui.settings.AppIcon
 import com.tx24.spicyplayer.ui.components.LocalPopupPalette
@@ -499,6 +502,19 @@ private fun LyricsApp(
     // then they're the bottom bar, as in portrait.
     val controlsOnCover = landscape && (!hideHeader || headerExpanded)
     val bottomBar = !landscape || hideHeader
+    // The rotate button turns the screen to landscape even with rotation locked, and back to the
+    // phone's own rotation. Leaving the app hands rotation back too.
+    var rotated by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(rotated) {
+        activity?.requestedOrientation =
+            if (rotated) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+    }
+    val rotationLifecycle = LocalLifecycleOwner.current.lifecycle
+    DisposableEffect(rotationLifecycle) {
+        val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_STOP) rotated = false }
+        rotationLifecycle.addObserver(observer)
+        onDispose { rotationLifecycle.removeObserver(observer) }
+    }
     // The panel slides to the other side over 0.4 s (`transition: left .4s`).
     val panelSide = animateFloatAsState(
         if (settings.panelSide == PanelSide.Right) 1f else 0f,
@@ -732,6 +748,9 @@ private fun LyricsApp(
                 // glass button would otherwise re-blur the whole page every frame, unseen.
                 val controlsGone by remember { derivedStateOf { controlsShown == 0f } }
                 val playbackControls = PlaybackControlsState(
+                    // Hidden on a screen that's landscape on its own: there's nothing to turn.
+                    onRotate = { rotated = !rotated }.takeIf { settings.rotateButton && (rotated || !landscape) },
+                    rotated = rotated,
                     isPlaying = state.isPlaying,
                     canSeek = state.canSeek,
                     durationMs = state.durationMs,

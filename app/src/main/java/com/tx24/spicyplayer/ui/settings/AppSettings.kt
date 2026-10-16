@@ -116,6 +116,8 @@ class AppSettings(private val prefs: SharedPreferences) {
      * A floating button that shrinks the lyrics into that window by hand. Off by default where
      * Android 12+ enters the window on its own; before that the button is the easy way in.
      */
+    /** The floating button that turns the screen to landscape, rotation lock or not. */
+    var rotateButton by boolean("rotateButton", true)
     var pipButton by boolean("pipButton", Build.VERSION.SDK_INT < Build.VERSION_CODES.S)
     /** No song header: the lyrics fill the page and scroll with the active line near the centre. */
     var hideHeader by boolean("hideHeader", false)
