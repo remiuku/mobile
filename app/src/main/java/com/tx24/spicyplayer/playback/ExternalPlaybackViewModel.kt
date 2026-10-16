@@ -87,6 +87,14 @@ import kotlinx.coroutines.withContext
  */
 private const val TRACK_SETTLE_MS = 700L
 
+/**
+ * A lyric lookup that reaches the network within [RAPID_SWITCH_WINDOW_MS] of the previous one
+ * waits [RAPID_SWITCH_BACKOFF_MS] first (loader stays up), and goes out only if the track is still
+ * current. Cache hits never wait.
+ */
+private const val RAPID_SWITCH_WINDOW_MS = 1_000L
+private const val RAPID_SWITCH_BACKOFF_MS = 400L
+
 /** Beats Spotify is less sure of than this aren't tapped to. */
 private const val CALIBRATION_BEAT_CONFIDENCE = 0.2f
 
@@ -476,6 +484,8 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
     private var lyricsJob: Job? = null
     /** When the last track change arrived, to tell skipping from a song handing over. */
     private var lastTrackChangeAt = Long.MIN_VALUE / 2
+    /** Shared by the song on screen and the queue fetched ahead, so neither bursts requests. */
+    private val networkGate = RapidSwitchGate(RAPID_SWITCH_WINDOW_MS, RAPID_SWITCH_BACKOFF_MS)
     private var warmJob: Job? = null
     private var shownSelection: RemoteLyricsSelection? = null
     private var shownRequest: LyricsLookupRequest? = null
@@ -1254,12 +1264,6 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
     }
 
     /**
-     * [settle]: a track change that follows another within [TRACK_SETTLE_MS] waits that long before
-     * any request, so skipping through tracks costs nothing (the wait is cancelled by the next
-     * change). A song that simply ends and hands over is asked for at once. [force] drops this
-     * track's cached source results, e.g. for Retry.
-     */
-    /**
      * Uses [sourceId]'s lyrics for this song from now on, or the automatic pick again for null.
      * Kept per song, so the song plays with them every time.
      */
@@ -1300,6 +1304,13 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
             }
     }
 
+    /**
+     * [settle]: a track change that follows another within [TRACK_SETTLE_MS] waits that long before
+     * any request, so skipping through tracks costs nothing (the wait is cancelled by the next
+     * change). A song that simply ends and hands over is asked for at once. A lookup that still
+     * has to reach the network then goes through [networkGate]. [force] drops this track's cached
+     * source results, e.g. for Retry, and skips the gate.
+     */
     fun loadLyrics(spotifyIdInput: String? = null, settle: Boolean = false, force: Boolean = false) {
         val metadata = controller?.metadata ?: return
         val identity = metadata.lyricsKey()
@@ -1363,6 +1374,7 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
                 }
             }
             if (skipping && freshLookup) delay(TRACK_SETTLE_MS)
+            delay(networkGate.waitBeforeNetwork(SystemClock.elapsedRealtime(), force))
             runCatching {
                 withContext(Dispatchers.IO) {
                     lyricsBackend.resolve(request, known) { update ->
@@ -1446,7 +1458,10 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
                 if (localLyrics.contains(request.title, request.artist) || lyricsFolder.has(request.title, request.artist)) continue
                 val resolution = backend.cachedResolution(request)?.resolution
                     // Failures are not reported: nobody is looking at this song yet.
-                    ?: runCatching { backend.resolve(request, ConcurrentHashMap()).also { backend.store(request, it) } }
+                    ?: runCatching {
+                        delay(networkGate.waitBeforeNetwork(SystemClock.elapsedRealtime()))
+                        backend.resolve(request, ConcurrentHashMap()).also { backend.store(request, it) }
+                    }
                         .onFailure { if (it is CancellationException) throw it }
                         .getOrNull()
                 // Rendered too, so the song's lyrics are up the moment it starts.
