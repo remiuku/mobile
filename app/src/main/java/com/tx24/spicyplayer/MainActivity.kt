@@ -173,6 +173,8 @@ import com.tx24.spicyplayer.ui.settings.debugReport
 import com.tx24.spicyplayer.ui.nowplaying.MotionCoverQuery
 import com.tx24.spicyplayer.ui.nowplaying.NowPlayingInfo
 import com.tx24.spicyplayer.ui.nowplaying.CoverStage
+import com.tx24.spicyplayer.ui.nowplaying.CoverStageDock
+import com.tx24.spicyplayer.ui.nowplaying.SlidingAlignment
 import com.tx24.spicyplayer.ui.nowplaying.StageMetadata
 import com.tx24.spicyplayer.ui.nowplaying.STAGE_FADE_MS
 import com.tx24.spicyplayer.ui.nowplaying.forgetMotionCover
@@ -566,10 +568,14 @@ private fun LyricsApp(
         tween(400, easing = CubicBezierEasing(0.25f, 0.1f, 0.25f, 1f)),
         label = "panelSide",
     )
-    // The cover stage: beside the lyrics, the cover fills its side of the screen. Only over the
-    // moving background, which already takes its colours from the cover.
-    val stageOn = settings.coverStage && landscape && !hideHeader && !headerExpanded && !inPip &&
+    // The cover stage: beside the lyrics, the cover fills its side of the screen; with the big
+    // cover up it stands in the middle in its place. Only over the moving background, which
+    // already takes its colours from the cover.
+    val stageOn = settings.coverStage && landscape && (!hideHeader || headerExpanded) && !inPip &&
         settings.backgroundType == BackgroundType.Default && !lowPerformance
+    // How far it has moved to the middle: with the big cover's expansion, or there throughout
+    // without the panel, where it only shows while the big cover is up.
+    val stageCentred = { if (hideHeader) 1f else expansion }
     val stageShown = animateFloatAsState(
         if (stageOn) 1f else 0f,
         tween(STAGE_FADE_MS, easing = StageEaseOut),
@@ -807,7 +813,11 @@ private fun LyricsApp(
                     landscapeMetrics.lyricFontSizeSp /
                         LyricsLayoutMetrics(lyricsBoxLeft.widthPx, density, LyricsType.Syllable, 1f).baseFontSizeSp
                 } else 1f
-                coverTouchArea.contains = if (!controlsOnCover) null else if (stageOn) { position ->
+                coverTouchArea.contains = if (!controlsOnCover) null else if (stageOn && headerExpanded) { position ->
+                    // The centred stage's solid part, around the big cover's place.
+                    val left = startInsetPx + landscapeMetrics.centred.artLeftPx
+                    position.x in left..(left + landscapeMetrics.coverSizePx)
+                } else if (stageOn) { position ->
                     // The stage's solid part, from the screen's edge.
                     val solid = (if (stageRight) endInsetPx else startInsetPx) + landscapeMetrics.stageSolidPx
                     if (stageRight) position.x >= pageWidth - solid else position.x <= solid
@@ -896,6 +906,7 @@ private fun LyricsApp(
                 )
                 var failedFollowMotionUrl by remember { mutableStateOf<String?>(null) }
                 val motionScope = rememberCoroutineScope()
+                val stageInfo = NowPlayingInfo(state.title, state.artist, state.album, state.artwork, state.artworkUri, state.trackDirection, hasSession = state.sourcePackage != null)
                 // Everything the glass controls blur.
                 Box(Modifier.fillMaxSize().then(backdrop?.let { Modifier.hazeSource(it) } ?: Modifier)) {
                     SpicySessionBackground(
@@ -923,9 +934,8 @@ private fun LyricsApp(
                         },
                     )
                     if (landscape && stageVisible) {
-                        val info = NowPlayingInfo(state.title, state.artist, state.album, state.artwork, state.artworkUri, state.trackDirection, hasSession = state.sourcePackage != null)
                         CoverStage(
-                            info = info,
+                            info = stageInfo,
                             metrics = landscapeMetrics,
                             onRight = stageRight,
                             startInsetPx = startInsetPx,
@@ -936,40 +946,8 @@ private fun LyricsApp(
                             controlsShown = { controlsShown },
                             swapAlpha = { stageSwapAlpha.value },
                             swapX = { stageSwapX.value },
-                        ) {
-                            // No glass blur here: the stage is part of what the glass blurs.
-                            CompositionLocalProvider(LocalBackdrop provides null) {
-                                StageControls(
-                                    controls = playbackControls,
-                                    romanizeAvailable = romanizeButton,
-                                    showResync = settings.resyncButton,
-                                    showExpand = expandButton,
-                                    romanized = romanize,
-                                    onToggleRomanize = {
-                                        settings.romanize = !settings.romanize
-                                        UsageStats.count(UsageCounter.ROMANIZE)
-                                    },
-                                    onOpenSettings = { showSettings = true },
-                                    onOpenLyricsManager = onOpenLyricsManager,
-                                    onOpenQueue = onOpenQueue,
-                                    onOpenSource = onOpenSource,
-                                    onOpenQuickSettings = onOpenQuickSettings,
-                                    onEnterPip = onEnterPipButton,
-                                    expanded = headerExpanded,
-                                    onToggleExpanded = expandButtonTapped,
-                                    onSwapSide = {
-                                        settings.panelSide = if (settings.panelSide == PanelSide.Left) PanelSide.Right else PanelSide.Left
-                                    },
-                                    shown = { controlsShown },
-                                    interactive = controlsVisible && stageOn,
-                                    onRight = stageRight,
-                                    metadata = {
-                                        val gutter = landscapeMetrics.coverSizePx * 0.04f
-                                        StageMetadata(info, landscapeMetrics, stageRight, landscapeMetrics.coverSizePx - gutter * 2f)
-                                    },
-                                )
-                            }
-                        }
+                            centred = stageCentred,
+                        )
                     }
                     Column(
                         Modifier
@@ -1024,6 +1002,57 @@ private fun LyricsApp(
                 // Hidden lyrics take no touches (no seeking through the cover view).
                 if (headerExpanded) {
                     Box(Modifier.fillMaxSize().pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent().changes.forEach { it.consume() } } })
+                }
+                // The stage's dock sits over the lyrics' layer: centred, it's where they are.
+                if (landscape && stageVisible) {
+                    // Along the stage's outer side beside the lyrics, gliding to the middle as it centres.
+                    val stageAlign = { (if (stageRight) 1f else -1f) * (1f - stageCentred()) }
+                    CoverStageDock(
+                        metrics = landscapeMetrics,
+                        onRight = stageRight,
+                        startInsetPx = startInsetPx,
+                        endInsetPx = endInsetPx,
+                        shown = { stageShown.value },
+                        swapAlpha = { stageSwapAlpha.value },
+                        swapX = { stageSwapX.value },
+                        centred = stageCentred,
+                    ) {
+                        // No glass blur here: the stage is part of what the glass blurs.
+                        CompositionLocalProvider(LocalBackdrop provides null) {
+                            StageControls(
+                                controls = playbackControls,
+                                romanizeAvailable = romanizeButton,
+                                showResync = settings.resyncButton,
+                                showExpand = expandButton,
+                                romanized = romanize,
+                                onToggleRomanize = {
+                                    settings.romanize = !settings.romanize
+                                    UsageStats.count(UsageCounter.ROMANIZE)
+                                },
+                                onOpenSettings = { showSettings = true },
+                                onOpenLyricsManager = onOpenLyricsManager,
+                                onOpenQueue = onOpenQueue,
+                                onOpenSource = onOpenSource,
+                                onOpenQuickSettings = onOpenQuickSettings,
+                                onEnterPip = onEnterPipButton,
+                                expanded = headerExpanded,
+                                onToggleExpanded = expandButtonTapped,
+                                // Only beside the lyrics: centred, it stands where the big cover does.
+                                onSwapSide = if (headerExpanded) null else ({
+                                    settings.panelSide = if (settings.panelSide == PanelSide.Left) PanelSide.Right else PanelSide.Left
+                                }),
+                                shown = { controlsShown },
+                                interactive = controlsVisible && stageOn,
+                                onRight = stageRight,
+                                align = stageAlign,
+                                metadata = {
+                                    val gutter = landscapeMetrics.coverSizePx * 0.04f
+                                    val alignment = remember(stageRight) { SlidingAlignment(stageAlign) }
+                                    StageMetadata(stageInfo, landscapeMetrics, alignment, landscapeMetrics.coverSizePx - gutter * 2f)
+                                },
+                            )
+                        }
+                    }
                 }
                 // Hidden, the header only shows while the big cover is open or fading.
                 val headerShowing by remember { derivedStateOf { expansion > 0f } }

@@ -369,6 +369,8 @@ internal fun HeaderMetadata(
     modifier: Modifier,
     /** Lined up on the right rather than the left (when not [centered]). */
     end: Boolean = false,
+    /** Lines them up this way instead of by [centered] and [end]. */
+    alignment: Alignment.Horizontal? = null,
 ) {
     var shown by remember { mutableStateOf(ShownMetadata(title, artists, year)) }
     val alpha = remember { Animatable(1f) }
@@ -390,6 +392,7 @@ internal fun HeaderMetadata(
         // Centred on the cover, compact or expanded.
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = when {
+            alignment != null -> alignment
             centered -> Alignment.CenterHorizontally
             end -> Alignment.End
             else -> Alignment.Start
