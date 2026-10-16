@@ -1,5 +1,13 @@
 package com.tx24.spicyplayer.ui.settings
 
+import kotlin.math.roundToInt
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.foundation.layout.offset
+import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.staticCompositionLocalOf
 import com.tx24.spicyplayer.ui.components.drawBrandMark
 import com.tx24.spicyplayer.ui.components.drawBrandRamp
@@ -185,6 +193,8 @@ fun SettingsScreen(
     onClosed: () -> Unit,
     onOpenLyricsManager: () -> Unit = {},
     onOpenSpotifySearch: () -> Unit = {},
+    /** Told when a peek clears the settings away (true) and when they come back (false). */
+    onPeekChange: (Boolean) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     val palette = settings.settingsTheme.palette
@@ -210,6 +220,15 @@ fun SettingsScreen(
     // Moving between pages or closing ends a peek.
     LaunchedEffect(stack.size, closing) { peek.end() }
     var pagesOrigin by remember { mutableStateOf(Offset.Zero) }
+    var screenOrigin by remember { mutableStateOf(Offset.Zero) }
+    // A peek with the peek button (not a slider's) clears the settings out of the way entirely: the
+    // player underneath takes touches again, and once faded out the pages step off screen, so no
+    // unseen row takes a tap. Only the peek button stays, to come back with.
+    val peekClear = peek.active && !peek.plate
+    val pagesAway = peekClear && peekAmount >= 1f
+    val onPeekChangeUpdated by rememberUpdatedState(onPeekChange)
+    LaunchedEffect(peekClear) { onPeekChangeUpdated(peekClear) }
+    DisposableEffect(Unit) { onDispose { onPeekChangeUpdated(false) } }
     var query by rememberSaveable { mutableStateOf("") }
     val homeScroll = rememberScrollState()
     // Building a page's real rows can take a few hundred ms (more in debug builds), and an
@@ -273,12 +292,15 @@ fun SettingsScreen(
             throw e
         }
     }
+    // Declared after, so it's asked first: back while peeking brings the settings back.
+    BackHandler(enabled = peek.active) { peek.end() }
 
     Box(
         Modifier
             .fillMaxSize()
-            // Takes every touch, so nothing reaches the lyrics underneath.
-            .pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent() } },
+            .onGloballyPositioned { screenOrigin = it.positionInRoot() }
+            // Takes every touch, so nothing reaches the lyrics underneath, except while peeking.
+            .then(if (peekClear) Modifier else Modifier.pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent() } }),
     ) {
         // The pop-up dim and blur, over the whole screen.
         Box(
@@ -325,6 +347,7 @@ fun SettingsScreen(
         ) {
         BoxWithConstraints(
             Modifier
+                .offset { if (pagesAway) IntOffset(0, PAGES_AWAY_PX) else IntOffset.Zero }
                 .fillMaxSize()
                 .graphicsLayer {
                     val scale = (MODAL_CLOSED_SCALE + (1f - MODAL_CLOSED_SCALE) * open.value) *
@@ -405,19 +428,20 @@ fun SettingsScreen(
                 }
             }
         }
-        // While a tap holds the peek open, the next tap anywhere brings the settings back,
-        // instead of reaching rows that can't be seen.
-        if (peek.active && peek.latched) {
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .pointerInput(Unit) {
-                        awaitEachGesture {
-                            awaitFirstDown().consume()
-                            peek.end()
-                        }
-                    },
-            )
+        // The peek button, standing in for the one on the page while the pages are away: a tap
+        // on it brings the settings back.
+        val keep = peek.keep
+        if (pagesAway && keep != null) {
+            GlassButton(
+                onClick = { peek.end() },
+                contentDescription = "Back to settings",
+                size = 40.dp,
+                modifier = Modifier.offset {
+                    IntOffset((keep.left - screenOrigin.x).roundToInt(), (keep.top - screenOrigin.y).roundToInt())
+                },
+            ) {
+                Icon(Icons.Rounded.Visibility, null, tint = SpicyColors.TextPrimary, modifier = Modifier.size(20.dp))
+            }
         }
         }
     }
@@ -433,17 +457,22 @@ private fun PeekButton() {
         onClick = {},
         contentDescription = "Peek at the lyrics",
         size = 40.dp,
-        modifier = Modifier.onGloballyPositioned { bounds = it.boundsInRoot() },
-        onPressChange = { down ->
-            if (down) {
-                downAt = SystemClock.uptimeMillis()
-                peek.start(bounds, plate = false)
-            } else if (SystemClock.uptimeMillis() - downAt < PEEK_TAP_MS) {
-                peek.latched = true
-            } else {
-                peek.end()
-            }
-        },
+        modifier = Modifier
+            .onGloballyPositioned { bounds = it.boundsInRoot() }
+            // Followed to the finger's lift wherever the button goes meanwhile (it steps off
+            // screen with the pages), which a press on the button itself would take as cancelled.
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                    downAt = SystemClock.uptimeMillis()
+                    peek.start(bounds, plate = false)
+                    while (true) {
+                        val change = awaitPointerEvent(PointerEventPass.Initial).changes.firstOrNull { it.id == down.id } ?: break
+                        if (!change.pressed) break
+                    }
+                    if (SystemClock.uptimeMillis() - downAt < PEEK_TAP_MS) peek.latched = true else peek.end()
+                }
+            },
     ) {
         Icon(Icons.Rounded.Visibility, null, tint = SpicyColors.TextPrimary, modifier = Modifier.size(20.dp))
     }
@@ -923,6 +952,8 @@ private const val PAGE_PEEK = 0.5f
 private const val PEEK_MS = 250
 /** A press on the peek button shorter than this holds the peek open instead of ending it on release. */
 private const val PEEK_TAP_MS = 250L
+/** Far enough down that the pages, stepped away while peeking, are off any screen. */
+private const val PAGES_AWAY_PX = 100_000
 /** The plate a dragged slider's row sits on while the rest of the settings are cleared away. */
 private val PEEK_PLATE = Color(0xE0141414)
 

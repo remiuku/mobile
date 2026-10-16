@@ -551,6 +551,8 @@ private fun LyricsApp(
     val bottomBar = !landscape || hideHeader
     // The rotate button turns the screen to landscape even with rotation locked, and back to the
     // phone's own rotation. Leaving the app hands rotation back too.
+    // Settings are open but peeked through: the player's own settings button steps aside.
+    var settingsPeeking by remember { mutableStateOf(false) }
     var rotated by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(rotated) {
         activity?.requestedOrientation =
@@ -859,6 +861,7 @@ private fun LyricsApp(
                 // glass button would otherwise re-blur the whole page every frame, unseen.
                 val controlsGone by remember { derivedStateOf { controlsShown == 0f } }
                 val playbackControls = PlaybackControlsState(
+                    hideSettings = settingsPeeking,
                     // Hidden on a screen that's landscape on its own: there's nothing to turn.
                     onRotate = { rotated = !rotated }.takeIf { settings.rotateButton && (rotated || !landscape) },
                     rotated = rotated,
@@ -1265,6 +1268,7 @@ private fun LyricsApp(
                 onClosed = { showSettings = false },
                 onOpenLyricsManager = { showLyricsManager = true },
                 onOpenSpotifySearch = { showSpotifySearch = true },
+                onPeekChange = { settingsPeeking = it },
             )
         }
 

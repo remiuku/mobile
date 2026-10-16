@@ -172,6 +172,8 @@ class PlaybackControlsState(
     val translated: Boolean = false,
     /** A translation is on its way: the button pulses until it lands. */
     val translating: Boolean = false,
+    /** Hides the settings button: while settings are open and only peeked through, another would stack on them. */
+    val hideSettings: Boolean = false,
     /** Turns the screen to landscape, or back once [rotated]; null hides the button. */
     val onRotate: (() -> Unit)? = null,
     val rotated: Boolean = false,
@@ -569,7 +571,7 @@ private fun floatingActions(
             ActionIcon(action, Modifier.size(icon(23f)))
         })
     }
-    add(FloatingAction("Settings", keep = Int.MAX_VALUE, onOpenSettings) { icon ->
+    if (!controls.hideSettings) add(FloatingAction("Settings", keep = Int.MAX_VALUE, onOpenSettings) { icon ->
         SettingsGlyph(Modifier.size(icon(23f)))
     })
 }
