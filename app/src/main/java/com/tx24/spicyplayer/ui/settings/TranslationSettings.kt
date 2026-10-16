@@ -1,5 +1,6 @@
 package com.tx24.spicyplayer.ui.settings
 
+import com.tx24.spicyplayer.ui.components.SpicyGlyphs
 import androidx.compose.material.icons.rounded.Translate
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.ViewAgenda
@@ -34,7 +35,7 @@ internal fun RomanizationTranslationContent(state: PlayerUiState, viewModel: Ext
     // The page header names both, so each group gets its own title.
     SettingsSection("Romanization") {
         ToggleRow("Romanize button", settings.romanizeButton, { settings.romanizeButton = it },
-            description = "Show the romanize button.", icon = Icons.Rounded.Translate,
+            description = "Show the romanize button.", icon = SpicyGlyphs.EnableRomanization,
             searchDescription = "Show the button that romanizes lyrics, on songs that have them.")
         SettingRow("Romanization", description = "Replace lyrics or show romanization below.", icon = Icons.Rounded.ViewAgenda,
             searchDescription = "Replace the synced lyric words or show romanization below each line.") {
