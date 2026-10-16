@@ -1230,7 +1230,7 @@ private fun PipLyrics(
             return@BoxWithConstraints
         }
         // Square or taller, the song docks along the bottom, under the lyrics.
-        val dock = settings.pipAspect <= 1f
+        val dock = settings.pipDock && settings.pipAspect <= 1f
         Column(Modifier.fillMaxSize()) {
         LyricsPanel(
             lyrics = state.lyrics,

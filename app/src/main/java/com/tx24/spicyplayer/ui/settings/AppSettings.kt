@@ -125,6 +125,8 @@ class AppSettings(private val prefs: SharedPreferences) {
     var pipCustomRatio by int("pipCustomRatio", 100, PIP_RATIO_RANGE)
     /** The floating window shows the lyrics; off, it shows the song's cover, title and artist. */
     var pipShowLyrics by boolean("pipShowLyrics", true)
+    /** The song bar (title, artist, timeline) along the bottom of a square or tall window. */
+    var pipDock by boolean("pipDock", true)
     /** A small cover beside the title in a square or tall window's song bar. */
     var pipDockCover by boolean("pipDockCover", true)
     /** What the floating window shows for a song without lyrics. */
