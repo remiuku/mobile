@@ -1,14 +1,12 @@
 package com.tx24.spicyplayer.ui.settings
 
+import com.tx24.spicyplayer.ui.components.SpicyGlyphs
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.height
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.QueueMusic
-import androidx.compose.material.icons.rounded.LibraryMusic
-import androidx.compose.material.icons.rounded.Source
 import androidx.compose.material.icons.rounded.Timer
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -114,7 +112,7 @@ private fun MainScreen(state: PlayerUiState, viewModel: ExternalPlaybackViewMode
     // The screens this opens share one compact card, so the settings tuned right here keep the room.
     Column(Modifier.fillMaxWidth().outlinedCard()) {
         if (state.queue.isNotEmpty()) {
-            GroupRow(Icons.AutoMirrored.Rounded.QueueMusic, "Queue", "${state.queue.size} ${if (state.queue.size == 1) "song" else "songs"}") {
+            GroupRow(SpicyGlyphs.Queue, "Queue", "${state.queue.size} ${if (state.queue.size == 1) "song" else "songs"}") {
                 open(QuickScreen.Queue)
             }
             GroupDivider()
@@ -123,7 +121,7 @@ private fun MainScreen(state: PlayerUiState, viewModel: ExternalPlaybackViewMode
             val chosen = state.sourceOverride?.let { id -> state.sourceDescriptors.firstOrNull { it.id == id }?.displayName ?: id }
             val showing = (state.lyrics as? LyricsState.Ready)?.provider
             GroupRow(
-                Icons.Rounded.Source,
+                SpicyGlyphs.Source,
                 "Lyrics source",
                 when {
                     chosen != null -> "$chosen, chosen for this song"
@@ -133,7 +131,7 @@ private fun MainScreen(state: PlayerUiState, viewModel: ExternalPlaybackViewMode
             ) { open(QuickScreen.Source) }
             GroupDivider()
         }
-        GroupRow(Icons.Rounded.LibraryMusic, "Lyrics Manager", "Save or upload lyrics, link a folder") { open(QuickScreen.LyricsManager) }
+        GroupRow(SpicyGlyphs.LyricsManager, "Lyrics Manager", "Save or upload lyrics, link a folder") { open(QuickScreen.LyricsManager) }
     }
     LyricsLanguageRow(state, viewModel)
     SongDelayRow(state, viewModel)

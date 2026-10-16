@@ -3,10 +3,19 @@ package com.tx24.spicyplayer.ui.controls
 import com.tx24.spicyplayer.ui.components.LocalGlassCast
 import androidx.compose.runtime.CompositionLocalProvider
 import com.tx24.spicyplayer.ui.components.LocalGlyphPressed
-import androidx.compose.ui.graphics.vector.PathNode
-import androidx.compose.ui.graphics.vector.Path
-import androidx.compose.ui.graphics.vector.Group
-import androidx.compose.material.icons.rounded.ScreenRotation
+import com.tx24.spicyplayer.ui.components.ExpandGlyph
+import com.tx24.spicyplayer.ui.components.LyricsManagerGlyph
+import com.tx24.spicyplayer.ui.components.MoreGlyph
+import com.tx24.spicyplayer.ui.components.PictureInPictureGlyph
+import com.tx24.spicyplayer.ui.components.QueueGlyph
+import com.tx24.spicyplayer.ui.components.QuickSettingsGlyph
+import com.tx24.spicyplayer.ui.components.ResyncGlyph
+import com.tx24.spicyplayer.ui.components.RotateGlyph
+import com.tx24.spicyplayer.ui.components.SettingsGlyph
+import com.tx24.spicyplayer.ui.components.SourceGlyph
+import com.tx24.spicyplayer.ui.components.SpicyGlyphs
+import com.tx24.spicyplayer.ui.components.SwapSideGlyph
+import com.tx24.spicyplayer.ui.components.TranslateGlyph
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.animateFloat
@@ -20,7 +29,6 @@ import androidx.compose.ui.window.Popup
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.draw.clip
-import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.heightIn
@@ -36,7 +44,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.AnimatedVisibility
 import com.tx24.spicyplayer.ui.theme.SpicyPalette
-import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 
 import com.tx24.spicyplayer.ui.components.LocalUiAnimations
 
@@ -46,11 +53,6 @@ import androidx.compose.animation.core.snap
 
 import androidx.compose.animation.core.FastOutSlowInEasing
 
-import androidx.compose.material.icons.rounded.PictureInPictureAlt
-import androidx.compose.material.icons.rounded.Source
-import androidx.compose.material.icons.rounded.Translate
-import androidx.compose.material.icons.rounded.Tune
-import androidx.compose.material.icons.Icons
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.keyframes
@@ -109,7 +111,6 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
@@ -420,7 +421,7 @@ private fun MoreButton(actions: List<FloatingAction>, size: Dp) {
     val haptics = LocalHapticFeedback.current
     Box {
         GlassButton(onClick = { menu.targetState = !menu.targetState }, contentDescription = "More", size = size) {
-            Image(rememberVectorPainter(Icons.Rounded.MoreHoriz), null, Modifier.size(size * (24f / FLOATING_SIZE.value)), colorFilter = ColorFilter.tint(Color.White))
+            MoreGlyph(Modifier.size(size * (24f / FLOATING_SIZE.value)))
         }
         if (menu.currentState || menu.targetState) {
             val margin = with(LocalDensity.current) { SpicySpacing.S2.roundToPx() }
@@ -504,15 +505,13 @@ private fun floatingActions(
     onOpenSource: (() -> Unit)? = null,
     onEnterPip: (() -> Unit)? = null,
 ): List<FloatingAction> = buildList {
-    // Material icons are black until tinted; the others here are drawn white.
-    val white = ColorFilter.tint(Color.White)
     if (romanizeAvailable) {
         // Shows what a tap switches to: "A" to go back, the kana mark to romanize.
         add(FloatingAction(if (romanized) "Show original lyrics" else "Romanize lyrics", keep = 80, onToggleRomanize) { icon ->
             if (romanized) {
-                Image(rememberVectorPainter(SpicyIcons.DisableRomanization), null, Modifier.size(icon(23f)))
+                Image(rememberVectorPainter(SpicyGlyphs.DisableRomanization), null, Modifier.size(icon(23f)))
             } else {
-                Image(rememberVectorPainter(SpicyIcons.EnableRomanization), null, Modifier.size(icon(23f)))
+                Image(rememberVectorPainter(SpicyGlyphs.EnableRomanization), null, Modifier.size(icon(23f)))
             }
         })
     }
@@ -529,12 +528,12 @@ private fun floatingActions(
                     drawArc(Color.White, turn, 270f, useCenter = false, style = Stroke(size.minDimension * 0.1f, cap = StrokeCap.Round))
                 }
             } else {
-                Image(rememberVectorPainter(Icons.Rounded.Translate), null, Modifier.size(icon(23f)), colorFilter = white)
+                TranslateGlyph(Modifier.size(icon(23f)))
             }
         })
     }
     if (showResync) add(FloatingAction("Resync lyrics", keep = 30, controls.onResync) { icon ->
-        Image(rememberVectorPainter(SpicyIcons.Resync), null, Modifier.size(icon(23f)))
+        ResyncGlyph(Modifier.size(icon(23f)))
     })
     if (showExpand) add(FloatingAction(if (expanded) "Show lyrics" else "Show the cover", keep = 70, onToggleExpanded) { icon ->
         ExpandGlyph(expanded, Modifier.size(icon(23f)))
@@ -543,24 +542,24 @@ private fun floatingActions(
         SwapSideGlyph(coverOnRight, Modifier.size(icon(23f)))
     })
     if (onOpenLyricsManager != null) add(FloatingAction("Lyrics Manager", keep = 50, onOpenLyricsManager) { icon ->
-        Image(rememberVectorPainter(SpicyIcons.LyricsManager), null, Modifier.size(icon(23f)))
+        LyricsManagerGlyph(Modifier.size(icon(23f)))
     })
     if (onOpenSource != null) add(FloatingAction("Lyrics source", keep = 45, onOpenSource) { icon ->
-        Image(rememberVectorPainter(Icons.Rounded.Source), null, Modifier.size(icon(23f)), colorFilter = white)
+        SourceGlyph(Modifier.size(icon(23f)))
     })
     if (onOpenQueue != null) add(FloatingAction("Queue", keep = 40, onOpenQueue) { icon ->
-        Image(rememberVectorPainter(Icons.AutoMirrored.Rounded.QueueMusic), null, Modifier.size(icon(23f)), colorFilter = white)
+        QueueGlyph(Modifier.size(icon(23f)))
     })
     controls.onRotate?.let { rotate ->
         add(FloatingAction(if (controls.rotated) "Back to portrait" else "Turn to landscape", keep = 25, rotate) { icon ->
-            Image(rememberVectorPainter(Icons.Rounded.ScreenRotation), null, Modifier.size(icon(22f)), colorFilter = white)
+            RotateGlyph(controls.rotated, Modifier.size(icon(23f)))
         })
     }
     if (onEnterPip != null) add(FloatingAction("Picture-in-picture", keep = 20, onEnterPip) { icon ->
-        Image(rememberVectorPainter(Icons.Rounded.PictureInPictureAlt), null, Modifier.size(icon(23f)), colorFilter = white)
+        PictureInPictureGlyph(Modifier.size(icon(23f)))
     })
     if (onOpenQuickSettings != null) add(FloatingAction("Quick settings", keep = 90, onOpenQuickSettings) { icon ->
-        Image(rememberVectorPainter(Icons.Rounded.Tune), null, Modifier.size(icon(24f)), colorFilter = white)
+        QuickSettingsGlyph(Modifier.size(icon(23f)))
     })
     others.forEach { action ->
         add(FloatingAction(action.name, keep = 10, { controls.onCustomAction(action.action) }) { icon ->
@@ -1083,85 +1082,6 @@ internal fun formatClock(ms: Long): String {
     return if (hours > 0L) "%d:%02d:%02d".format(hours, minutes, seconds) else "%d:%02d".format(minutes, seconds)
 }
 
-/*
- * The glyphs with a motion of their own, on the same 24-unit line grid as [SpicyIcons]. Each part
- * moves over 0.25 s (0.2 s for the corners' nudge, 0.3 s for the gear), easing out. Phones have
- * no hover, so what a pointer resting on the button would do happens while it's held.
- */
-private object Glyphs {
-    private fun nodes(path: String) = PathParser().parsePathString(path).toNodes()
-    val Gear = nodes("M10.07 5.69L10.48 3.38A8.75 8.75 0 0 1 13.52 3.38L13.93 5.69A6.6 6.6 0 0 1 15.1 6.17L17.02 4.83A8.75 8.75 0 0 1 19.17 6.98L17.83 8.9A6.6 6.6 0 0 1 18.31 10.07L20.62 10.48A8.75 8.75 0 0 1 20.62 13.52L18.31 13.93A6.6 6.6 0 0 1 17.83 15.1L19.17 17.02A8.75 8.75 0 0 1 17.02 19.17L15.1 17.83A6.6 6.6 0 0 1 13.93 18.31L13.52 20.62A8.75 8.75 0 0 1 10.48 20.62L10.07 18.31A6.6 6.6 0 0 1 8.9 17.83L6.98 19.17A8.75 8.75 0 0 1 4.83 17.02L6.17 15.1A6.6 6.6 0 0 1 5.69 13.93L3.38 13.52A8.75 8.75 0 0 1 3.38 10.48L5.69 10.07A6.6 6.6 0 0 1 6.17 8.9L4.83 6.98A8.75 8.75 0 0 1 6.98 4.83L8.9 6.17A6.6 6.6 0 0 1 10.07 5.69Z")
-    val Hub = nodes("M14.75 12a2.75 2.75 0 1 1-5.5 0a2.75 2.75 0 1 1 5.5 0Z")
-    // Four rounded corners at the edges, each with the way it nudges: outward to show the
-    // cover, toward the middle (the same corners turned inside out) to go back.
-    val ExpandCorners = listOf(
-        nodes("M3.5 8.5V6A2.5 2.5 0 0 1 6 3.5h2.5") to Offset(-1f, -1f),
-        nodes("M15.5 3.5H18A2.5 2.5 0 0 1 20.5 6v2.5") to Offset(1f, -1f),
-        nodes("M20.5 15.5V18a2.5 2.5 0 0 1-2.5 2.5h-2.5") to Offset(1f, 1f),
-        nodes("M8.5 20.5H6A2.5 2.5 0 0 1 3.5 18v-2.5") to Offset(-1f, 1f),
-    )
-    val CollapseCorners = listOf(
-        nodes("M8.5 3.5V6A2.5 2.5 0 0 1 6 8.5H3.5") to Offset(1f, 1f),
-        nodes("M20.5 8.5H18A2.5 2.5 0 0 1 15.5 6V3.5") to Offset(-1f, 1f),
-        nodes("M15.5 20.5V18a2.5 2.5 0 0 1 2.5-2.5h2.5") to Offset(-1f, -1f),
-        nodes("M3.5 15.5H6A2.5 2.5 0 0 1 8.5 18v2.5") to Offset(1f, -1f),
-    )
-    val Screen = nodes("M6 4h12a3 3 0 0 1 3 3v10a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3Z")
-    val Cover = nodes("M7.25 9.5h2.5a1.25 1.25 0 0 1 1.25 1.25v2.5a1.25 1.25 0 0 1-1.25 1.25h-2.5A1.25 1.25 0 0 1 6 13.25v-2.5A1.25 1.25 0 0 1 7.25 9.5Z")
-    val Arrow = nodes("M14 12h4m-1.75-1.75L18 12l-1.75 1.75")
-}
-
-private val GlyphEase = CubicBezierEasing(0.23f, 1f, 0.32f, 1f)
-
-@Composable
-private fun lineGlyph(content: @Composable (Float, Float) -> Unit) =
-    rememberVectorPainter(24.dp, 24.dp, 24f, 24f, content = content)
-
-@Composable
-private fun LinePath(nodes: List<PathNode>) = Path(
-    nodes,
-    stroke = SolidColor(SpicyPalette.Neutral.TextPrimary),
-    strokeLineWidth = 2f,
-    strokeLineCap = StrokeCap.Round,
-    strokeLineJoin = StrokeJoin.Round,
-)
-
-/** The gear, turning an eighth while its button is held. */
-@Composable
-private fun SettingsGlyph(modifier: Modifier) {
-    val turn by animateFloatAsState(if (LocalGlyphPressed.current) 45f else 0f, tween(300, easing = GlyphEase), label = "gear")
-    Image(lineGlyph { _, _ ->
-        Group(rotation = turn, pivotX = 12f, pivotY = 12f) { LinePath(Glyphs.Gear) }
-        LinePath(Glyphs.Hub)
-    }, null, modifier)
-}
-
-/** Corners out to show the cover, in to go back; each nudges its own way while held. */
-@Composable
-private fun ExpandGlyph(expanded: Boolean, modifier: Modifier) {
-    val nudge by animateFloatAsState(if (LocalGlyphPressed.current) 1f else 0f, tween(200, easing = GlyphEase), label = "corners")
-    val corners = if (expanded) Glyphs.CollapseCorners else Glyphs.ExpandCorners
-    Image(lineGlyph { _, _ ->
-        corners.forEach { (nodes, way) ->
-            Group(translationX = way.x * nudge, translationY = way.y * nudge) { LinePath(nodes) }
-        }
-    }, null, modifier)
-}
-
-/**
- * The screen with the cover on the side it's on now and an arrow to the other: when the cover
- * moves, it slides across and the arrow turns to point back.
- */
-@Composable
-private fun SwapSideGlyph(coverOnRight: Boolean, modifier: Modifier) {
-    val side by animateFloatAsState(if (coverOnRight) 1f else 0f, tween(250, easing = GlyphEase), label = "swapSide")
-    Image(lineGlyph { _, _ ->
-        LinePath(Glyphs.Screen)
-        Group(translationX = 7f * side) { LinePath(Glyphs.Cover) }
-        Group(rotation = 180f * side, pivotX = 16f, pivotY = 12f, translationX = -8f * side) { LinePath(Glyphs.Arrow) }
-    }, null, modifier)
-}
-
 /** The controls' glyphs, in white. */
 internal object SpicyIcons {
     val TrackSkip = icon(
@@ -1176,52 +1096,6 @@ internal object SpicyIcons {
         15f, 20f,
         "M 4.427 19.963 C 5.513 19.963 6.06 19.416 6.06 18.33 L 6.06 1.66 C 6.06 0.545 5.513 0.037 4.427 0.037 L 1.633 0.037 C 0.548 0.037 0 0.575 0 1.66 L 0 18.331 C -0.009 19.416 0.538 19.963 1.633 19.963 L 4.427 19.963 Z M 13.377 19.963 C 14.462 19.963 15 19.416 15 18.33 L 15 1.66 C 15 0.545 14.462 0.037 13.376 0.037 L 10.573 0.037 C 9.487 0.037 8.949 0.575 8.949 1.66 L 8.949 18.331 C 8.949 19.416 9.487 19.963 10.573 19.963 L 13.376 19.963 L 13.377 19.963 Z",
     )
-    // A and ア are both "a": the script a tap switches to is drawn at full strength, the one it
-    // leaves dimmed. Each letter is one path, so where its strokes meet a dimmed one isn't drawn
-    // twice (two overlapping translucent strokes would show a brighter dot there).
-    val DisableRomanization = line(DIM to LATIN_A, 1f to KANA_A)
-    val EnableRomanization = line(1f to LATIN_A, DIM to KANA_A)
-
-    /** Lucide's refresh-cw, for resyncing with the player. */
-    val Resync = lucide(
-        "M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8",
-        "M21 3v5h-5",
-        "M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16",
-        "M8 16H3v5",
-    )
-
-    /** A lyric sheet in front of another, for the Lyrics Manager. */
-    val LyricsManager = lucide(
-        "M8 3h8.5A2.5 2.5 0 0 1 19 5.5V16",
-        "M7.5 6h6a2.5 2.5 0 0 1 2.5 2.5v10a2.5 2.5 0 0 1-2.5 2.5h-6a2.5 2.5 0 0 1-2.5-2.5v-10a2.5 2.5 0 0 1 2.5-2.5Z",
-        "M8 10.5h5", "M8 14h5", "M8 17.5h3",
-    )
-
-    /** A line icon: 24-unit paths stroked 2 units wide with round caps and joins. */
-    private fun lucide(vararg paths: String): ImageVector = line(*paths.map { 1f to it }.toTypedArray())
-
-    /** [lucide], each path at its own alpha. */
-    private fun line(vararg paths: Pair<Float, String>): ImageVector =
-        ImageVector.Builder(defaultWidth = 24.dp, defaultHeight = 24.dp, viewportWidth = 24f, viewportHeight = 24f)
-            .apply {
-                paths.forEach { (alpha, path) ->
-                    addPath(
-                        PathParser().parsePathString(path).toNodes(),
-                        stroke = SolidColor(SpicyPalette.Neutral.TextPrimary),
-                        strokeAlpha = alpha,
-                        strokeLineWidth = 2f,
-                        strokeLineCap = StrokeCap.Round,
-                        strokeLineJoin = StrokeJoin.Round,
-                    )
-                }
-            }
-            .build()
-
-    /** How strongly the script a romanize tap leaves is drawn. */
-    private const val DIM = 0.4f
-    private const val LATIN_A = "M2.5 18 6.75 6 11 18M4 14h5.5"
-    private const val KANA_A = "M13.5 6.5h8L19 9.75M17.25 9.75v1.75c0 2.75-1.25 5-3.75 6.5"
-
     private fun icon(width: Float, height: Float, vararg paths: String): ImageVector =
         ImageVector.Builder(defaultWidth = width.dp, defaultHeight = height.dp, viewportWidth = width, viewportHeight = height)
             .apply { paths.forEach { addPath(PathParser().parsePathString(it).toNodes(), fill = SolidColor(Color.White)) } }

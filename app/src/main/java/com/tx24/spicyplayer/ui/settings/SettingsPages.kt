@@ -1,6 +1,6 @@
 package com.tx24.spicyplayer.ui.settings
 
-import androidx.compose.material.icons.rounded.ScreenRotation
+import com.tx24.spicyplayer.ui.components.SpicyGlyphs
 import com.tx24.spicyplayer.ui.components.drawBrandRamp
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clip
@@ -47,7 +47,6 @@ import kotlin.math.abs
 import com.tx24.spicyplayer.ui.background.LEGACY_BLUR_DP
 import com.tx24.spicyplayer.ui.components.ChromeTheme
 import androidx.compose.material.icons.rounded.Apps
-import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.automirrored.rounded.CallMerge
 
 import androidx.compose.material.icons.rounded.PauseCircle
@@ -61,7 +60,6 @@ import com.tx24.spicyplayer.backup.SettingsBackup
 import com.tx24.spicyplayer.backup.SettingsBackupStore
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Tune
-import androidx.compose.material.icons.rounded.OpenInFull
 import com.tx24.spicyplayer.ui.nowplaying.HeaderSize
 import android.content.ClipboardManager
 import androidx.compose.foundation.background
@@ -117,8 +115,6 @@ import androidx.compose.material.icons.rounded.AspectRatio
 import androidx.compose.material.icons.rounded.Crop
 import androidx.compose.material.icons.rounded.Lyrics
 import java.util.Locale
-import androidx.compose.material.icons.rounded.PictureInPictureAlt
-import androidx.compose.material.icons.rounded.Source
 import androidx.compose.material.icons.rounded.StayCurrentPortrait
 import androidx.compose.material.icons.rounded.Fullscreen
 import androidx.compose.material.icons.rounded.TouchApp
@@ -718,35 +714,35 @@ internal fun ControlsContent(settings: AppSettings) {
             checked = settings.resyncButton,
             onCheckedChange = { settings.resyncButton = it },
             description = "Show the button that snaps the lyrics back in time with the player.",
-            icon = Icons.Rounded.Sync,
+            icon = SpicyGlyphs.Resync,
         )
         ToggleRow(
             label = "Expand button",
             checked = settings.expandButton,
             onCheckedChange = { settings.expandButton = it },
             description = "Show the button that opens the big cover. It stays while the cover is open, to get back.",
-            icon = Icons.Rounded.OpenInFull,
+            icon = SpicyGlyphs.Expand,
         )
         ToggleRow(
             label = "Quick settings button",
             checked = settings.quickSettingsButton,
             onCheckedChange = { settings.quickSettingsButton = it },
             description = "Show the button that opens the delays, the Lyrics Manager and the queue without leaving the lyrics.",
-            icon = Icons.Rounded.Tune,
+            icon = SpicyGlyphs.QuickSettings,
         )
         ToggleRow(
             label = "Rotate button",
             checked = settings.rotateButton,
             onCheckedChange = { settings.rotateButton = it },
             description = "Show the button that turns the lyrics to landscape and back, even with rotation locked.",
-            icon = Icons.Rounded.ScreenRotation,
+            icon = SpicyGlyphs.Rotate,
         )
         ToggleRow(
             label = "Floating lyrics button",
             checked = settings.pipButton,
             onCheckedChange = { settings.pipButton = it },
             description = "Show the button that shrinks the lyrics into a small floating window, over other apps.",
-            icon = Icons.Rounded.PictureInPictureAlt,
+            icon = SpicyGlyphs.PictureInPicture,
             enabled = PictureInPicture.supported(LocalContext.current),
         )
         ToggleRow(
@@ -754,21 +750,21 @@ internal fun ControlsContent(settings: AppSettings) {
             checked = settings.lyricsManagerButton,
             onCheckedChange = { settings.lyricsManagerButton = it },
             description = "Show its own button for the Lyrics Manager. It's always in quick settings and This song.",
-            icon = Icons.Rounded.LibraryMusic,
+            icon = SpicyGlyphs.LyricsManager,
         )
         ToggleRow(
             label = "Queue button",
             checked = settings.queueButton,
             onCheckedChange = { settings.queueButton = it },
             description = "Show its own button for the player's queue, while it shares one. It's always in quick settings.",
-            icon = Icons.AutoMirrored.Rounded.QueueMusic,
+            icon = SpicyGlyphs.Queue,
         )
         ToggleRow(
             label = "Lyrics source button",
             checked = settings.sourceButton,
             onCheckedChange = { settings.sourceButton = it },
             description = "Show its own button for choosing this song's lyrics source. It's always in quick settings.",
-            icon = Icons.Rounded.Source,
+            icon = SpicyGlyphs.Source,
         )
     }
 }
@@ -847,7 +843,7 @@ internal fun DeviceContent(settings: AppSettings) {
         val supported = PictureInPicture.supported(LocalContext.current)
         SubPageRow(
             SettingsPage.FloatingLyrics,
-            Icons.Rounded.PictureInPictureAlt,
+            SpicyGlyphs.PictureInPicture,
             when {
                 !supported -> "Not available on this phone"
                 settings.autoPip -> "Opens when you leave the app · ${settings.pipShape.name}"
@@ -890,7 +886,7 @@ internal fun FloatingLyricsContent(settings: AppSettings) {
         checked = settings.autoPip,
         onCheckedChange = { settings.autoPip = it },
         description = "Leave the app while a song plays and the lyrics shrink into a small floating window.",
-        icon = Icons.Rounded.PictureInPictureAlt,
+        icon = SpicyGlyphs.PictureInPicture,
         enabled = supported,
     )
     SettingRow(
