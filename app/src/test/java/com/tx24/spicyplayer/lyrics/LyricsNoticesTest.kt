@@ -20,6 +20,24 @@ class LyricsNoticesTest {
         assertEquals("2 sources had none. Couldn't check MUSIXMATCH (HTTP 503)", error.detail)
     }
 
+    @Test fun anOfflinePhoneIsOfflineWhateverTheSourcesSay() {
+        // Offline for a while, the sources back off and answer "cooling down"; a local one has none.
+        val error = LyricsNotices.noLyrics(
+            listOf(
+                ProviderAttempt("local", ProviderAttemptOutcome.MISS),
+                ProviderAttempt("spicy_lyrics", ProviderAttemptOutcome.COOLING_DOWN),
+                ProviderAttempt("lrclib", ProviderAttemptOutcome.UNAVAILABLE, failureCategory = ProviderFailureCategory.NETWORK),
+            ),
+            offline = true,
+        ) { it.uppercase() }
+        assertEquals(NoticeKind.Offline, error.kind)
+    }
+
+    @Test fun anOfflinePhoneWhoseSourcesAllAnsweredIsNoLyrics() {
+        val error = LyricsNotices.noLyrics(listOf(ProviderAttempt("local", ProviderAttemptOutcome.MISS)), offline = true) { it }
+        assertEquals(NoticeKind.NoLyrics, error.kind)
+    }
+
     @Test fun everySourceOfflineAsksToGoOnline() {
         val error = notice(
             ProviderAttempt("lrclib", ProviderAttemptOutcome.UNAVAILABLE, failureCategory = ProviderFailureCategory.NETWORK),

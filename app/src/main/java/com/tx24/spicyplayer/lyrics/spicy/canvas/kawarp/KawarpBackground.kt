@@ -337,7 +337,7 @@ fun KawarpBackground(
         frames.collect { frame ->
             val blurStart = System.nanoTime()
             val pixels = withContext(Dispatchers.Default) {
-                KawarpBlurCore.processFast(argbToFloats(frame.pixels), frame.width, frame.height, blurPasses)
+                KawarpBlurCore.processFast(argbToFloatsUpsideDown(frame.pixels, frame.width, frame.height), frame.width, frame.height, blurPasses)
             }
             val blurNanos = System.nanoTime() - blurStart
             // What's on screen now becomes the picture the new frame eases in from.
@@ -455,14 +455,24 @@ private class AlbumPixels {
     }
 }
 
-private fun argbToFloats(ints: IntArray): FloatArray {
+/**
+ * A video frame as floats, bottom row first. The still cover goes in top row first and so shows
+ * upside down, as it does in a browser (images are uploaded without flipping); video frames are
+ * flipped on upload there, so the video background shows upright. Same here.
+ */
+private fun argbToFloatsUpsideDown(ints: IntArray, width: Int, height: Int): FloatArray {
     val out = FloatArray(ints.size * 4)
-    for (i in ints.indices) {
-        val p = ints[i]
-        out[i * 4] = ((p shr 16) and 0xFF) / 255f
-        out[i * 4 + 1] = ((p shr 8) and 0xFF) / 255f
-        out[i * 4 + 2] = (p and 0xFF) / 255f
-        out[i * 4 + 3] = ((p ushr 24) and 0xFF) / 255f
+    for (y in 0 until height) {
+        val from = (height - 1 - y) * width
+        val to = y * width * 4
+        for (x in 0 until width) {
+            val p = ints[from + x]
+            val o = to + x * 4
+            out[o] = ((p shr 16) and 0xFF) / 255f
+            out[o + 1] = ((p shr 8) and 0xFF) / 255f
+            out[o + 2] = (p and 0xFF) / 255f
+            out[o + 3] = ((p ushr 24) and 0xFF) / 255f
+        }
     }
     return out
 }

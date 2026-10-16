@@ -164,7 +164,7 @@ import com.tx24.spicyplayer.ui.nowplaying.CompactNowPlayingHeader
 import com.tx24.spicyplayer.ui.nowplaying.LyricsNotice
 import com.tx24.spicyplayer.ui.nowplaying.NoticeActions
 import com.tx24.spicyplayer.ui.nowplaying.PipSongCard
-import com.tx24.spicyplayer.ui.nowplaying.PipTitleStrip
+import com.tx24.spicyplayer.ui.nowplaying.PipDock
 import com.tx24.spicyplayer.ui.settings.PipWithoutLyrics
 import com.tx24.spicyplayer.ui.settings.debugReport
 import com.tx24.spicyplayer.ui.nowplaying.MotionCoverQuery
@@ -1204,7 +1204,9 @@ private fun PipLyrics(
             PipSongCard(state.title, state.artist, state.artwork, state.artworkUri, hasSession = state.sourcePackage != null)
             return@BoxWithConstraints
         }
-        val stripHeight = if (settings.pipAspect <= 1f) (maxHeight * 0.12f).coerceIn(18.dp, 28.dp) else 0.dp
+        // Square or taller, the song docks along the bottom, under the lyrics.
+        val dock = settings.pipAspect <= 1f
+        Column(Modifier.fillMaxSize()) {
         LyricsPanel(
             lyrics = state.lyrics,
             translation = state.translation.takeIf { state.translationEnabled },
@@ -1223,12 +1225,13 @@ private fun PipLyrics(
             config = config,
             fontSizeScale = fontScale,
             noticeActions = null,
-            modifier = Modifier.fillMaxWidth().height(maxHeight - stripHeight),
+            modifier = Modifier.fillMaxWidth().weight(1f),
             // The page's edge fade is 64dp deep: all of a window this small.
             maskScale = 0.25f,
         )
-        if (stripHeight > 0.dp) {
-            PipTitleStrip(state.title, state.artist, stripHeight, Modifier.align(Alignment.BottomCenter))
+        if (dock) {
+            PipDock(state.title, state.artist, viewModel::currentPositionMs, state.durationMs, state.isPlaying)
+        }
         }
     }
 }

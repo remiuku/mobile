@@ -111,7 +111,7 @@ internal fun LyricsNotice(
  * code in small monospace. Centred, at most 34em of body text wide, rising in over 350 ms. On a box
  * narrower than 360dp it's left-aligned with a smaller title. Text is sized off the box's width.
  * [bottomPx] is how much of the box's bottom the controls cover right now; the notice moves up by
- * half of it while there's room.
+ * half of it, or far enough to clear it when the notice is tall, while there's room.
  *
  * [compact], for the floating window: the title alone, stepped down until two lines fit the
  * window's height, and the detail's first sentence on one line if there's room under it.
@@ -162,9 +162,11 @@ internal fun LyricsNotice(
                         .width(width)
                         .onSizeChanged { contentHeightPx = it.height }
                         .graphicsLayer {
-                            // Up by half the covered strip, as far as the space above allows.
+                            // Up by half the covered strip, or as far as it takes to clear the
+                            // strip when the notice is tall, as far as the space above allows.
                             val room = ((boxHeightPx - contentHeightPx) / 2f).coerceAtLeast(0f)
-                            translationY = -minOf(bottomPx() / 2f, room)
+                            val covered = bottomPx()
+                            translationY = -minOf(maxOf(covered / 2f, covered - room), room)
                         }
                         .then(enter),
                     horizontalAlignment = if (narrow) Alignment.Start else Alignment.CenterHorizontally,

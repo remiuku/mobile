@@ -85,7 +85,7 @@ internal object LyricsNotices {
     )
 
     /** For a finished lookup that picked nothing. [nameOf] turns a source id into its display name. */
-    fun noLyrics(attempts: List<ProviderAttempt>, nameOf: (String) -> String): LyricsState.Error {
+    fun noLyrics(attempts: List<ProviderAttempt>, offline: Boolean = false, nameOf: (String) -> String): LyricsState.Error {
         // A blend is built from other sources' answers, not asked itself, so it isn't counted.
         val asked = attempts.filter {
             it.outcome != ProviderAttemptOutcome.DISABLED && it.outcome != ProviderAttemptOutcome.SKIPPED &&
@@ -101,6 +101,9 @@ internal object LyricsNotices {
 
         return when {
             failed.isEmpty() -> LyricsState.Error(NoticeKind.NoLyrics, "Checked $sources, none had it")
+            // The phone itself is offline: the sources' own reasons (a backoff after the first
+            // failures, say) would only hide that.
+            offline -> LyricsState.Error(NoticeKind.Offline, "Couldn't reach $failures")
             answered > 0 -> LyricsState.Error(NoticeKind.NoLyrics, "${plural(answered, "source")} had none. Couldn't check $failures")
             failed.all { it.failureCategory == ProviderFailureCategory.NETWORK || it.failureCategory == ProviderFailureCategory.TIMEOUT } ->
                 LyricsState.Error(NoticeKind.Offline, "Couldn't reach $failures")

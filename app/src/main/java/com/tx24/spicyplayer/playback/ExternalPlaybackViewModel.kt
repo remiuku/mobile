@@ -1,5 +1,7 @@
 package com.tx24.spicyplayer.playback
 
+import android.net.NetworkCapabilities
+import android.net.ConnectivityManager
 import com.tx24.spicyplayer.analytics.UsageCounter
 import com.tx24.spicyplayer.analytics.UsageStats
 import android.net.Uri
@@ -29,6 +31,7 @@ import com.tx24.spicyplayer.lyrics.LyricsFolder
 import com.tx24.spicyplayer.network.data.providers.CustomLyricsSource
 import com.tx24.spicyplayer.lyrics.LyricsNotices
 import com.tx24.spicyplayer.lyrics.LyricsState
+import com.tx24.spicyplayer.lyrics.NoticeKind
 import com.tx24.spicyplayer.lyrics.NextLyricsBackend
 import com.tx24.spicyplayer.lyrics.RemoteLyricsAdapter
 import com.tx24.spicyplayer.network.data.LyricsLookupRequest
@@ -1304,6 +1307,13 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
             }
     }
 
+    /** Whether the phone has no working internet connection right now. */
+    private fun deviceOffline(): Boolean {
+        val connectivity = getApplication<Application>().getSystemService(ConnectivityManager::class.java) ?: return false
+        val capabilities = connectivity.getNetworkCapabilities(connectivity.activeNetwork) ?: return true
+        return !capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+    }
+
     /**
      * [settle]: a track change that follows another within [TRACK_SETTLE_MS] waits that long before
      * any request, so skipping through tracks costs nothing (the wait is cancelled by the next
@@ -1390,7 +1400,7 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
                 .onFailure { error ->
                     if (error is CancellationException) throw error
                     mutableState.value = mutableState.value.copy(
-                        lyrics = LyricsNotices.lookupFailed(error),
+                        lyrics = if (deviceOffline()) LyricsState.Error(NoticeKind.Offline) else LyricsNotices.lookupFailed(error),
                         lookupStatus = "Lyric lookup failed",
                     )
                 }
@@ -1484,7 +1494,7 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
         val lyrics = when {
             // Nothing picked yet: whatever is up stays up until the lookup ends.
             selection == null && !final -> mutableState.value.lyrics
-            selection == null -> LyricsNotices.noLyrics(resolution.attempts) { id ->
+            selection == null -> LyricsNotices.noLyrics(resolution.attempts, offline = deviceOffline()) { id ->
                 lyricsBackend.descriptors.firstOrNull { it.id == id }?.displayName ?: id
             }
             selection == shownSelection -> mutableState.value.lyrics

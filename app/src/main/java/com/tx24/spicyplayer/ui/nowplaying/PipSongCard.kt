@@ -1,5 +1,13 @@
 package com.tx24.spicyplayer.ui.nowplaying
 
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.runtime.withFrameMillis
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.foundation.Canvas
 import android.graphics.Bitmap
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -47,16 +55,17 @@ internal fun PipSongCard(
     modifier: Modifier = Modifier,
 ) {
     val cover = rememberSessionArtwork(artwork, artworkUri, maxDimension = PIP_ARTWORK_MAX_PX, hasSession = hasSession)
-    BoxWithConstraints(modifier.fillMaxSize().padding(12.dp), contentAlignment = Alignment.Center) {
+    BoxWithConstraints(modifier.fillMaxSize().padding(10.dp), contentAlignment = Alignment.Center) {
         val wide = maxWidth > maxHeight * 1.2f
-        val coverSize = if (wide) minOf(maxHeight * 0.8f, maxWidth * 0.4f) else minOf(maxWidth * 0.7f, maxHeight * 0.55f)
-        val textSp = (minOf(maxWidth, maxHeight).value / 9f).coerceIn(11f, 22f)
+        // Wide: the cover takes the window's whole height, the text the rest of its width.
+        val coverSize = if (wide) minOf(maxHeight, maxWidth * 0.45f) else minOf(maxWidth * 0.7f, maxHeight * 0.55f)
+        val textSp = if (wide) (maxHeight.value / 6.5f).coerceIn(13f, 26f) else (minOf(maxWidth, maxHeight).value / 9f).coerceIn(11f, 22f)
         val titleStyle = SpicyType.Body.copy(fontSize = textSp.sp, fontWeight = FontWeight.Bold, lineHeight = 1.2.em)
         val artistStyle = SpicyType.Body.copy(fontSize = (textSp * 0.82f).sp, color = SpicyColors.TextSecondary, lineHeight = 1.2.em)
         if (wide) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Cover(cover?.bitmap, coverSize)
-                Column {
+                Column(Modifier.weight(1f)) {
                     Text(title, style = titleStyle, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     Text(artist, style = artistStyle, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
@@ -88,26 +97,67 @@ private fun Cover(bitmap: Bitmap?, size: Dp) {
 }
 
 /**
- * The song's "title · artist" on one line along the bottom of a square or tall floating window,
- * over a light scrim, [height] tall.
+ * The song along the bottom of a square or tall floating window, docked like a player: the title,
+ * the artist under it, then a thin timeline with the time played and the song's length under its
+ * ends. Sized off the window's width, over a scrim that keeps it legible on a bright background.
  */
 @Composable
-internal fun PipTitleStrip(title: String, artist: String, height: Dp, modifier: Modifier = Modifier) {
-    Box(
+internal fun PipDock(
+    title: String,
+    artist: String,
+    positionMs: () -> Long,
+    durationMs: Long,
+    isPlaying: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    // Ticks while playing; paused, the timeline holds still.
+    var now by remember { mutableLongStateOf(positionMs()) }
+    LaunchedEffect(isPlaying) {
+        now = positionMs()
+        while (isPlaying) {
+            withFrameMillis { now = positionMs() }
+        }
+    }
+    BoxWithConstraints(
         modifier
             .fillMaxWidth()
-            .height(height)
-            .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.45f)))),
-        contentAlignment = Alignment.Center,
+            .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.35f)))),
     ) {
-        Text(
-            listOf(title, artist).filter { it.isNotBlank() }.joinToString(" · "),
-            modifier = Modifier.padding(horizontal = 10.dp),
-            style = SpicyType.Caption.copy(fontSize = (height.value * 0.42f).sp, color = SpicyColors.TextSecondary, fontWeight = FontWeight.Medium),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+        val sp = (maxWidth.value * 0.05f).coerceIn(11f, 18f)
+        val gutter = maxWidth * 0.06f
+        Column(Modifier.fillMaxWidth().padding(start = gutter, end = gutter, top = 6.dp, bottom = gutter * 0.6f)) {
+            Text(
+                title,
+                style = SpicyType.Body.copy(fontSize = sp.sp, fontWeight = FontWeight.Bold, lineHeight = 1.15.em),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                artist,
+                style = SpicyType.Body.copy(fontSize = (sp * 0.72f).sp, color = SpicyColors.TextSecondary, lineHeight = 1.2.em),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            val progress = if (durationMs > 0) (now.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
+            Canvas(Modifier.fillMaxWidth().padding(top = (sp * 0.6f).dp).height((sp * 0.28f).dp.coerceAtLeast(3.dp))) {
+                val radius = CornerRadius(size.height / 2f)
+                drawRoundRect(Color.White.copy(alpha = 0.25f), cornerRadius = radius)
+                drawRoundRect(Color.White.copy(alpha = 0.9f), size = size.copy(width = size.width * progress), cornerRadius = radius)
+            }
+            Row(Modifier.fillMaxWidth().padding(top = 3.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                val timeStyle = SpicyType.Caption.copy(fontSize = (sp * 0.6f).sp, color = SpicyColors.TextSecondary, fontWeight = FontWeight.Medium)
+                Text(clock(now), style = timeStyle)
+                if (durationMs > 0) Text(clock(durationMs), style = timeStyle)
+            }
+        }
     }
+}
+
+/** "2:33", or "1:02:05" past an hour. */
+private fun clock(ms: Long): String {
+    val total = (ms / 1000).coerceAtLeast(0)
+    val (h, m, sec) = Triple(total / 3600, total / 60 % 60, total % 60)
+    return if (h > 0) "%d:%02d:%02d".format(h, m, sec) else "%d:%02d".format(m, sec)
 }
 
 private const val PIP_ARTWORK_MAX_PX = 512
