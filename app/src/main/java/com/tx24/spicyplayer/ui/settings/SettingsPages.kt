@@ -105,6 +105,7 @@ import androidx.compose.material.icons.rounded.BlurOn
 import androidx.compose.material.icons.rounded.Flare
 import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.Wallpaper
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.BlurLinear
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.CalendarMonth
@@ -539,6 +540,13 @@ internal fun BackgroundContent(settings: AppSettings) {
             }
         }
     }
+    ToggleRow(
+        label = "Refined Background",
+        checked = settings.refinedBackground,
+        onCheckedChange = { settings.refinedBackground = it },
+        description = "Crossfade background changes, keep the image's edges, and deepen Cover Colors.",
+        icon = Icons.Rounded.AutoAwesome,
+    )
     if (type == BackgroundType.CoverArt) {
         ToggleRow(
             label = "Animated Background",

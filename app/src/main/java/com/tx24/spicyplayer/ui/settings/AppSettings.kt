@@ -106,6 +106,11 @@ class AppSettings(private val prefs: SharedPreferences) {
     var animatedCover by boolean("animatedCover", false)
     /** Cover Art background: the record's looping Apple Music cover in place of the still one. */
     var animatedBackground by boolean("animatedBackground", false)
+    /**
+     * Background changes crossfade in place (the type too), image backgrounds keep their edges, and
+     * Cover Colors uses the cover's two deepest shades.
+     */
+    var refinedBackground by boolean("refinedBackground", true)
 
     var keepScreenOn by boolean("keepScreenOn", true)
     /** Which of the phone's bars stay on screen. */

@@ -25,6 +25,16 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.flow.collectLatest
@@ -57,16 +67,31 @@ private const val STILL_CHANGE_MS = 850
  * A new picture slides in from the right as the old one slides out to the left. [image] null keeps
  * the one shown (nothing, at first).
  *
+ * [refined] instead fades each picture in over the one before (the first one too) and keeps the
+ * picture's edges; see [RefinedStillImageBackground]. [retired] drops a load under way and takes no
+ * new pictures, for a background on its way out.
+ *
  * The blur needs Android 12; older phones show the picture sharp.
  */
 @Composable
-fun StillImageBackground(image: SessionArtwork?, blurDp: Int, modifier: Modifier = Modifier) {
+fun StillImageBackground(
+    image: SessionArtwork?,
+    blurDp: Int,
+    modifier: Modifier = Modifier,
+    refined: Boolean = false,
+    retired: Boolean = false,
+) {
+    if (refined) {
+        RefinedStillImageBackground(image, blurDp, modifier, retired)
+        return
+    }
     var current by remember { mutableStateOf<StillPicture?>(null) }
     var incoming by remember { mutableStateOf<StillPicture?>(null) }
     val slide = remember { Animatable(0f) }
 
     val latestImage by rememberUpdatedState(image)
-    LaunchedEffect(Unit) {
+    LaunchedEffect(retired) {
+        if (retired) return@LaunchedEffect
         // A null in between (still looking up) doesn't interrupt a change under way; a newer
         // picture does, and the one that was sliding in counts as shown.
         snapshotFlow { latestImage }.filterNotNull().distinctUntilChangedBy { it.fingerprint }.collectLatest { next ->
@@ -95,16 +120,105 @@ fun StillImageBackground(image: SessionArtwork?, blurDp: Int, modifier: Modifier
 }
 
 /**
- * The record's looping animated cover over the page, graded and blurred like
- * [StillImageBackground] so it reads as the same picture, moving. It fades in once playing,
- * over the still beneath it.
+ * A refined change: the new picture fades in over the old one, which holds still beneath until
+ * it's gone, settling from a slight zoom as it arrives. Nothing is cropped for the blur: the
+ * picture overhangs the page by twice the blur on each side, so the blur's soft rim falls outside.
+ * Transparent until the first picture is in, so whatever is beneath shows through.
  */
 @Composable
-fun MotionImageBackground(url: String, blurDp: Int, onFailed: () -> Unit, modifier: Modifier = Modifier) {
+private fun RefinedStillImageBackground(image: SessionArtwork?, blurDp: Int, modifier: Modifier, retired: Boolean) {
+    val layers = remember { mutableStateListOf<FadingPicture>() }
+    // Animations and removals outlive a newer picture's arrival, so it doesn't freeze them.
+    val scope = rememberCoroutineScope()
+    val latestImage by rememberUpdatedState(image)
+    LaunchedEffect(retired) {
+        if (retired) return@LaunchedEffect
+        snapshotFlow { latestImage }.filterNotNull().distinctUntilChangedBy { it.fingerprint }.collectLatest { next ->
+            if (layers.lastOrNull()?.picture?.fingerprint == next.fingerprint) return@collectLatest
+            val picture = withContext(Dispatchers.Default) { StillPicture(next.fingerprint, filtered(next.bitmap).asImageBitmap()) }
+            val beneath = layers.toList()
+            val layer = FadingPicture(picture)
+            layers += layer
+            scope.launch { layer.alpha.animateTo(1f, tween(LAYER_FADE_MS, easing = LayerFadeEasing)) }
+            scope.launch { layer.scale.animateTo(1f, tween(LAYER_SETTLE_SCALE_MS, easing = LayerSettleEasing)) }
+            scope.launch {
+                delay(LAYER_SETTLE_MS.toLong())
+                layers.removeAll(beneath)
+            }
+        }
+    }
+
+    val blurPx = with(LocalDensity.current) { blurDp.coerceAtLeast(0) * density }
+    Box(modifier.fillMaxSize().clipToBounds()) {
+        for (layer in layers) {
+            key(layer) { RefinedStillLayer(layer, blurPx) }
+        }
+    }
+}
+
+private class FadingPicture(val picture: StillPicture) {
+    val alpha = Animatable(0f)
+    val scale = Animatable(LAYER_SETTLE_FROM)
+}
+
+@Composable
+private fun RefinedStillLayer(layer: FadingPicture, blurPx: Float) {
+    Image(
+        layer.picture.bitmap,
+        contentDescription = null,
+        contentScale = ContentScale.Crop,
+        modifier = Modifier
+            .fillMaxSize()
+            .overhang(2f * blurPx)
+            .graphicsLayer {
+                alpha = layer.alpha.value
+                scaleX = layer.scale.value
+                scaleY = layer.scale.value
+                if (blurPx > 0f && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    val radius = cssBlurToRadius(blurPx)
+                    renderEffect = BlurEffect(radius, radius, TileMode.Clamp)
+                }
+            },
+    )
+}
+
+/** Lays the content out [px] larger than its slot on every side, centred on it. */
+private fun Modifier.overhang(px: Float) = layout { measurable, constraints ->
+    val extra = px.roundToInt()
+    val placeable = measurable.measure(
+        Constraints.fixed(constraints.maxWidth + 2 * extra, constraints.maxHeight + 2 * extra),
+    )
+    layout(constraints.maxWidth, constraints.maxHeight) { placeable.place(-extra, -extra) }
+}
+
+/** A refined layer fades in over `900ms cubic-bezier(0.45, 0, 0.25, 1)`... */
+private val LayerFadeEasing = CubicBezierEasing(0.45f, 0f, 0.25f, 1f)
+private const val LAYER_FADE_MS = 900
+/** ...and settles from 1.035× over `1400ms cubic-bezier(0.23, 1, 0.32, 1)`. */
+private val LayerSettleEasing = CubicBezierEasing(0.23f, 1f, 0.32f, 1f)
+private const val LAYER_SETTLE_SCALE_MS = 1_400
+private const val LAYER_SETTLE_FROM = 1.035f
+/** The layers beneath a refined one go once it has settled. */
+internal const val LAYER_SETTLE_MS = 1_500
+
+/**
+ * The record's looping animated cover over the page, graded and blurred like
+ * [StillImageBackground] so it reads as the same picture, moving. It fades in once playing,
+ * over the still beneath it. [refined] keeps its edges like the refined still.
+ */
+@Composable
+fun MotionImageBackground(
+    url: String,
+    blurDp: Int,
+    onFailed: () -> Unit,
+    modifier: Modifier = Modifier,
+    refined: Boolean = false,
+) {
     val blurPx = with(LocalDensity.current) { blurDp.coerceAtLeast(0) * density }
     BoxWithConstraints(modifier.fillMaxSize().clipToBounds(), contentAlignment = Alignment.Center) {
-        // The loop is square: cropped to cover the page, then 1.25× like the still.
-        val side = maxOf(maxWidth, maxHeight) * 1.25f
+        // The loop is square: cropped to cover the page, then 1.25× like the still (refined: twice
+        // the blur over on each side instead).
+        val side = if (refined) maxOf(maxWidth, maxHeight) + blurDp.coerceAtLeast(0).dp * 4 else maxOf(maxWidth, maxHeight) * 1.25f
         MotionCoverVideo(
             url = url,
             visible = true,
@@ -212,10 +326,15 @@ private const val MAX_STILL_PX = 1280
  * The cover's colours as a plain page: its lighter shade over all of it, its darker shade over
  * the top 90% fading out downwards, and a light black shade rising from the bottom. The colours
  * move to a new song's over 1.5 s; with no cover the page is black.
+ *
+ * [refined] fills the page with the cover's deepest shade under its darker one, so white lyrics
+ * always read, and a new song's colours fade in over the old ones as a whole. [retired] takes no
+ * new cover.
  */
 @Composable
-fun ColorBackground(cover: SessionArtwork?, modifier: Modifier = Modifier) {
-    val colors by produceState<CoverColors?>(null, cover?.fingerprint) {
+fun ColorBackground(cover: SessionArtwork?, modifier: Modifier = Modifier, refined: Boolean = false, retired: Boolean = false) {
+    val colors by produceState<CoverColors?>(null, cover?.fingerprint, retired) {
+        if (retired) return@produceState
         val bitmap = cover?.bitmap ?: return@produceState
         value = withContext(Dispatchers.Default) {
             val small = Bitmap.createScaledBitmap(bitmap, 48, 48, true)
@@ -224,25 +343,72 @@ fun ColorBackground(cover: SessionArtwork?, modifier: Modifier = Modifier) {
             CoverColors.of(pixels)
         }
     }
+    if (refined) {
+        RefinedColorBackground(colors, modifier)
+        return
+    }
     val base by animateColorAsState(colors?.let { Color(it.minContrast) } ?: Color.Black, tween(COLOR_CHANGE_MS), label = "colorBase")
     val top by animateColorAsState(colors?.let { Color(it.highContrast) } ?: Color.Black, tween(COLOR_CHANGE_MS), label = "colorTop")
     Canvas(modifier.fillMaxSize()) {
-        drawRect(base)
-        // `height: 90%`, `mask-image: linear-gradient(to top, transparent, black 145%)`.
-        val band = size.height * 0.9f
-        drawRect(
-            Brush.verticalGradient(
-                0f to top.copy(alpha = top.alpha * (1f / 1.45f)),
-                1f to top.copy(alpha = 0f),
-                startY = 0f,
-                endY = band,
-            ),
-            topLeft = Offset.Zero,
-            size = Size(size.width, band),
-        )
-        // `opacity: 0.3; linear-gradient(to top, black, transparent)`.
-        drawRect(Brush.verticalGradient(0f to Color.Transparent, 1f to Color.Black.copy(alpha = 0.3f)))
+        drawShades(base, top)
+        drawBottomShade()
     }
 }
 
+/** Each new set of colours fades in over the ones before as one layer; those go once it's in. */
+@Composable
+private fun RefinedColorBackground(colors: CoverColors?, modifier: Modifier) {
+    val layers = remember { mutableStateListOf<FadingColors>() }
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(colors) {
+        val next = colors ?: return@LaunchedEffect
+        if (layers.lastOrNull()?.colors == next) return@LaunchedEffect
+        val beneath = layers.toList()
+        val layer = FadingColors(next)
+        layers += layer
+        scope.launch {
+            layer.alpha.animateTo(1f, tween(COLOR_CHANGE_MS, easing = CssEase))
+            layers.removeAll(beneath)
+        }
+    }
+    Box(modifier.fillMaxSize().background(Color.Black)) {
+        for (layer in layers) {
+            key(layer) {
+                Canvas(Modifier.fillMaxSize().graphicsLayer { alpha = layer.alpha.value }) {
+                    drawShades(Color(layer.colors.higherContrast), Color(layer.colors.highContrast))
+                }
+            }
+        }
+        Canvas(Modifier.fillMaxSize()) { drawBottomShade() }
+    }
+}
+
+private class FadingColors(val colors: CoverColors) {
+    val alpha = Animatable(0f)
+}
+
+/** [base] over the page, and [top] over its top 90% fading out downwards. */
+private fun DrawScope.drawShades(base: Color, top: Color) {
+    drawRect(base)
+    // `height: 90%`, `mask-image: linear-gradient(to top, transparent, black 145%)`.
+    val band = size.height * 0.9f
+    drawRect(
+        Brush.verticalGradient(
+            0f to top.copy(alpha = top.alpha * (1f / 1.45f)),
+            1f to top.copy(alpha = 0f),
+            startY = 0f,
+            endY = band,
+        ),
+        topLeft = Offset.Zero,
+        size = Size(size.width, band),
+    )
+}
+
+/** `opacity: 0.3; linear-gradient(to top, black, transparent)`. */
+private fun DrawScope.drawBottomShade() {
+    drawRect(Brush.verticalGradient(0f to Color.Transparent, 1f to Color.Black.copy(alpha = 0.3f)))
+}
+
 private const val COLOR_CHANGE_MS = 1_500
+/** CSS's default `ease`, which a colour transition runs on. */
+private val CssEase = CubicBezierEasing(0.25f, 0.1f, 0.25f, 1f)

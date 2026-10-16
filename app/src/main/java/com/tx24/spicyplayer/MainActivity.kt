@@ -823,6 +823,7 @@ private fun LyricsApp(
                         artistHeaderUrl = state.artistHeaderUrl,
                         artistHeaderPending = state.artistHeaderPending,
                         speed = if (beatReactive) viewModel::backgroundSpeed else null,
+                        refined = settings.refinedBackground,
                         motionCoverUrl = backgroundMotionUrl?.takeIf { it != failedBackgroundMotionUrl },
                         onMotionCoverFailed = {
                             failedBackgroundMotionUrl = backgroundMotionUrl
@@ -1182,6 +1183,7 @@ private fun PipLyrics(
             blurDp = settings.backgroundBlurFor(settings.backgroundType),
             artistHeaderUrl = state.artistHeaderUrl,
             artistHeaderPending = state.artistHeaderPending,
+            refined = settings.refinedBackground,
         )
         val songCard = !settings.pipShowLyrics ||
             (state.lyrics is LyricsState.Error && settings.pipWithoutLyrics == PipWithoutLyrics.SongCard)

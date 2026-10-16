@@ -96,6 +96,7 @@ fun configSnapshot(settings: AppSettings): Map<String, Any> = with(settings) {
         "release_year" to releaseYearPosition.name,
         "animated_cover" to animatedCover,
         "animated_background" to animatedBackground,
+        "refined_background" to refinedBackground,
         "keep_screen_on" to keepScreenOn,
         "auto_pip" to autoPip,
         "pip_shape" to pipShape.name,
