@@ -78,6 +78,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.animation.core.spring
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -620,6 +622,104 @@ fun CoverControls(
         }
     }
 }
+
+/**
+ * The cover stage's dock, laid along the bottom of a box as wide as the cover, like a video
+ * player's: [metadata] (the song), the timeline with its times under it, and the transport. The
+ * transport and the glass buttons (in the box's top outer corner) fade with [shown]; while they're
+ * gone the song and timeline settle into the transport's place, and they rise again with the
+ * controls, falling back only once those have faded. [onRight] puts the buttons in the top right.
+ * Off [interactive], the timeline and transport leave touches to the stage, which brings the
+ * controls up.
+ */
+@Composable
+fun StageControls(
+    controls: PlaybackControlsState,
+    romanizeAvailable: Boolean,
+    romanized: Boolean,
+    onToggleRomanize: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onOpenLyricsManager: (() -> Unit)?,
+    onOpenQueue: (() -> Unit)?,
+    onOpenSource: (() -> Unit)?,
+    onOpenQuickSettings: (() -> Unit)?,
+    expanded: Boolean,
+    onToggleExpanded: () -> Unit,
+    onSwapSide: (() -> Unit)?,
+    shown: () -> Float,
+    interactive: Boolean,
+    onRight: Boolean,
+    metadata: @Composable () -> Unit,
+    modifier: Modifier = Modifier,
+    onEnterPip: (() -> Unit)? = null,
+    showResync: Boolean = true,
+    showExpand: Boolean = true,
+) {
+    val shuffle = controls.customActions.firstOrNull { it.kind == ActionKind.Shuffle }
+    val repeat = controls.customActions.firstOrNull { it.kind == ActionKind.Repeat }
+    val others = controls.customActions.filter { it.kind == ActionKind.Other }
+    val up by remember { derivedStateOf { shown() > 0f } }
+    // A critically damped 2.5 Hz spring.
+    val lift by animateFloatAsState(if (up) 1f else 0f, spring(dampingRatio = 1f, stiffness = 247f), label = "dockLift")
+    val gone by remember { derivedStateOf { shown() == 0f && lift == 0f } }
+    var reservePx by remember { mutableIntStateOf(0) }
+    BoxWithConstraints(modifier.fillMaxSize()) {
+        val side = maxWidth
+        val gutter = side * STAGE_GUTTER
+        if (!gone) Box(
+            Modifier
+                .align(if (onRight) Alignment.TopEnd else Alignment.TopStart)
+                .padding(top = gutter + side * 0.01f, start = gutter, end = gutter)
+                // Drops in from the top while the dock rises from the bottom.
+                .graphicsLayer {
+                    alpha = shown() * 0.985f
+                    translationY = -(1f - lift) * side.toPx() * 0.015f
+                },
+        ) {
+            FloatingButtons(
+                floatingActions(controls, others, romanizeAvailable, romanized, onToggleRomanize, onOpenSettings, onOpenLyricsManager, onOpenQuickSettings, expanded, onToggleExpanded, onSwapSide, showResync, showExpand, onOpenQueue = onOpenQueue, onOpenSource = onOpenSource, onEnterPip = onEnterPip),
+                side - gutter * 2, minSize = COVER_BUTTON_MIN, maxSize = COVER_BUTTON_MAX, minGap = COVER_BUTTON_GAP, maxGap = SpicySpacing.S3,
+            )
+        }
+        Box(
+            Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .padding(start = gutter, end = gutter, bottom = side * STAGE_BOTTOM),
+        ) {
+            Column(Modifier.fillMaxWidth()) {
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .graphicsLayer { translationY = (1f - lift) * (reservePx + side.toPx() * STAGE_GAP) },
+                    horizontalAlignment = if (onRight) Alignment.End else Alignment.Start,
+                ) {
+                    metadata()
+                    Spacer(Modifier.height(side * STAGE_GAP))
+                    Timeline(controls, { 1f }, Modifier)
+                }
+                Spacer(Modifier.height(side * STAGE_GAP))
+                PlaybackRow(
+                    controls, shuffle, repeat,
+                    Modifier
+                        .onSizeChanged { reservePx = it.height }
+                        .graphicsLayer { alpha = shown() * 0.985f },
+                    skipWidth = side * 0.15f, fillSlots = true,
+                )
+            }
+            if (!interactive) {
+                Box(Modifier.matchParentSize().pointerInput(Unit) {
+                    awaitPointerEventScope { while (true) awaitPointerEvent().changes.forEach { it.consume() } }
+                })
+            }
+        }
+    }
+}
+
+/** The dock's measures against the cover's width: its side gutter, bottom margin and row gap. */
+private const val STAGE_GUTTER = 0.04f
+private const val STAGE_BOTTOM = 0.05f
+private const val STAGE_GAP = 0.025f
 
 private val SIDE_MARGIN = 28.dp
 /** The bottom controls' widest, so they don't stretch across a landscape or tablet screen. */

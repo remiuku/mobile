@@ -82,6 +82,22 @@ data class LandscapeMetrics(
         )
     }
 
+    /** The cover stage's soft edge toward the lyrics: 45% of the cover. */
+    val stageFeatherPx = coverSizePx * 0.45f
+
+    /** The panel's side of the page from its outer edge: the edge gap and the cover. The stage is solid this far. */
+    val stageSolidPx = edgeSpacingPx + coverSizePx
+
+    /** The stage, from the page's outer edge to where its feather has faded out over the lyrics. */
+    val stageWidthPx = stageSolidPx + stageFeatherPx
+
+    /** The stage's dock is as wide as the cover and sits 1% of it in from the page's outer edge. */
+    val dockInsetPx = coverSizePx * 0.01f
+
+    /** The song over the stage is a caption: the name 1.5x the panel text's base size on a 1.2 line, the artists 1.05x on 1.35. */
+    val stageTitleSizeSp get() = panel.titleSizeSp / 2.25f * 1.5f
+    val stageArtistsSizeSp get() = panel.artistsSizeSp / 1.275f * 1.05f
+
     /**
      * Where the lyrics go beside the panel, [panelOnRight] or left (or across the page without it,
      * [withPanel] off), as a box whose own 5% column inset puts the text at the page's lyric

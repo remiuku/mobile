@@ -67,6 +67,8 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.Animatable
+import kotlinx.coroutines.coroutineScope
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -147,6 +149,7 @@ import com.tx24.spicyplayer.ui.components.SpicyModalNotes
 import com.tx24.spicyplayer.ui.components.SpicyVersionRow
 import com.tx24.spicyplayer.ui.controls.ActionKind
 import com.tx24.spicyplayer.ui.controls.CoverControls
+import com.tx24.spicyplayer.ui.controls.StageControls
 import com.tx24.spicyplayer.ui.settings.QuickScreen
 import com.tx24.spicyplayer.ui.settings.QuickSettingsModal
 import com.tx24.spicyplayer.ui.components.LocalUiAnimations
@@ -169,6 +172,9 @@ import com.tx24.spicyplayer.ui.settings.PipWithoutLyrics
 import com.tx24.spicyplayer.ui.settings.debugReport
 import com.tx24.spicyplayer.ui.nowplaying.MotionCoverQuery
 import com.tx24.spicyplayer.ui.nowplaying.NowPlayingInfo
+import com.tx24.spicyplayer.ui.nowplaying.CoverStage
+import com.tx24.spicyplayer.ui.nowplaying.StageMetadata
+import com.tx24.spicyplayer.ui.nowplaying.STAGE_FADE_MS
 import com.tx24.spicyplayer.ui.nowplaying.forgetMotionCover
 import com.tx24.spicyplayer.ui.nowplaying.rememberMotionCoverUrl
 import com.tx24.spicyplayer.ui.nowplaying.ReleaseYear
@@ -560,6 +566,50 @@ private fun LyricsApp(
         tween(400, easing = CubicBezierEasing(0.25f, 0.1f, 0.25f, 1f)),
         label = "panelSide",
     )
+    // The cover stage: beside the lyrics, the cover fills its side of the screen. Only over the
+    // moving background, which already takes its colours from the cover.
+    val stageOn = settings.coverStage && landscape && !hideHeader && !headerExpanded && !inPip &&
+        settings.backgroundType == BackgroundType.Default && !lowPerformance
+    val stageShown = animateFloatAsState(
+        if (stageOn) 1f else 0f,
+        tween(STAGE_FADE_MS, easing = StageEaseOut),
+        label = "coverStage",
+    )
+    val stageVisible by remember { derivedStateOf { stageShown.value > 0f } }
+    // Fully up, the panel's cover underneath stops playing its loop.
+    val stageCovers by remember { derivedStateOf { stageShown.value == 1f } }
+    // Swapping sides, the stage slides out toward the new side, flips while it's hidden, and slides
+    // back in from the old one.
+    var stageRight by remember { mutableStateOf(settings.panelSide == PanelSide.Right) }
+    val stageSwapAlpha = remember { Animatable(1f) }
+    val stageSwapX = remember { Animatable(0f) }
+    val uiAnimations = LocalUiAnimations.current
+    val swapDriftPx = configuration.screenWidthDp * LocalDensity.current.density * STAGE_SWAP_DRIFT
+    LaunchedEffect(settings.panelSide, stageOn, uiAnimations) {
+        val right = settings.panelSide == PanelSide.Right
+        if (!stageOn || !uiAnimations) {
+            stageRight = right
+            stageSwapAlpha.snapTo(1f)
+            stageSwapX.snapTo(0f)
+            return@LaunchedEffect
+        }
+        val settle = tween<Float>(STAGE_SWAP_IN_MS, easing = StageEaseOut)
+        // Pressed again before it flipped: it settles back where it was.
+        if (right != stageRight) {
+            val drift = swapDriftPx * (if (right) 1f else -1f)
+            val out = tween<Float>(STAGE_SWAP_OUT_MS, easing = CubicBezierEasing(0.4f, 0f, 1f, 1f))
+            coroutineScope {
+                launch { stageSwapAlpha.animateTo(0f, out) }
+                stageSwapX.animateTo(drift, out)
+            }
+            stageRight = right
+            stageSwapX.snapTo(-drift)
+        }
+        coroutineScope {
+            launch { stageSwapAlpha.animateTo(1f, settle) }
+            stageSwapX.animateTo(0f, settle)
+        }
+    }
     // Where the cover is while the controls sit on it: only a touch there brings them up.
     val coverTouchArea = remember { CoverTouchArea() }
     // Elsewhere, where a touch leaves the controls alone: the cover's gestures, credit links.
@@ -757,7 +807,11 @@ private fun LyricsApp(
                     landscapeMetrics.lyricFontSizeSp /
                         LyricsLayoutMetrics(lyricsBoxLeft.widthPx, density, LyricsType.Syllable, 1f).baseFontSizeSp
                 } else 1f
-                coverTouchArea.contains = if (!controlsOnCover) null else { position ->
+                coverTouchArea.contains = if (!controlsOnCover) null else if (stageOn) { position ->
+                    // The stage's solid part, from the screen's edge.
+                    val solid = (if (stageRight) endInsetPx else startInsetPx) + landscapeMetrics.stageSolidPx
+                    if (stageRight) position.x >= pageWidth - solid else position.x <= solid
+                } else { position ->
                     val size = landscapeMetrics.coverSizePx
                     val t = if (hideHeader) 1f else expansion
                     val left = startInsetPx + landscapeMetrics.coverLeftPx(panelSide.value) +
@@ -868,6 +922,55 @@ private fun LyricsApp(
                             motionScope.launch { forgetMotionCover(context, backgroundMotionQuery) }
                         },
                     )
+                    if (landscape && stageVisible) {
+                        val info = NowPlayingInfo(state.title, state.artist, state.album, state.artwork, state.artworkUri, state.trackDirection, hasSession = state.sourcePackage != null)
+                        CoverStage(
+                            info = info,
+                            metrics = landscapeMetrics,
+                            onRight = stageRight,
+                            startInsetPx = startInsetPx,
+                            endInsetPx = endInsetPx,
+                            // The panel's own loop: the same stream, so no second decode.
+                            motionUrl = rememberMotionCoverUrl(settings.animatedCover && !lowPerformance, backgroundMotionQuery),
+                            shown = { stageShown.value },
+                            controlsShown = { controlsShown },
+                            swapAlpha = { stageSwapAlpha.value },
+                            swapX = { stageSwapX.value },
+                        ) {
+                            // No glass blur here: the stage is part of what the glass blurs.
+                            CompositionLocalProvider(LocalBackdrop provides null) {
+                                StageControls(
+                                    controls = playbackControls,
+                                    romanizeAvailable = romanizeButton,
+                                    showResync = settings.resyncButton,
+                                    showExpand = expandButton,
+                                    romanized = romanize,
+                                    onToggleRomanize = {
+                                        settings.romanize = !settings.romanize
+                                        UsageStats.count(UsageCounter.ROMANIZE)
+                                    },
+                                    onOpenSettings = { showSettings = true },
+                                    onOpenLyricsManager = onOpenLyricsManager,
+                                    onOpenQueue = onOpenQueue,
+                                    onOpenSource = onOpenSource,
+                                    onOpenQuickSettings = onOpenQuickSettings,
+                                    onEnterPip = onEnterPipButton,
+                                    expanded = headerExpanded,
+                                    onToggleExpanded = expandButtonTapped,
+                                    onSwapSide = {
+                                        settings.panelSide = if (settings.panelSide == PanelSide.Left) PanelSide.Right else PanelSide.Left
+                                    },
+                                    shown = { controlsShown },
+                                    interactive = controlsVisible && stageOn,
+                                    onRight = stageRight,
+                                    metadata = {
+                                        val gutter = landscapeMetrics.coverSizePx * 0.04f
+                                        StageMetadata(info, landscapeMetrics, stageRight, landscapeMetrics.coverSizePx - gutter * 2f)
+                                    },
+                                )
+                            }
+                        }
+                    }
                     Column(
                         Modifier
                             .padding(belowTop)
@@ -937,12 +1040,14 @@ private fun LyricsApp(
                     isPlaying = state.isPlaying,
                     onPlayPause = viewModel::playPause,
                     onSkip = { direction -> if (direction == TrackDirection.Forward) viewModel.skipNext() else viewModel.skipPrevious() },
-                    animatedCover = settings.animatedCover && !lowPerformance && (!hideHeader || headerShowing),
+                    animatedCover = settings.animatedCover && !lowPerformance && (!hideHeader || headerShowing) && !stageCovers,
                     hidden = hideHeader,
-                    interactive = !hideHeader || headerExpanded,
+                    // Under the stage its gestures would sit over the dock.
+                    interactive = (!hideHeader || headerExpanded) && !stageOn,
                     panel = landscapeMetrics.panel.takeIf { landscape },
                     panelLeft = { landscapeMetrics.coverLeftPx(panelSide.value) },
-                    coverOverlay = if (!controlsOnCover || controlsGone) null else {
+                    stage = { stageShown.value },
+                    coverOverlay = if (!controlsOnCover || controlsGone || stageOn) null else {
                         {
                             // No glass blur here: the cover is part of what the glass blurs.
                             CompositionLocalProvider(LocalBackdrop provides null) {
@@ -1287,6 +1392,11 @@ private class CoverTouchArea {
 
 /** Pinned credits' distance above the controls or the screen's edge (20px + 1.25rem). */
 private val PINNED_FOOTER_GAP = 20.dp
+/** The cover stage's side swap: out, then in, drifting this share of the screen's width. */
+private const val STAGE_SWAP_OUT_MS = 160
+private const val STAGE_SWAP_IN_MS = 420
+private const val STAGE_SWAP_DRIFT = 0.025f
+private val StageEaseOut = CubicBezierEasing(0.23f, 1f, 0.32f, 1f)
 private const val CONTROLS_SHOW_MS = 350
 private const val CONTROLS_HIDE_MS = 700
 private val CssEaseOut = CubicBezierEasing(0f, 0f, 0.58f, 1f)

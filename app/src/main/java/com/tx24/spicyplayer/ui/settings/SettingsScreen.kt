@@ -561,7 +561,7 @@ private fun PageSkeleton(page: SettingsPage) {
         SettingsPage.Translation -> SettingsSkeleton(rows = 11)
         SettingsPage.ScrollSync -> SettingsSkeleton(rows = 7)
         SettingsPage.Background -> SettingsSkeleton(rows = 4)
-        SettingsPage.NowPlaying -> SettingsSkeleton(rows = 8)
+        SettingsPage.NowPlaying -> SettingsSkeleton(rows = 9)
         SettingsPage.Controls -> SettingsSkeleton(rows = 11)
         SettingsPage.Theme -> SettingsSkeleton(rows = 4)
         SettingsPage.Sources -> SettingsSkeleton(rows = 11, cards = true)
@@ -644,6 +644,7 @@ private fun HomeGroups(state: PlayerUiState, settings: AppSettings, updater: Upd
             listOfNotNull(
                 if (settings.hideHeader) "Header hidden" else "${settings.headerSize.label} header",
                 "animated cover".takeIf { settings.animatedCover && !settings.lowPerformance },
+                "cover stage".takeIf { settings.coverStage && !settings.lowPerformance },
                 "release year".takeIf { settings.releaseYearPosition != ReleaseYearPosition.Off },
             ).joinToString(),
         ) { onOpen(SettingsPage.NowPlaying) }

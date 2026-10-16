@@ -117,7 +117,8 @@ private val CoverEnterEasing = CubicBezierEasing(0.835f, -0.008f, 0.149f, 0.866f
  * In landscape, [panel] takes the compact bar's place: the cover beside the lyrics with the song
  * text centred under it, at [panelLeft] (it slides when the sides swap). Expanding then only
  * moves it to the centre. [coverOverlay] is drawn over the cover and moves with it; touches it
- * leaves alone reach the cover's gestures.
+ * leaves alone reach the cover's gestures. While the cover stage shows ([stage], 0..1), the
+ * panel's cover and text dissolve into it.
  */
 @Composable
 fun CompactNowPlayingHeader(
@@ -136,6 +137,7 @@ fun CompactNowPlayingHeader(
     panel: ExpandedHeader? = null,
     panelLeft: () -> Float = { panel?.artLeftPx ?: 0f },
     coverOverlay: (@Composable () -> Unit)? = null,
+    stage: () -> Float = { 0f },
 ) {
     val year = releaseYear?.takeIf { it.position != ReleaseYearPosition.Off }?.let { y ->
         when {
@@ -158,6 +160,7 @@ fun CompactNowPlayingHeader(
     fun artLeft() = lerp(if (panel != null) panelLeft() else metrics.contentStartPx, expanded?.artLeftPx ?: 0f, layoutP())
     fun artTop() = lerp(panel?.artTopPx ?: metrics.barTopPx, expanded?.artTopPx ?: 0f, layoutP())
     val restingCorner = if (panel != null) CompactHeaderMetrics.NOWBAR_CORNER_FRACTION else CompactHeaderMetrics.ART_CORNER_FRACTION
+    fun stageP() = if (panel != null) stage() else 0f
     with(density) {
         Box(modifier.fillMaxSize().graphicsLayer { alpha = if (hidden) p() else 1f }) {
             HeaderArtwork(
@@ -175,6 +178,13 @@ fun CompactNowPlayingHeader(
                         layout(size, size) { placeable.place(0, 0) }
                     }
                     .offset { IntOffset(artLeft().roundToInt(), artTop().roundToInt()) }
+                    // Under the stage it fades out, growing a little.
+                    .graphicsLayer {
+                        val s = stageP()
+                        alpha = 1f - s
+                        scaleX = 1f + 0.04f * s
+                        scaleY = 1f + 0.04f * s
+                    }
                     // Its gestures leave the controls as they are.
                     .then(if (interactive) Modifier.coverGestures(isPlaying, onPlayPause, onSkip).keepsControlsHidden() else Modifier),
             )
@@ -213,7 +223,7 @@ fun CompactNowPlayingHeader(
                             )
                         }
                         // The panel's text is always there; the compact bar's gives way to it.
-                        .graphicsLayer { alpha = if (panel != null) 1f else ((layoutP() - (1f - TEXT_SWAP)) / TEXT_SWAP).coerceIn(0f, 1f) }
+                        .graphicsLayer { alpha = if (panel != null) 1f - stageP() else ((layoutP() - (1f - TEXT_SWAP)) / TEXT_SWAP).coerceIn(0f, 1f) }
                         .width(expanded.artSizePx.toDp())
                         .height(expanded.textHeightPx.toDp()),
                 )
@@ -227,7 +237,7 @@ private fun lerp(from: Float, to: Float, t: Float) = from + (to - from) * t
 /** The part of the transition each text takes to fade: out over the first 40%, in over the last. */
 private const val TEXT_SWAP = 0.4f
 
-private fun headerTextStyle(weight: FontWeight, sizeSp: Float, lineHeightSp: Float) = TextStyle(
+internal fun headerTextStyle(weight: FontWeight, sizeSp: Float, lineHeightSp: Float) = TextStyle(
     fontFamily = LyricsLayoutCalculator.spicyFontFamily,
     // The design asks for 900, but the lyrics font stops at Bold.
     fontWeight = weight,
@@ -347,7 +357,7 @@ private const val COVER_FLING_DP = 1_000f
  * at 350 ms, and fades back in 80 ms later; the year arriving later just takes its place.
  */
 @Composable
-private fun HeaderMetadata(
+internal fun HeaderMetadata(
     title: String,
     artists: String,
     year: YearLabel?,
@@ -357,6 +367,8 @@ private fun HeaderMetadata(
     artistsWidthPx: Float,
     centered: Boolean,
     modifier: Modifier,
+    /** Lined up on the right rather than the left (when not [centered]). */
+    end: Boolean = false,
 ) {
     var shown by remember { mutableStateOf(ShownMetadata(title, artists, year)) }
     val alpha = remember { Animatable(1f) }
@@ -377,7 +389,11 @@ private fun HeaderMetadata(
         modifier = modifier.graphicsLayer { this.alpha = alpha.value },
         // Centred on the cover, compact or expanded.
         verticalArrangement = Arrangement.Center,
-        horizontalAlignment = if (centered) Alignment.CenterHorizontally else Alignment.Start,
+        horizontalAlignment = when {
+            centered -> Alignment.CenterHorizontally
+            end -> Alignment.End
+            else -> Alignment.Start
+        },
     ) {
         MarqueeLine(shown.title, titleStyle, Color.White.copy(alpha = 0.95f), titleWidthPx)
         ArtistsRow(shown.artists, shown.year, artistsStyle, Color.White.copy(alpha = 0.7f), artistsWidthPx)
@@ -387,7 +403,7 @@ private fun HeaderMetadata(
 private data class ShownMetadata(val title: String, val artists: String, val year: YearLabel?)
 
 /** The year beside the artists: [before] them or after, [shown] or only holding its room. */
-private data class YearLabel(val text: String, val before: Boolean, val shown: Boolean)
+internal data class YearLabel(val text: String, val before: Boolean, val shown: Boolean)
 
 /**
  * The artists, with the year before or after them when there is one. The year keeps still, set
