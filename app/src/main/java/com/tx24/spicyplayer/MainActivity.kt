@@ -184,6 +184,8 @@ import com.tx24.spicyplayer.ui.nowplaying.ReleaseYear
 import com.tx24.spicyplayer.ui.settings.BackgroundType
 import com.tx24.spicyplayer.ui.settings.ReleaseYearPosition
 import com.tx24.spicyplayer.playback.TrackExtrasWanted
+import com.tx24.spicyplayer.ui.nowplaying.CanvasLookup
+import com.tx24.spicyplayer.ui.nowplaying.StageArtChoice
 import com.tx24.spicyplayer.ui.nowplaying.TrackDirection
 import androidx.compose.animation.core.spring
 import com.tx24.spicyplayer.ui.settings.AppSettings
@@ -585,6 +587,9 @@ private fun LyricsApp(
         label = "coverStage",
     )
     val stageVisible by remember { derivedStateOf { stageShown.value > 0f } }
+    // The song's Spotify Canvas is looked up only while the stage is up and set to show it.
+    val canvasWanted = stageOn && StageArtChoice.wantsCanvas(settings.stageArt, lowPerformance)
+    LaunchedEffect(canvasWanted) { viewModel.setCanvasWanted(canvasWanted) }
     // Fully up, the panel's cover underneath stops playing its loop.
     val stageCovers by remember { derivedStateOf { stageShown.value == 1f } }
     // Swapping sides, the stage slides out toward the new side, flips while it's hidden, and slides
@@ -956,7 +961,18 @@ private fun LyricsApp(
                             startInsetPx = startInsetPx,
                             endInsetPx = endInsetPx,
                             // The panel's own loop: the same stream, so no second decode.
-                            motionUrl = rememberMotionCoverUrl(settings.animatedCover && !lowPerformance, backgroundMotionQuery),
+                            picture = StageArtChoice.pick(
+                                art = settings.stageArt,
+                                animatedCover = settings.animatedCover,
+                                lowPerformance = lowPerformance,
+                                canvas = state.canvasUrl?.let { CanvasLookup.Found(it) }
+                                    ?: if (state.canvasPending) CanvasLookup.Pending else CanvasLookup.None,
+                                motionUrl = rememberMotionCoverUrl(
+                                    StageArtChoice.wantsAnimated(settings.stageArt, settings.animatedCover, lowPerformance),
+                                    backgroundMotionQuery,
+                                ),
+                            ),
+                            onCanvasFailed = viewModel::canvasFailed,
                             shown = { stageShown.value },
                             controlsShown = { controlsShown },
                             swapAlpha = { stageSwapAlpha.value },

@@ -21,6 +21,8 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
@@ -41,11 +43,14 @@ import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.hls.HlsMediaSource
+import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import com.tx24.spicyplayer.network.data.TrafficCounter
 import com.tx24.spicyplayer.network.data.counted
 import com.tx24.spicyplayer.network.motion.MotionCoverFinder
 import java.io.File
 import java.util.concurrent.TimeUnit
+import kotlin.math.ceil
+import kotlin.math.roundToInt
 import okhttp3.OkHttpClient
 
 /** What the animated cover is looked up by. */
@@ -73,6 +78,10 @@ fun rememberMotionCoverUrl(enabled: Boolean, query: MotionCoverQuery): String? {
  * stopping it. A stream that fails to play calls [onFailed]. Every view of one [url] shows the
  * same decode ([MotionCoverStream]).
  *
+ * With [cropFromTop] set, the video keeps its own shape instead, as big as it takes to cover the
+ * box, centred across and with that share of the overflow cut from the top ([assumedAspect] until
+ * the video reports its size).
+ *
  * A TextureView rather than a SurfaceView, so the cover's rounded clip and alpha apply to it.
  */
 @Composable
@@ -83,6 +92,8 @@ fun MotionCoverVideo(
     modifier: Modifier = Modifier,
     /** Drawn through this paint, e.g. a colour filter. */
     layerPaint: Paint? = null,
+    cropFromTop: Float? = null,
+    assumedAspect: Float = 1f,
 ) = key(url) {
     val stream = rememberMotionCoverStream(url, onFailed)
     var firstFrame by remember { mutableStateOf(false) }
@@ -114,7 +125,21 @@ fun MotionCoverVideo(
             }
         },
         update = { it.setLayerPaint(layerPaint) },
-        modifier = modifier.graphicsLayer { this.alpha = alpha },
+        modifier = modifier
+            .then(
+                if (cropFromTop == null) Modifier else Modifier.layout { measurable, constraints ->
+                    val aspect = stream.videoAspect.takeIf { it > 0f } ?: assumedAspect
+                    val (width, height) = coverSize(constraints.maxWidth, constraints.maxHeight, aspect)
+                    val placeable = measurable.measure(Constraints.fixed(width, height))
+                    layout(constraints.maxWidth, constraints.maxHeight) {
+                        placeable.place(
+                            (constraints.maxWidth - width) / 2,
+                            ((constraints.maxHeight - height) * cropFromTop).roundToInt(),
+                        )
+                    }
+                },
+            )
+            .graphicsLayer { this.alpha = alpha },
     )
 }
 
@@ -169,7 +194,20 @@ internal fun leadArtist(artists: String): String =
 
 private const val FADE_MS = 600
 
-/** The process-wide finder and stream cache, and the shared streams built on them. */
+/** The size, at [aspect] (width over height), that just covers a [width]×[height] box. */
+internal fun coverSize(width: Int, height: Int, aspect: Float): Pair<Int, Int> {
+    if (width <= 0 || height <= 0 || aspect <= 0f) return width to height
+    return if (width.toFloat() / height > aspect) {
+        width to ceil(width / aspect).toInt()
+    } else {
+        ceil(height * aspect).toInt() to height
+    }
+}
+
+/**
+ * The process-wide finder and stream cache, and the shared streams built on them: animated covers
+ * and Spotify Canvas videos alike.
+ */
 @OptIn(UnstableApi::class)
 internal object MotionCovers {
     @Volatile private var finder: MotionCoverFinder? = null
@@ -221,26 +259,35 @@ internal object MotionCovers {
             .setCache(cache(context))
             .setUpstreamDataSourceFactory(upstream)
             .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+        // Apple's animated covers are HLS streams; a Spotify Canvas is a single MP4 file.
+        val hls = isHls(url)
+        val sources = if (hls) HlsMediaSource.Factory(source) else ProgressiveMediaSource.Factory(source)
         return ExoPlayer.Builder(context)
-            .setMediaSourceFactory(HlsMediaSource.Factory(source))
+            .setMediaSourceFactory(sources)
             .build()
             .apply {
                 // Never asks for audio focus (the default), so the music app is left alone.
                 volume = 0f
                 repeatMode = Player.REPEAT_MODE_ONE
-                // Apple offers up to 1080² at 10 Mbit/s. One steady rendition this side of the cap
-                // keeps a loop to a few MB and caches cleanly.
                 trackSelectionParameters = trackSelectionParameters.buildUpon()
                     .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, true)
-                    .setMaxVideoSize(MAX_VIDEO_PX, MAX_VIDEO_PX)
-                    .setMaxVideoBitrate(MAX_VIDEO_BITRATE)
-                    .setForceHighestSupportedBitrate(true)
+                    .apply {
+                        // Apple offers up to 1080² at 10 Mbit/s. One steady rendition this side of
+                        // the cap keeps a loop to a few MB and caches cleanly.
+                        if (hls) {
+                            setMaxVideoSize(MAX_VIDEO_PX, MAX_VIDEO_PX)
+                            setMaxVideoBitrate(MAX_VIDEO_BITRATE)
+                            setForceHighestSupportedBitrate(true)
+                        }
+                    }
                     .build()
                 setMediaItem(MediaItem.fromUri(url))
                 prepare()
                 playWhenReady = true
             }
     }
+
+    private fun isHls(url: String) = url.substringBefore('?').endsWith(".m3u8", ignoreCase = true)
 
     private const val CACHE_BYTES = 256L shl 20
     private const val MAX_VIDEO_PX = 1080

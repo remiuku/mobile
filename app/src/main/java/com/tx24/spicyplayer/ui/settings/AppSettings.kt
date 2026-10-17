@@ -13,6 +13,7 @@ import com.tx24.spicyplayer.lyrics.spicy.SyllableMerge
 import com.tx24.spicyplayer.lyrics.spicy.canvas.PinnedFooterMode
 import com.tx24.spicyplayer.ui.components.ChromeTheme
 import com.tx24.spicyplayer.ui.nowplaying.HeaderSize
+import com.tx24.spicyplayer.ui.nowplaying.StageArt
 import kotlin.properties.ReadWriteProperty
 import kotlin.reflect.KClass
 import kotlin.reflect.KProperty
@@ -110,6 +111,8 @@ class AppSettings(private val prefs: SharedPreferences) {
      * the song docked along its bottom.
      */
     var coverStage by boolean("coverStage", true)
+    /** What fills the cover stage; each choice falls back down the list when the song lacks it. */
+    var stageArt by enum("stageArt", StageArt.AnimatedCover)
     /** Cover Art background: the record's looping Apple Music cover in place of the still one. */
     var animatedBackground by boolean("animatedBackground", false)
     /**

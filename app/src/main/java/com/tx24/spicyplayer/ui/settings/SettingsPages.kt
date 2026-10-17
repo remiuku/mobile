@@ -61,6 +61,7 @@ import com.tx24.spicyplayer.backup.SettingsBackupStore
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Tune
 import com.tx24.spicyplayer.ui.nowplaying.HeaderSize
+import com.tx24.spicyplayer.ui.nowplaying.StageArt
 import android.content.ClipboardManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -103,6 +104,7 @@ import androidx.compose.material.icons.rounded.BlurOn
 import androidx.compose.material.icons.rounded.Flare
 import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.Wallpaper
+import androidx.compose.material.icons.rounded.VideoLibrary
 import androidx.compose.material.icons.rounded.Panorama
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.SlowMotionVideo
@@ -600,7 +602,7 @@ internal fun BackgroundContent(settings: AppSettings) {
 }
 
 @Composable
-internal fun NowPlayingContent(settings: AppSettings) {
+internal fun NowPlayingContent(settings: AppSettings, viewModel: ExternalPlaybackViewModel) {
     ToggleRow(
         label = "Hide the song header",
         checked = settings.hideHeader,
@@ -656,6 +658,28 @@ internal fun NowPlayingContent(settings: AppSettings) {
         icon = Icons.Rounded.Panorama,
         enabled = !settings.lowPerformance,
     )
+    SettingRow(
+        label = "Stage art",
+        description = if (!settings.animatedCover && settings.stageArt != StageArt.CoverArt) {
+            "What fills the cover stage; its animated cover needs Animated Cover on."
+        } else {
+            "What fills the cover stage, falling back down the list when the song has none."
+        },
+        icon = Icons.Rounded.VideoLibrary,
+        enabled = settings.coverStage && !settings.lowPerformance,
+        searchDescription = "What fills the cover stage, falling back down the list when the song has none. Spotify Canvas, animated cover or cover art.",
+    ) {
+        SpicySelect(
+            value = settings.stageArt.name,
+            options = StageArt.entries.map { it.name },
+            labels = StageArt.entries.map { it.label },
+            onChange = {
+                val art = StageArt.valueOf(it)
+                // Canvas asks a third-party service, so it says what it sends first.
+                if (art == StageArt.Canvas) viewModel.chooseCanvas { settings.stageArt = art } else settings.stageArt = art
+            },
+        )
+    }
     SettingsSection("Credits") {
         SettingRow(
             label = "Pinned Lyrics Footer",

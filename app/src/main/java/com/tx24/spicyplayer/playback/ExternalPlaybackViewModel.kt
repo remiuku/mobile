@@ -192,6 +192,13 @@ data class PlayerUiState(
     /** The lead artist's Spotify header image, when asked for and they have one. */
     val artistHeaderUrl: String? = null,
     val artistHeaderPending: Boolean = false,
+    /**
+     * The song's Spotify Canvas video, when the cover stage asks for it
+     * ([ExternalPlaybackViewModel.setCanvasWanted]) and the song has one.
+     */
+    val canvasUrl: String? = null,
+    /** No canvas answer for this song yet, so the stage waits before falling back. */
+    val canvasPending: Boolean = true,
     /** The Lyrics Manager's saved songs, newest first. */
     val localLyrics: List<LocalLyricsStore.Entry> = emptyList(),
     /** The playing song's key in the Lyrics Manager, saved there or not. */
@@ -540,6 +547,12 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
     /** What the screen asks for; [extrasWanted] adds the beats while calibrating. */
     private var screenExtrasWanted = TrackExtrasWanted()
     private var extrasJob: Job? = null
+    private val canvasFinder = SharedSpotify.canvas(application.cacheDir)
+    /** The cover stage shows the song's Spotify Canvas; nothing is looked up otherwise. */
+    private var canvasWanted = false
+    private var canvasJob: Job? = null
+    /** The Spotify track ID [PlayerUiState.canvasUrl] was found for, to forget it if it won't play. */
+    private var canvasTrackId: String? = null
     /** The playing song's audio analysis, for the beat-reactive background. */
     @Volatile private var audioAnalysis: AudioAnalysis? = null
     /** The last music haptics built: from which analysis, in which style. */
@@ -1229,6 +1242,7 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
             matchInfo = "Manual Spotify ID: $id",
             status = null,
         )
+        restartCanvas()
         loadLyrics()
     }
 
@@ -1263,6 +1277,7 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
             status = null,
         )
         updateFromController()
+        restartCanvas()
         loadLyrics()
     }
 
@@ -1781,6 +1796,9 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
             canSeek = if (inBetween) previous.canSeek else playback?.actions?.and(PlaybackState.ACTION_SEEK_TO) != 0L && playback != null,
             detectedSpotifyId = manualSpotifyId ?: spotifyId,
             manualSpotifyId = manualSpotifyId,
+            // Dropped with the song in the same update, so the last song's canvas never shows on this one.
+            canvasUrl = if (lyricsChanged) null else mutableState.value.canvasUrl,
+            canvasPending = lyricsChanged || mutableState.value.canvasPending,
             matchInfo = if (lyricsChanged) {
                 if (manualSpotifyId != null) "Manual Spotify ID"
                 else if (spotifyId != null) "Spotify ID from media session"
@@ -1827,9 +1845,11 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
             // source, the extras, Genius, the songs ahead) kept the radio and CPU busy for nothing.
             // The song that's playing when the screen comes back is looked up then.
             extrasJob?.cancel()
+            canvasJob?.cancel()
             lookupDeferred = true
         } else if (lyricsChanged) {
             loadExtras()
+            loadCanvas()
             loadLyrics(settle = true)
         } else if (metadataChanged && metadata != null && !lookupDeferred) {
             rematchWithLength(metadata)
@@ -1905,6 +1925,68 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
         return MusicHapticScore.build(analysis, style).also { musicHaptics = Triple(analysis, style, it) }
     }
 
+    /**
+     * Whether the screen shows the song's Spotify Canvas: the cover stage is up and set to it.
+     * Asking looks it up for the song playing, once; nothing is fetched otherwise.
+     */
+    fun setCanvasWanted(wanted: Boolean) {
+        if (wanted == canvasWanted) return
+        canvasWanted = wanted
+        if (!wanted) {
+            // An unanswered lookup stays pending, to be asked again when wanted.
+            canvasJob?.cancel()
+        } else if (mutableState.value.canvasPending && uiStarted.value) {
+            loadCanvas()
+        }
+    }
+
+    /** Runs [apply], which sets the stage art to Spotify Canvas, once its disclosure is agreed to. */
+    fun chooseCanvas(apply: () -> Unit) {
+        if (askFirst(SourceDisclosures.forId(SourceDisclosures.SPOTIFY_CANVAS_ID))) pendingSourceSwitch = apply else apply()
+    }
+
+    /** The canvas at [url] wouldn't play: it's forgotten, and the stage falls back. */
+    fun canvasFailed(url: String) {
+        if (mutableState.value.canvasUrl != url) return
+        val trackId = canvasTrackId
+        mutableState.value = mutableState.value.copy(canvasUrl = null, canvasPending = false)
+        if (trackId != null) viewModelScope.launch { canvasFinder.forget(trackId) }
+    }
+
+    /** The song's Spotify ID changed by hand: its canvas is looked up again. */
+    private fun restartCanvas() {
+        canvasJob?.cancel()
+        mutableState.value = mutableState.value.copy(canvasUrl = null, canvasPending = true)
+        if (uiStarted.value) loadCanvas()
+    }
+
+    /**
+     * Looks up the playing song's canvas by its Spotify ID: the player's or the manual one, else
+     * the Spotify match. No ID, no canvas. The answer is kept only if the song is still the same.
+     */
+    private fun loadCanvas() {
+        canvasJob?.cancel()
+        if (!canvasWanted) return
+        val metadata = controller?.metadata ?: return
+        val key = metadata.lyricsKey()
+        val request = lookupRequest(metadata, manualSpotifyId ?: mutableState.value.detectedSpotifyId)
+        if (request.title.isBlank() || request.artist.isBlank()) {
+            mutableState.value = mutableState.value.copy(canvasUrl = null, canvasPending = false)
+            return
+        }
+        // Skipping through songs, only the one that stays is looked up.
+        val skipping = SystemClock.elapsedRealtime() - lastTrackChangeAt < TRACK_SETTLE_MS
+        canvasJob = viewModelScope.launch {
+            if (skipping) delay(TRACK_SETTLE_MS)
+            val track = LocalTrackMetadata(request.title, request.artist, request.album, request.durationSeconds * 1_000L)
+            val trackId = withContext(Dispatchers.IO) { spotifyExtras.trackIds(track, request.spotifyTrackId).firstOrNull() }
+            val url = trackId?.let { withContext(Dispatchers.IO) { canvasFinder.find(it) } }
+            if (currentLyricsKey != key) return@launch
+            canvasTrackId = trackId
+            mutableState.value = mutableState.value.copy(canvasUrl = url, canvasPending = false)
+        }
+    }
+
     private fun loadExtras() {
         extrasJob?.cancel()
         audioAnalysis = null
@@ -1963,7 +2045,10 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
         } else if (lookupDeferred) {
             lookupDeferred = false
             loadExtras()
+            loadCanvas()
             loadLyrics()
+        } else if (canvasWanted && mutableState.value.canvasPending && canvasJob?.isActive != true) {
+            loadCanvas()
         }
     }
 

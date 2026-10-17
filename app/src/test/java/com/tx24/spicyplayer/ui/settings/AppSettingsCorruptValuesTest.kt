@@ -1,17 +1,21 @@
 package com.tx24.spicyplayer.ui.settings
 
 import android.content.SharedPreferences
+import com.tx24.spicyplayer.ui.nowplaying.StageArt
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Test
 
 class AppSettingsCorruptValuesTest {
     @Test fun wrongTypesReadAsDefaultsInsteadOfCrashing() {
-        val settings = AppSettings(Prefs(mapOf("lowPerformance" to "yes", "backgroundBlur" to 999, "scrollLeadMs" to "fast")))
+        val settings = AppSettings(Prefs(mapOf("lowPerformance" to "yes", "backgroundBlur" to 999, "scrollLeadMs" to "fast", "stageArt" to 3)))
 
         assertFalse(settings.lowPerformance)
         assertEquals(MAX_BACKGROUND_BLUR, settings.backgroundBlur)
         assertEquals(250, settings.scrollLeadMs)
+        assertEquals(StageArt.AnimatedCover, settings.stageArt)
+        assertEquals(StageArt.AnimatedCover, AppSettings(Prefs(mapOf("stageArt" to "Hologram"))).stageArt)
+        assertEquals(StageArt.Canvas, AppSettings(Prefs(mapOf("stageArt" to "Canvas"))).stageArt)
     }
 
     @Test fun knowsWhatTypeEachSettingIsStoredAs() {
@@ -19,6 +23,7 @@ class AppSettingsCorruptValuesTest {
         assertEquals(Boolean::class, types["lowPerformance"])
         assertEquals(Int::class, types["backgroundBlur"])
         assertEquals(String::class, types["lyricsSize"])
+        assertEquals(String::class, types["stageArt"])
     }
 
     /** Read-only, and casting like Android's: a value of another type throws. */

@@ -15,6 +15,9 @@ import android.os.SystemClock
 import android.util.Log
 import android.view.Surface
 import androidx.annotation.OptIn
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.setValue
 import androidx.media3.common.Player
 import androidx.media3.common.VideoSize
 import androidx.media3.common.util.UnstableApi
@@ -36,6 +39,9 @@ import java.nio.FloatBuffer
 internal class MotionCoverStream(val url: String, val player: ExoPlayer) {
     /** How many hold it; [MotionCovers] releases it once none do. */
     var users = 0
+    /** The video's width over its height once it's known, else 0. Compose state. */
+    var videoAspect by mutableFloatStateOf(0f)
+        private set
     private var released = false
     private val fanOut = VideoFanOut()
 
@@ -43,6 +49,9 @@ internal class MotionCoverStream(val url: String, val player: ExoPlayer) {
         player.addListener(object : Player.Listener {
             override fun onVideoSizeChanged(videoSize: VideoSize) {
                 fanOut.setVideoSize(videoSize.width, videoSize.height)
+                if (videoSize.width > 0 && videoSize.height > 0) {
+                    videoAspect = videoSize.width * videoSize.pixelWidthHeightRatio / videoSize.height
+                }
             }
         })
         val main = Handler(Looper.getMainLooper())

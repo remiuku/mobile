@@ -136,6 +136,7 @@ import com.tx24.spicyplayer.ui.components.SpicyButton
 import com.tx24.spicyplayer.ui.components.SpicySearchBar
 import com.tx24.spicyplayer.ui.components.outlinedCard
 import com.tx24.spicyplayer.ui.theme.SpicyColors
+import com.tx24.spicyplayer.ui.nowplaying.StageArt
 import com.tx24.spicyplayer.ui.theme.SpicyMotion
 import com.tx24.spicyplayer.ui.theme.SpicySpacing
 import com.tx24.spicyplayer.ui.theme.SpicyType
@@ -501,7 +502,7 @@ private fun PageContent(
         SettingsPage.Translation -> RomanizationTranslationContent(state, viewModel, settings)
         SettingsPage.ScrollSync -> ScrollSyncContent(state, viewModel, settings)
         SettingsPage.Background -> BackgroundContent(settings)
-        SettingsPage.NowPlaying -> NowPlayingContent(settings)
+        SettingsPage.NowPlaying -> NowPlayingContent(settings, viewModel)
         SettingsPage.Controls -> ControlsContent(settings)
         SettingsPage.Theme -> ThemeContent(settings)
         SettingsPage.Sources -> SourcesContent(state, viewModel)
@@ -590,7 +591,7 @@ private fun PageSkeleton(page: SettingsPage) {
         SettingsPage.Translation -> SettingsSkeleton(rows = 11)
         SettingsPage.ScrollSync -> SettingsSkeleton(rows = 7)
         SettingsPage.Background -> SettingsSkeleton(rows = 4)
-        SettingsPage.NowPlaying -> SettingsSkeleton(rows = 9)
+        SettingsPage.NowPlaying -> SettingsSkeleton(rows = 10)
         SettingsPage.Controls -> SettingsSkeleton(rows = 11)
         SettingsPage.Theme -> SettingsSkeleton(rows = 4)
         SettingsPage.Sources -> SettingsSkeleton(rows = 11, cards = true)
@@ -673,7 +674,8 @@ private fun HomeGroups(state: PlayerUiState, settings: AppSettings, updater: Upd
             listOfNotNull(
                 if (settings.hideHeader) "Header hidden" else "${settings.headerSize.label} header",
                 "animated cover".takeIf { settings.animatedCover && !settings.lowPerformance },
-                "cover stage".takeIf { settings.coverStage && !settings.lowPerformance },
+                (if (settings.stageArt == StageArt.Canvas) "cover stage with Canvas" else "cover stage")
+                    .takeIf { settings.coverStage && !settings.lowPerformance },
                 "release year".takeIf { settings.releaseYearPosition != ReleaseYearPosition.Off },
             ).joinToString(),
         ) { onOpen(SettingsPage.NowPlaying) }

@@ -37,22 +37,21 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import kotlinx.coroutines.launch
-import kotlin.math.max
 import kotlin.math.roundToInt
 
 /**
- * The cover stage: in landscape, beside the lyrics, the cover (its animated loop when [motionUrl]
- * has one, the still cover otherwise) fills the panel's side of the screen edge to edge, fading
- * into the page toward the lyrics and over its top. It sits behind the lyrics, translucent so the
- * background carries through it, dimmed by a veil that deepens while the controls show
- * ([controlsShown]), and darkened along the bottom for the dock ([CoverStageDock]).
+ * The cover stage: in landscape, beside the lyrics, the cover ([picture]: the song's Spotify
+ * Canvas, the record's animated loop, or the still cover) fills the panel's side of the screen
+ * edge to edge, fading into the page toward the lyrics and over its top. It sits behind the
+ * lyrics, translucent so the background carries through it, dimmed by a veil that deepens while
+ * the controls show ([controlsShown]), and darkened along the bottom for the dock ([CoverStageDock]).
  *
  * [centred] (0..1) moves it from the panel's side to the middle of the page, where it stands in
  * for the big cover: as wide as the cover plus a feather on both sides, faded toward both.
  *
  * [shown] (0..1) fades the whole stage; [swapAlpha] and [swapX] carry it through a side swap.
  * [onRight] says which side it is on. [startInsetPx]/[endInsetPx] are the cutout's insets: the
- * picture runs under them.
+ * picture runs under them. A canvas that won't play calls [onCanvasFailed] with its URL.
  */
 @Composable
 fun CoverStage(
@@ -61,7 +60,8 @@ fun CoverStage(
     onRight: Boolean,
     startInsetPx: Float,
     endInsetPx: Float,
-    motionUrl: String?,
+    picture: StagePicture,
+    onCanvasFailed: (String) -> Unit,
     shown: () -> Float,
     controlsShown: () -> Float,
     swapAlpha: () -> Float,
@@ -133,26 +133,31 @@ fun CoverStage(
                         Image(bitmap, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop, alignment = CropAlignment)
                     }
                 }
-                if (motionUrl != null && motionUrl != failedMotionUrl) {
-                    MotionCoverVideo(
-                        url = motionUrl,
+                when (picture) {
+                    is StagePicture.Animated -> if (picture.url != failedMotionUrl) {
+                        val motionUrl = picture.url
+                        MotionCoverVideo(
+                            url = motionUrl,
+                            visible = true,
+                            onFailed = {
+                                failedMotionUrl = motionUrl
+                                scope.launch { forgetMotionCover(context, motionQuery) }
+                            },
+                            // The loop (square) covers the stage at its own shape, cropped like the
+                            // still cover.
+                            cropFromTop = CROP_FROM_TOP,
+                        )
+                    }
+                    // A portrait loop (9:16) as wide as the stage, cropped from its middle; the
+                    // feather and veil apply to it as to the cover.
+                    is StagePicture.Canvas -> MotionCoverVideo(
+                        url = picture.url,
                         visible = true,
-                        onFailed = {
-                            failedMotionUrl = motionUrl
-                            scope.launch { forgetMotionCover(context, motionQuery) }
-                        },
-                        // The loop is square: a square as big as the stage's longer side, cropped
-                        // like the still cover.
-                        modifier = Modifier.layout { measurable, constraints ->
-                            val side = max(constraints.maxWidth, constraints.maxHeight)
-                            val placeable = measurable.measure(Constraints.fixed(side, side))
-                            layout(constraints.maxWidth, constraints.maxHeight) {
-                                val x = (constraints.maxWidth - side) / 2
-                                val y = ((constraints.maxHeight - side) * CROP_FROM_TOP).roundToInt()
-                                placeable.place(x, y)
-                            }
-                        },
+                        onFailed = { onCanvasFailed(picture.url) },
+                        cropFromTop = CANVAS_CROP_FROM_TOP,
+                        assumedAspect = CANVAS_ASPECT,
                     )
+                    StagePicture.Still -> Unit
                 }
                 // A black veil at 1 - b is the picture at brightness b, without a filter pass per frame.
                 Box(
@@ -289,6 +294,10 @@ fun StageMetadata(info: NowPlayingInfo, metrics: LandscapeMetrics, alignment: Al
 /** `object-position: 50% 40%`: faces sit in the upper half of most covers, so a centred crop cuts them. */
 private const val CROP_FROM_TOP = 0.4f
 private val CropAlignment = BiasAlignment(0f, CROP_FROM_TOP * 2f - 1f)
+
+/** A Spotify Canvas is cut from its middle: it's made to fill a phone screen, centred on its subject. */
+private const val CANVAS_CROP_FROM_TOP = 0.5f
+private const val CANVAS_ASPECT = 9f / 16f
 
 /** The stage's own opacity, so the background reads through it as one surface. */
 private const val STAGE_OPACITY = 0.75f
