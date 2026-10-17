@@ -105,8 +105,11 @@ internal object LyricsNotices {
             // failures, say) would only hide that.
             offline -> LyricsState.Error(NoticeKind.Offline, "Couldn't reach $failures")
             answered > 0 -> LyricsState.Error(NoticeKind.NoLyrics, "${plural(answered, "source")} had none. Couldn't check $failures")
-            failed.all { it.failureCategory == ProviderFailureCategory.NETWORK || it.failureCategory == ProviderFailureCategory.TIMEOUT } ->
-                LyricsState.Error(NoticeKind.Offline, "Couldn't reach $failures")
+            // A source backing off after its own failures (cooling down, queued) carries no reason
+            // of its own, so the ones that tried decide.
+            failed.filter { it.failureCategory != null }.let { tried ->
+                tried.isNotEmpty() && tried.all { it.failureCategory == ProviderFailureCategory.NETWORK || it.failureCategory == ProviderFailureCategory.TIMEOUT }
+            } -> LyricsState.Error(NoticeKind.Offline, "Couldn't reach $failures")
             failed.all(::rateLimited) -> LyricsState.Error(NoticeKind.RateLimited, failures, "429")
             // Server errors at least as often as anything else: the sources are up but failing.
             serverCodes.size * 2 >= failed.size -> LyricsState.Error(

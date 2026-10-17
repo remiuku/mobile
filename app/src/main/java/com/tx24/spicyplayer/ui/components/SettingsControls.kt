@@ -49,6 +49,11 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.material3.Icon
@@ -413,14 +418,17 @@ fun SpicySelect(
     enabled: Boolean = true,
 ) {
     val haptics = LocalHapticFeedback.current
-    SelectMenu(labels.getOrElse(options.indexOf(value)) { value }, modifier, enabled) { close ->
-        options.forEachIndexed { i, option ->
+    SelectMenu(labels.getOrElse(options.indexOf(value)) { value }, modifier, enabled, searchable = options.size >= SEARCH_FROM) { close, query ->
+        val shown = matchingOptions(query, options, labels)
+        for (i in shown) {
+            val option = options[i]
             SelectOption(labels.getOrElse(i) { option }, selected = option == value) {
                 haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
                 close()
                 if (option != value) onChange(option)
             }
         }
+        shown.size
     }
 }
 
@@ -444,19 +452,56 @@ fun SpicyMultiSelect(
         1 -> labels.getOrElse(options.indexOf(selected.single())) { selected.single() }
         else -> "${selected.size} picked"
     }
-    SelectMenu(label, modifier, enabled) {
-        options.forEachIndexed { i, option ->
+    SelectMenu(label, modifier, enabled, searchable = options.size >= SEARCH_FROM) { _, query ->
+        val shown = matchingOptions(query, options, labels)
+        for (i in shown) {
+            val option = options[i]
             SelectOption(labels.getOrElse(i) { option }, selected = option in selected) {
                 haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
                 onChange(if (option in selected) selected - option else selected + option)
             }
         }
+        shown.size
     }
 }
 
-/** The pill and its menu plate, shared by [SpicySelect] and [SpicyMultiSelect]; [items] gets a way to close it. */
+/** Lists this long get a search field at the top of their menu. */
+private const val SEARCH_FROM = 12
+private val SEARCHABLE_MENU_WIDTH = 240.dp
+private val MENU_MAX_HEIGHT = 360.dp
+
+/**
+ * The indices of [options] whose label or option matches [query]: every word of it starts a word
+ * of either, ignoring case and accents, so "fil" finds Filipino and "tl" finds its code. A blank
+ * query matches everything.
+ */
+internal fun matchingOptions(query: String, options: List<String>, labels: List<String>): List<Int> {
+    val words = foldForSearch(query).split(' ').filter(String::isNotEmpty)
+    if (words.isEmpty()) return options.indices.toList()
+    return options.indices.filter { i ->
+        val haystack = foldForSearch("${labels.getOrElse(i) { options[i] }} ${options[i]}").split(' ', '-', '_', '(', ')')
+        words.all { word -> haystack.any { it.startsWith(word) } }
+    }
+}
+
+private fun foldForSearch(text: String): String =
+    java.text.Normalizer.normalize(text.lowercase(), java.text.Normalizer.Form.NFD).replace(COMBINING_MARKS, "").trim()
+
+private val COMBINING_MARKS = Regex("\\p{Mn}+")
+
+/**
+ * The pill and its menu plate, shared by [SpicySelect] and [SpicyMultiSelect]; [items] gets a way
+ * to close it and, when [searchable], what's typed in the field above them (empty otherwise).
+ */
 @Composable
-private fun SelectMenu(label: String, modifier: Modifier, enabled: Boolean, items: @Composable (close: () -> Unit) -> Unit) {
+private fun SelectMenu(
+    label: String,
+    modifier: Modifier,
+    enabled: Boolean,
+    searchable: Boolean = false,
+    /** Draws the options and says how many it drew. */
+    items: @Composable (close: () -> Unit, query: String) -> Int,
+) {
     // Drives the open and close animation; the popup stays up until the close finishes.
     val menu = remember { MutableTransitionState(false) }
     // A tap on the pill while open lands after the popup has closed itself on touch-down;
@@ -471,7 +516,16 @@ private fun SelectMenu(label: String, modifier: Modifier, enabled: Boolean, item
     val pressed by interaction.collectIsPressedAsState()
     val shape = RoundedCornerShape(SpicyRadii.Sm)
     val haptics = LocalHapticFeedback.current
-    Box(modifier) {
+    // The pill's top and bottom in the window, for the side the menu opens on.
+    var pillTop by remember { mutableIntStateOf(0) }
+    var pillBottom by remember { mutableIntStateOf(0) }
+    Box(
+        modifier.onGloballyPositioned {
+            val bounds = it.boundsInWindow()
+            pillTop = bounds.top.roundToInt()
+            pillBottom = bounds.bottom.roundToInt()
+        },
+    ) {
         Row(
             Modifier
                 .alpha(if (enabled) 1f else DISABLED_ALPHA)
@@ -497,10 +551,24 @@ private fun SelectMenu(label: String, modifier: Modifier, enabled: Boolean, item
             )
         }
         if (menu.currentState || menu.targetState) {
-            val margin = with(LocalDensity.current) { SpicySpacing.S2.roundToPx() }
-            val position = remember(margin) { SelectMenuPosition(margin) }
+            val density = LocalDensity.current
+            val margin = with(density) { SpicySpacing.S2.roundToPx() }
+            // The keyboard, read every frame it slides, so the menu moves with it instead of
+            // waiting for its own size to change.
+            val keyboard = WindowInsets.ime.getBottom(density)
+            // The menu gets a slot as tall as it could ever be on the roomier side of the pill,
+            // and sits at the slot's end nearest the pill. Narrowed by a search, it shrinks toward
+            // the pill instead of leaving it behind.
+            val bottom = LocalView.current.rootView.height - keyboard
+            val gap = margin / 2
+            val tallest = with(density) { MENU_MAX_HEIGHT.roundToPx() }
+            val roomBelow = bottom - margin - (pillBottom + gap)
+            val roomAbove = pillTop - gap - margin
+            val above = roomBelow < tallest && roomAbove > roomBelow
+            val slot = minOf(tallest, if (above) roomAbove else roomBelow).coerceAtLeast(0)
+            val position = remember(margin, keyboard, above) { SelectMenuPosition(margin, keyboard, above) }
             Popup(popupPositionProvider = position, onDismissRequest = close, properties = PopupProperties(focusable = true)) {
-                val origin = TransformOrigin(1f, if (position.above) 1f else 0f)
+                val origin = TransformOrigin(1f, if (above) 1f else 0f)
                 AnimatedVisibility(
                     visibleState = menu,
                     enter = fadeIn(tween(SpicyMotion.FAST_MS)) +
@@ -509,17 +577,52 @@ private fun SelectMenu(label: String, modifier: Modifier, enabled: Boolean, item
                         scaleOut(tween(SpicyMotion.FAST_MS), targetScale = 0.94f, transformOrigin = origin),
                 ) {
                     val plate = RoundedCornerShape(SpicyRadii.Md)
+                    // Starts empty each time the menu opens.
+                    var query by remember { mutableStateOf("") }
+                    Box(
+                        Modifier
+                            .height(with(density) { slot.toDp() })
+                            // The slot's empty part is outside the menu: a tap there closes it.
+                            .pointerInput(Unit) { detectTapGestures { close() } },
+                        contentAlignment = if (above) Alignment.BottomEnd else Alignment.TopEnd,
+                    ) {
                     Column(
                         Modifier
                             .widthIn(min = 180.dp, max = 280.dp)
-                            .width(IntrinsicSize.Max)
-                            .heightIn(max = 360.dp)
+                            // A text field has no useful intrinsic width, so a searchable menu has its own.
+                            .then(if (searchable) Modifier.width(SEARCHABLE_MENU_WIDTH) else Modifier.width(IntrinsicSize.Max))
+                            .heightIn(max = with(density) { slot.toDp() })
                             .clip(plate)
                             .background(MENU_FILL)
                             .border(1.dp, SpicyColors.HairlineStrong, plate)
-                            .verticalScroll(rememberScrollState())
-                            .padding(vertical = SpicySpacing.S1),
-                    ) { items(close) }
+                            // Taps on the plate between options stay on the menu.
+                            .pointerInput(Unit) { detectTapGestures { } },
+                    ) {
+                        // Stays put while the options scroll under it.
+                        if (searchable) {
+                            SpicySearchBar(
+                                query,
+                                { query = it },
+                                Modifier.fillMaxWidth().padding(start = SpicySpacing.S2, end = SpicySpacing.S2, top = SpicySpacing.S2),
+                                placeholder = "Search",
+                            )
+                        }
+                        Column(
+                            Modifier
+                                .verticalScroll(rememberScrollState())
+                                .padding(vertical = SpicySpacing.S1),
+                        ) {
+                            val shown = items(close, query)
+                            if (shown == 0) {
+                                Text(
+                                    "No matches",
+                                    Modifier.padding(horizontal = SpicySpacing.S4, vertical = SpicySpacing.S3),
+                                    style = SpicyType.Body.copy(color = SpicyColors.TextTertiary),
+                                )
+                            }
+                        }
+                    }
+                    }
                 }
             }
         }
@@ -557,22 +660,28 @@ private fun SelectOption(label: String, selected: Boolean, onClick: () -> Unit) 
 }
 
 /**
- * Puts the menu under its pill, right edges lined up (the pills sit at a row's end), or over the
- * pill when it doesn't fit below; always [margin] inside the window.
+ * Puts a menu under its pill, right edges lined up (the pills sit at a row's end), or over the
+ * pill: always when [fixedAbove] is true, never when false, and when it doesn't fit below when
+ * null ([above] then says which). Always [margin] inside the window and clear of the [keyboard].
  */
-internal class SelectMenuPosition(private val margin: Int) : PopupPositionProvider {
-    var above by mutableStateOf(false)
+internal class SelectMenuPosition(
+    private val margin: Int,
+    private val keyboard: Int = 0,
+    private val fixedAbove: Boolean? = null,
+) : PopupPositionProvider {
+    var above by mutableStateOf(fixedAbove ?: false)
         private set
 
     override fun calculatePosition(anchorBounds: IntRect, windowSize: IntSize, layoutDirection: LayoutDirection, popupContentSize: IntSize): IntOffset {
         val gap = margin / 2
+        val bottom = windowSize.height - keyboard
         val maxX = (windowSize.width - popupContentSize.width - margin).coerceAtLeast(margin)
         val x = (anchorBounds.right - popupContentSize.width).coerceIn(margin, maxX)
         val below = anchorBounds.bottom + gap
-        val fitsBelow = below + popupContentSize.height <= windowSize.height - margin
-        above = !fitsBelow && anchorBounds.top - gap - popupContentSize.height >= margin
+        above = fixedAbove ?: (below + popupContentSize.height > bottom - margin &&
+            anchorBounds.top - gap - popupContentSize.height >= margin)
         val y = if (above) anchorBounds.top - gap - popupContentSize.height else below
-        val maxY = (windowSize.height - popupContentSize.height - margin).coerceAtLeast(margin)
+        val maxY = (bottom - popupContentSize.height - margin).coerceAtLeast(margin)
         return IntOffset(x, y.coerceIn(margin, maxY))
     }
 }
@@ -767,13 +876,13 @@ fun SpicyTextField(
 
 /** The search bar: the magnifier, the field, and a clear button once there's text. */
 @Composable
-fun SpicySearchBar(value: String, onValueChange: (String) -> Unit, modifier: Modifier = Modifier) {
+fun SpicySearchBar(value: String, onValueChange: (String) -> Unit, modifier: Modifier = Modifier, placeholder: String = "Search settings…") {
     val haptics = LocalHapticFeedback.current
     val glyph = SpicyColors.TextTertiary
     SpicyTextField(
         value = value,
         onValueChange = onValueChange,
-        placeholder = "Search settings…",
+        placeholder = placeholder,
         modifier = modifier,
         leading = {
             Canvas(Modifier.size(14.dp)) {

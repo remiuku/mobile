@@ -8,14 +8,21 @@ import org.junit.Test
 
 class AppSettingsCorruptValuesTest {
     @Test fun wrongTypesReadAsDefaultsInsteadOfCrashing() {
-        val settings = AppSettings(Prefs(mapOf("lowPerformance" to "yes", "backgroundBlur" to 999, "scrollLeadMs" to "fast", "stageArt" to 3)))
+        val settings = AppSettings(Prefs(mapOf("lowPerformance" to "yes", "backgroundBlur" to 999, "scrollLeadMs" to "fast", "stageArts" to 3)))
 
         assertFalse(settings.lowPerformance)
         assertEquals(MAX_BACKGROUND_BLUR, settings.backgroundBlur)
         assertEquals(250, settings.scrollLeadMs)
-        assertEquals(StageArt.AnimatedCover, settings.stageArt)
-        assertEquals(StageArt.AnimatedCover, AppSettings(Prefs(mapOf("stageArt" to "Hologram"))).stageArt)
-        assertEquals(StageArt.Canvas, AppSettings(Prefs(mapOf("stageArt" to "Canvas"))).stageArt)
+        assertEquals(StageArt.DEFAULT, settings.stageArt)
+        assertEquals(emptySet<StageArt>(), AppSettings(Prefs(mapOf("stageArts" to "Hologram"))).stageArt)
+        assertEquals(setOf(StageArt.Canvas), AppSettings(Prefs(mapOf("stageArts" to "Canvas"))).stageArt)
+    }
+
+    @Test fun theOldCoverStageSwitchBecomesThePickedArt() {
+        assertEquals(StageArt.DEFAULT, AppSettings(Prefs(mapOf("coverStage" to true))).stageArt)
+        assertEquals(emptySet<StageArt>(), AppSettings(Prefs(mapOf("coverStage" to false))).stageArt)
+        // Once picked, the switch no longer counts.
+        assertEquals(setOf(StageArt.CoverArt), AppSettings(Prefs(mapOf("coverStage" to false, "stageArts" to "CoverArt"))).stageArt)
     }
 
     @Test fun knowsWhatTypeEachSettingIsStoredAs() {
@@ -23,7 +30,8 @@ class AppSettingsCorruptValuesTest {
         assertEquals(Boolean::class, types["lowPerformance"])
         assertEquals(Int::class, types["backgroundBlur"])
         assertEquals(String::class, types["lyricsSize"])
-        assertEquals(String::class, types["stageArt"])
+        assertEquals(String::class, types["stageArts"])
+        assertEquals(Boolean::class, types["coverStage"])
     }
 
     /** Read-only, and casting like Android's: a value of another type throws. */

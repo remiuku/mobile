@@ -42,11 +42,37 @@ internal class MotionCoverStream(val url: String, val player: ExoPlayer) {
     /** The video's width over its height once it's known, else 0. Compose state. */
     var videoAspect by mutableFloatStateOf(0f)
         private set
+    /** How many views of it are on a started screen; it loops only while one is. */
+    private var onScreen = 0
+
+    fun onScreen(started: Boolean) {
+        onScreen = (onScreen + if (started) 1 else -1).coerceAtLeast(0)
+        sync()
+    }
+
+    /** Whether the player has drawn a frame yet; until it has, there's nothing to hold. */
+    private var drawn = false
+
+    /**
+     * Plays while on screen and not held with the music ([MotionCovers.pausedNow]). Held from the
+     * start (the app opened on a paused song), it plays until its first frame is drawn, then holds
+     * that, so the views and the samplers have a picture.
+     */
+    fun sync() {
+        if (released) return
+        if (onScreen > 0 && (!drawn || !MotionCovers.pausedNow(url))) player.play() else player.pause()
+    }
     private var released = false
     private val fanOut = VideoFanOut()
 
     init {
         player.addListener(object : Player.Listener {
+            override fun onRenderedFirstFrame() {
+                if (drawn) return
+                drawn = true
+                sync()
+            }
+
             override fun onVideoSizeChanged(videoSize: VideoSize) {
                 fanOut.setVideoSize(videoSize.width, videoSize.height)
                 if (videoSize.width > 0 && videoSize.height > 0) {
@@ -154,6 +180,9 @@ private class VideoFanOut {
             videoHeight = height
             for (texture in outputs.keys) texture.setDefaultBufferSize(width, height)
             stages = null
+            // The first frame can land before its size does; held still (paused with the music),
+            // it's the only one coming, so the samplers get it now.
+            if (hasFrame && !dead) sample()
         }
     }
 
@@ -192,7 +221,11 @@ private class VideoFanOut {
 
     fun addSampler(longSide: Int, intervalMs: Long, onFrame: (MotionSample) -> Unit): () -> Unit {
         val sampler = Sampler(longSide, intervalMs, onFrame)
-        handler.post { samplers += sampler }
+        handler.post {
+            samplers += sampler
+            // The frame up already, so a paused loop (no new frames coming) still gives one.
+            if (hasFrame && !dead) sample()
+        }
         return { handler.post { samplers -= sampler } }
     }
 

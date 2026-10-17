@@ -14,6 +14,7 @@ import com.tx24.spicyplayer.lyrics.spicy.canvas.PinnedFooterMode
 import com.tx24.spicyplayer.ui.components.ChromeTheme
 import com.tx24.spicyplayer.ui.nowplaying.HeaderSize
 import com.tx24.spicyplayer.ui.nowplaying.StageArt
+import com.tx24.spicyplayer.ui.nowplaying.LoopKind
 import kotlin.properties.ReadWriteProperty
 import kotlin.reflect.KClass
 import kotlin.reflect.KProperty
@@ -30,7 +31,8 @@ class AppSettings(private val prefs: SharedPreferences) {
 
     /** Every setting below, so [reload] can re-read them; first, so it exists when they register. */
     private val all = mutableListOf<Setting<*>>()
-    private val types = mutableMapOf<String, KClass<*>>()
+    // `coverStage` is only read now, by [stageArt], but an older backup still restores it.
+    private val types = mutableMapOf<String, KClass<*>>("coverStage" to Boolean::class)
 
     /** The type each setting is stored as, by key, so a restore can turn away the wrong one. */
     val storedTypes: Map<String, KClass<*>> get() = types
@@ -107,12 +109,24 @@ class AppSettings(private val prefs: SharedPreferences) {
     /** The record's looping Apple Music cover in place of the still one, where it has one. */
     var animatedCover by boolean("animatedCover", false)
     /**
-     * Landscape, beside the lyrics: the cover (or its animation) fills its side of the screen, with
-     * the song docked along its bottom.
+     * Landscape, beside the lyrics: what may fill its side of the screen, with the song docked
+     * along its bottom. A song gets the first one it has; nothing picked is no stage. Unset, it
+     * follows the `coverStage` switch it replaced: on was the animated cover, else the still one.
      */
-    var coverStage by boolean("coverStage", true)
-    /** What fills the cover stage; each choice falls back down the list when the song lacks it. */
-    var stageArt by enum("stageArt", StageArt.AnimatedCover)
+    var stageArt by setting("stageArts", String::class, {
+        read { prefs.getString("stageArts", null) }?.let(StageArt::parse)
+            ?: if (read { prefs.getBoolean("coverStage", true) } != false) StageArt.DEFAULT else emptySet()
+    }) { prefs.edit().putString("stageArts", StageArt.store(it)).apply() }
+    /** Where the song has a Spotify Canvas, the background is that Canvas, blurred, over [backgroundType]. */
+    var canvasBackground by boolean("canvasBackground", false)
+    /** Portrait: the song's Spotify Canvas fills the screen while the big cover is open. */
+    var bigCoverCanvas by boolean("bigCoverCanvas", false)
+    /** While the stage or the big cover shows a Canvas, the background is that Canvas, blurred. */
+    var canvasBackdrop by boolean("canvasBackdrop", true)
+    /** The loops that hold their frame while the music is paused; both kinds by default. */
+    var pauseWithMusic by setting("pauseWithMusic", String::class, {
+        read { prefs.getString("pauseWithMusic", null) }?.let(LoopKind::parse) ?: LoopKind.entries.toSet()
+    }) { prefs.edit().putString("pauseWithMusic", LoopKind.store(it)).apply() }
     /** Cover Art background: the record's looping Apple Music cover in place of the still one. */
     var animatedBackground by boolean("animatedBackground", false)
     /**

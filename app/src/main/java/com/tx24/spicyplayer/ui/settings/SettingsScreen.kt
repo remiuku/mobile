@@ -501,7 +501,7 @@ private fun PageContent(
         SettingsPage.Lyrics -> LyricsContent(state, viewModel, settings)
         SettingsPage.Translation -> RomanizationTranslationContent(state, viewModel, settings)
         SettingsPage.ScrollSync -> ScrollSyncContent(state, viewModel, settings)
-        SettingsPage.Background -> BackgroundContent(settings)
+        SettingsPage.Background -> BackgroundContent(settings, viewModel)
         SettingsPage.NowPlaying -> NowPlayingContent(settings, viewModel)
         SettingsPage.Controls -> ControlsContent(settings)
         SettingsPage.Theme -> ThemeContent(settings)
@@ -590,8 +590,8 @@ private fun PageSkeleton(page: SettingsPage) {
         SettingsPage.Lyrics -> SettingsSkeleton(rows = 13)
         SettingsPage.Translation -> SettingsSkeleton(rows = 11)
         SettingsPage.ScrollSync -> SettingsSkeleton(rows = 7)
-        SettingsPage.Background -> SettingsSkeleton(rows = 4)
-        SettingsPage.NowPlaying -> SettingsSkeleton(rows = 10)
+        SettingsPage.Background -> SettingsSkeleton(rows = 5)
+        SettingsPage.NowPlaying -> SettingsSkeleton(rows = 11)
         SettingsPage.Controls -> SettingsSkeleton(rows = 11)
         SettingsPage.Theme -> SettingsSkeleton(rows = 4)
         SettingsPage.Sources -> SettingsSkeleton(rows = 11, cards = true)
@@ -660,6 +660,7 @@ private fun HomeGroups(state: PlayerUiState, settings: AppSettings, updater: Upd
                     else -> settings.backgroundType.label
                 },
                 "still".takeIf { settings.backgroundType.moving && (settings.staticBackground || settings.lowPerformance) },
+                "Canvas where available".takeIf { settings.canvasBackground && !settings.lowPerformance },
                 "animated".takeIf { settings.backgroundType == BackgroundType.CoverArt && settings.animatedBackground && !settings.lowPerformance },
                 "follows the animated cover".takeIf {
                     settings.backgroundType == BackgroundType.Default && settings.backgroundFollowsMotion && settings.animatedCover &&
@@ -674,8 +675,8 @@ private fun HomeGroups(state: PlayerUiState, settings: AppSettings, updater: Upd
             listOfNotNull(
                 if (settings.hideHeader) "Header hidden" else "${settings.headerSize.label} header",
                 "animated cover".takeIf { settings.animatedCover && !settings.lowPerformance },
-                (if (settings.stageArt == StageArt.Canvas) "cover stage with Canvas" else "cover stage")
-                    .takeIf { settings.coverStage && !settings.lowPerformance },
+                (if (StageArt.Canvas in settings.stageArt) "cover stage with Canvas" else "cover stage")
+                    .takeIf { settings.stageArt.isNotEmpty() && !settings.lowPerformance },
                 "release year".takeIf { settings.releaseYearPosition != ReleaseYearPosition.Off },
             ).joinToString(),
         ) { onOpen(SettingsPage.NowPlaying) }

@@ -1322,11 +1322,20 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
             }
     }
 
-    /** Whether the phone has no working internet connection right now. */
+    /**
+     * Whether the phone has no working internet connection right now: no network other than a VPN
+     * that reaches the internet. A VPN (Tailscale, say) stays up and validated with mobile data
+     * and Wi-Fi off, so the active network alone can't tell.
+     */
+    @Suppress("DEPRECATION") // allNetworks: the callback alternative needs a listener kept for this one question.
     private fun deviceOffline(): Boolean {
         val connectivity = getApplication<Application>().getSystemService(ConnectivityManager::class.java) ?: return false
-        val capabilities = connectivity.getNetworkCapabilities(connectivity.activeNetwork) ?: return true
-        return !capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+        return connectivity.allNetworks.none { network ->
+            val capabilities = connectivity.getNetworkCapabilities(network) ?: return@none false
+            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) &&
+                !capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
+        }
     }
 
     /**

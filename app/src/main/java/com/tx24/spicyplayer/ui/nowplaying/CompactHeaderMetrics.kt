@@ -158,7 +158,14 @@ data class ExpandedHeader(
     val titleLineHeightSp: Float,
     val artistsSizeSp: Float,
     val artistsLineHeightSp: Float,
-)
+) {
+    /**
+     * The song docked over a video (the cover stage, the portrait Canvas) is a caption: the name
+     * 1.5x this text's base size on a 1.2 line, the artists 1.05x on 1.35.
+     */
+    val dockTitleSizeSp get() = titleSizeSp / 2.25f * 1.5f
+    val dockArtistsSizeSp get() = artistsSizeSp / 1.275f * 1.05f
+}
 
 /**
  * How tall the compact song header is: [Large] is the desktop's 15cqh bar, [Small] a slim row

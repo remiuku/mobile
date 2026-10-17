@@ -5,6 +5,7 @@ import com.tx24.spicyplayer.ui.nowplaying.StageArtChoice.wantsAnimated
 import com.tx24.spicyplayer.ui.nowplaying.StageArtChoice.wantsCanvas
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -13,58 +14,74 @@ class StageArtChoiceTest {
     private val motion = "https://mvod.itunes.apple.com/a.m3u8"
     private val found = CanvasLookup.Found(canvas)
 
+    private val all = StageArt.entries.toSet()
+    private val videos = setOf(StageArt.Canvas, StageArt.AnimatedCover)
+
     @Test
     fun `canvas first, then the animated cover, then the still cover`() {
-        assertEquals(StagePicture.Canvas(canvas), pick(StageArt.Canvas, true, false, found, motion))
-        assertEquals(StagePicture.Animated(motion), pick(StageArt.Canvas, true, false, CanvasLookup.None, motion))
-        assertEquals(StagePicture.Still, pick(StageArt.Canvas, true, false, CanvasLookup.None, null))
+        assertEquals(StagePicture.Canvas(canvas), pick(all, true, false, found, motion))
+        assertEquals(StagePicture.Animated(motion), pick(all, true, false, CanvasLookup.None, motion))
+        assertEquals(StagePicture.Still, pick(all, true, false, CanvasLookup.None, null))
     }
 
     @Test
-    fun `the still cover waits while the canvas is looked up`() {
-        assertEquals(StagePicture.Still, pick(StageArt.Canvas, true, false, CanvasLookup.Pending, motion))
+    fun `nothing picked that the song has is no stage`() {
+        assertNull(pick(videos, true, false, CanvasLookup.None, null))
+        assertNull(pick(setOf(StageArt.Canvas), true, false, CanvasLookup.None, motion))
+        assertNull(pick(emptySet(), true, false, found, motion))
+        assertEquals(StagePicture.Canvas(canvas), pick(setOf(StageArt.Canvas), true, false, found, motion))
     }
 
     @Test
-    fun `animated cover is today's stage`() {
-        assertEquals(StagePicture.Animated(motion), pick(StageArt.AnimatedCover, true, false, found, motion))
-        assertEquals(StagePicture.Animated(motion), pick(StageArt.AnimatedCover, true, false, CanvasLookup.Pending, motion))
-        assertEquals(StagePicture.Still, pick(StageArt.AnimatedCover, true, false, CanvasLookup.None, null))
+    fun `while the canvas is looked up, only the still cover may hold the stage`() {
+        assertEquals(StagePicture.Still, pick(all, true, false, CanvasLookup.Pending, motion))
+        assertNull(pick(videos, true, false, CanvasLookup.Pending, motion))
     }
 
     @Test
-    fun `cover art only ignores both videos`() {
-        assertEquals(StagePicture.Still, pick(StageArt.CoverArt, true, false, found, motion))
-        assertEquals(StagePicture.Still, pick(StageArt.CoverArt, true, false, CanvasLookup.Pending, motion))
+    fun `the default is the animated cover, else the still one`() {
+        val default = StageArt.DEFAULT
+        assertEquals(StagePicture.Animated(motion), pick(default, true, false, found, motion))
+        assertEquals(StagePicture.Animated(motion), pick(default, true, false, CanvasLookup.Pending, motion))
+        assertEquals(StagePicture.Still, pick(default, true, false, CanvasLookup.None, null))
+    }
+
+    @Test
+    fun `cover art alone ignores both videos`() {
+        assertEquals(StagePicture.Still, pick(setOf(StageArt.CoverArt), true, false, found, motion))
+        assertEquals(StagePicture.Still, pick(setOf(StageArt.CoverArt), true, false, CanvasLookup.Pending, motion))
     }
 
     @Test
     fun `the animated cover needs Animated Cover on, the canvas doesn't`() {
-        assertEquals(StagePicture.Canvas(canvas), pick(StageArt.Canvas, false, false, found, motion))
-        assertEquals(StagePicture.Still, pick(StageArt.Canvas, false, false, CanvasLookup.None, motion))
-        assertEquals(StagePicture.Still, pick(StageArt.AnimatedCover, false, false, found, motion))
+        assertEquals(StagePicture.Canvas(canvas), pick(all, false, false, found, motion))
+        assertEquals(StagePicture.Still, pick(all, false, false, CanvasLookup.None, motion))
+        assertNull(pick(setOf(StageArt.AnimatedCover), false, false, found, motion))
     }
 
     @Test
     fun `low performance mode keeps both videos off`() {
-        for (art in StageArt.entries) {
-            for (lookup in listOf(found, CanvasLookup.None, CanvasLookup.Pending)) {
-                assertEquals("$art $lookup", StagePicture.Still, pick(art, true, true, lookup, motion))
-            }
-            assertFalse(wantsCanvas(art, lowPerformance = true))
-            assertFalse(wantsAnimated(art, animatedCover = true, lowPerformance = true))
+        for (lookup in listOf(found, CanvasLookup.None, CanvasLookup.Pending)) {
+            assertEquals("$lookup", StagePicture.Still, pick(all, true, true, lookup, motion))
         }
+        assertFalse(wantsCanvas(all, lowPerformance = true))
+        assertFalse(wantsAnimated(all, animatedCover = true, lowPerformance = true))
     }
 
     @Test
-    fun `lookups run only for the choices that reach them`() {
-        assertTrue(wantsCanvas(StageArt.Canvas, false))
-        assertFalse(wantsCanvas(StageArt.AnimatedCover, false))
-        assertFalse(wantsCanvas(StageArt.CoverArt, false))
-        assertTrue(wantsAnimated(StageArt.Canvas, true, false))
-        assertTrue(wantsAnimated(StageArt.AnimatedCover, true, false))
-        assertFalse(wantsAnimated(StageArt.CoverArt, true, false))
-        assertFalse(wantsAnimated(StageArt.AnimatedCover, false, false))
+    fun `lookups run only for what's picked`() {
+        assertTrue(wantsCanvas(setOf(StageArt.Canvas), false))
+        assertFalse(wantsCanvas(StageArt.DEFAULT, false))
+        assertTrue(wantsAnimated(setOf(StageArt.AnimatedCover), true, false))
+        assertFalse(wantsAnimated(setOf(StageArt.Canvas, StageArt.CoverArt), true, false))
+        assertFalse(wantsAnimated(setOf(StageArt.AnimatedCover), false, false))
+    }
+
+    @Test
+    fun `stored in list order, unknown names dropped`() {
+        assertEquals("Canvas,CoverArt", StageArt.store(setOf(StageArt.CoverArt, StageArt.Canvas)))
+        assertEquals(setOf(StageArt.Canvas, StageArt.CoverArt), StageArt.parse("CoverArt, Canvas,Hologram"))
+        assertEquals(emptySet<StageArt>(), StageArt.parse(""))
     }
 
     @Test
