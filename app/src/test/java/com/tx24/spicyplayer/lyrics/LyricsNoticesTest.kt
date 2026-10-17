@@ -48,6 +48,17 @@ class LyricsNoticesTest {
         assertEquals("Couldn't reach LRCLIB (no connection), SPICY_LYRICS (timed out)", error.detail)
     }
 
+    @Test fun aSourceBackingOffDoesntHideThatTheRestCouldntConnect() {
+        // Trying again offline: the source that failed first is cooling down, with no reason of its own.
+        val error = notice(
+            ProviderAttempt("spicy_lyrics", ProviderAttemptOutcome.COOLING_DOWN),
+            ProviderAttempt("lrclib", ProviderAttemptOutcome.UNAVAILABLE, failureCategory = ProviderFailureCategory.NETWORK),
+        )
+        assertEquals(NoticeKind.Offline, error.kind)
+        // Only sources backing off say nothing about the connection.
+        assertEquals(NoticeKind.RateLimited, notice(ProviderAttempt("spicy_lyrics", ProviderAttemptOutcome.COOLING_DOWN)).kind)
+    }
+
     @Test fun skippedAndDisabledSourcesDontCount() {
         val error = notice(
             ProviderAttempt("lrclib", ProviderAttemptOutcome.MISS),
