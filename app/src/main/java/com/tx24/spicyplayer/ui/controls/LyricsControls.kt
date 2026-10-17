@@ -782,8 +782,11 @@ private const val SHADE_ALPHA = 0.3f
  */
 private val ShadeEasing = CubicBezierEasing(0.45f, 0f, 0.35f, 1f)
 
-/** How strong the shade's blur gets before text under it looks soft: about 1dp of [SHADE_BLUR]. */
-private const val SHADE_SOFT_INTENSITY = 0.05f
+/**
+ * How strong the shade's blur gets before a notice keeps above it: a fifth of [SHADE_BLUR]. Any
+ * stricter and the notice sat well clear of the controls, too high to read as centred under them.
+ */
+private const val SHADE_SOFT_INTENSITY = 0.2f
 
 /**
  * How much of the page's bottom [LyricsControls] keep from being read clearly, in px: the

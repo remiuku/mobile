@@ -27,16 +27,16 @@ class ShadeClearanceTest {
     }
 
     @Test
-    fun `phone controls keep a notice about 110dp above them`() {
+    fun `phone controls keep a notice about 50dp above them`() {
         // The column of controls is about 278dp tall; at density 1, px are dp.
         val clear = controlsClearancePx(278, wide = false, density = 1f)
-        assertTrue("was $clear", clear - 278 in 100f..120f)
+        assertTrue("was $clear", clear - 278 in 45f..56f)
     }
 
     @Test
-    fun `the landscape bar keeps a notice about 44dp above it`() {
+    fun `the landscape bar keeps a notice about 20dp above it`() {
         val clear = controlsClearancePx(110, wide = true, density = 1f)
-        assertTrue("was $clear", clear - 110 in 38f..50f)
+        assertTrue("was $clear", clear - 110 in 16f..25f)
     }
 
     @Test
