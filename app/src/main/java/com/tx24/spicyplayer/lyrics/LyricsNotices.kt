@@ -14,8 +14,8 @@ enum class NoticeKind(val slug: String, val title: String, val body: String, val
     NoLyrics(
         "no-lyrics", "No lyrics for this song yet",
         "We couldn't find lyrics for this track in any of your sources. New lyrics are added all the time, so check " +
-            "back later. If you know this song has lyrics, copy the details and send them to us so we can look into it.",
-        retry = false, report = true,
+            "back later.",
+        retry = false, report = false,
     ),
     NoSources(
         "no-sources", "No lyrics sources are on",

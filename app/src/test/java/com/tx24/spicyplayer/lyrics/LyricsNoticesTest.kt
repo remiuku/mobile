@@ -4,6 +4,7 @@ import com.tx24.spicyplayer.network.data.ProviderAttempt
 import com.tx24.spicyplayer.network.data.ProviderAttemptOutcome
 import com.tx24.spicyplayer.network.data.ProviderFailureCategory
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Test
 
@@ -67,6 +68,13 @@ class LyricsNoticesTest {
         val error = notice(ProviderAttempt("lrclib", ProviderAttemptOutcome.MISS))
         assertEquals(NoticeKind.NoLyrics, error.kind)
         assertNull(error.code)
+    }
+
+    @Test fun noLyricsDoesntAskForAReport() {
+        // A song with no lyrics isn't a bug: no "Copy details" or Discord, and the text doesn't ask for them.
+        assertFalse(NoticeKind.NoLyrics.report)
+        assertFalse(NoticeKind.NoLyrics.body.contains("send them to us"))
+        assertFalse(NoticeKind.NoLyrics.body.contains("details"))
     }
 
     @Test fun nothingAskedMeansNoSources() {
