@@ -54,12 +54,12 @@ internal fun RomanizationTranslationContent(state: PlayerUiState, viewModel: Ext
 @Composable
 internal fun TranslationContent(state: PlayerUiState, viewModel: ExternalPlaybackViewModel, settings: AppSettings) {
     val preferences = state.translationPreferences
-    val languages = TranslationLanguages.common.toMutableMap().apply {
-        if (preferences.targetLanguage !in this) put(preferences.targetLanguage, TranslationLanguages.name(preferences.targetLanguage))
-    }.toList().sortedBy { it.second }
+    // Only languages the provider can translate into; any language can be left untranslated.
+    val targets = TranslationLanguages.targets(preferences.provider, preferences.targetLanguage)
+    val languages = TranslationLanguages.all(preferences.excludedLanguages)
     var key by remember { mutableStateOf("") }
     SettingRow("Target language", description = "Translate lyrics into this language.", icon = Icons.Rounded.Language) {
-        SpicySelect(preferences.targetLanguage, languages.map { it.first }, viewModel::setTranslationTarget, labels = languages.map { it.second })
+        SpicySelect(preferences.targetLanguage, targets.map { it.first }, viewModel::setTranslationTarget, labels = targets.map { it.second })
     }
     SettingRow("Display mode", description = "Show translations below or replace lyrics.", icon = Icons.Rounded.ViewAgenda,
         searchDescription = "Show translations below the lyrics or in their place.") {
@@ -104,7 +104,7 @@ internal fun TranslationContent(state: PlayerUiState, viewModel: ExternalPlaybac
 @Composable
 internal fun LyricsLanguageRow(state: PlayerUiState, viewModel: ExternalPlaybackViewModel) {
     val detected = state.lyricsLanguage?.let { "Detected: ${TranslationLanguages.name(it)}" } ?: "Not detected yet"
-    val languages = TranslationLanguages.common.toList().sortedBy { it.second }
+    val languages = TranslationLanguages.all(listOfNotNull(state.lyricsLanguageOverride))
     SettingRow("Lyrics language", description = detected, icon = Icons.Rounded.Translate) {
         SpicySelect(state.lyricsLanguageOverride ?: "auto", listOf("auto") + languages.map { it.first },
             { viewModel.setLyricsLanguage(it.takeUnless { code -> code == "auto" }) },

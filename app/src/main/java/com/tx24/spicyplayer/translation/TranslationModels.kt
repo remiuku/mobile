@@ -25,7 +25,7 @@ object TranslationConsent {
 }
 
 data class TranslationPreferences(
-    val targetLanguage: String = Locale.getDefault().language,
+    val targetLanguage: String = languageCode(Locale.getDefault().language) ?: "en",
     val automatic: Boolean = false,
     val provider: TranslationProvider = TranslationProvider.Google,
     val excludedLanguages: Set<String> = emptySet(),
@@ -75,10 +75,19 @@ data class TranslationDocument(val song: String, val source: String, val lines: 
 fun isTranslationContent(text: String): Boolean = text.any(Char::isLetterOrDigit) && !INSTRUMENTAL_MARKER.matches(text.trim())
 private val INSTRUMENTAL_MARKER = Regex("(?:\\[(?:instrumental|interlude|music)]|\\((?:instrumental|interlude|music)\\))", RegexOption.IGNORE_CASE)
 
+/**
+ * The one code a language goes by everywhere: in the pickers, in stored settings and in what a
+ * provider detects. The region is dropped (`zh-TW` is `zh`) and an old or alternative code becomes
+ * the listed one, so excluding Filipino (`tl`) also catches lyrics detected as `fil`.
+ */
 fun languageCode(code: String?): String? = code?.trim()?.lowercase(Locale.ROOT)
-    ?.replace('_', '-')?.substringBefore('-')?.let {
-        when (it) { "iw" -> "he"; "in" -> "id"; "nb", "nn" -> "no"; "und", "auto", "" -> null; else -> it }
-    }
+    ?.replace('_', '-')?.substringBefore('-')?.let { LANGUAGE_ALIASES[it] ?: it }?.takeUnless { it in NO_LANGUAGE }
+
+private val LANGUAGE_ALIASES = mapOf(
+    "iw" to "he", "in" to "id", "ji" to "yi", "jw" to "jv", "mo" to "ro",
+    "nb" to "no", "nn" to "no", "fil" to "tl", "tgl" to "tl", "prs" to "fa",
+)
+private val NO_LANGUAGE = setOf("und", "auto", "")
 
 fun skipTranslation(source: String?, target: String, excluded: Set<String>): Boolean {
     val language = languageCode(source) ?: return false
@@ -177,15 +186,57 @@ object DeepLKey {
 }
 
 object TranslationLanguages {
+    /** Every language the pickers offer, keyed by its [languageCode], in name order. */
     val common = linkedMapOf(
-        "en" to "English", "ar" to "Arabic", "bg" to "Bulgarian", "zh" to "Chinese",
-        "cs" to "Czech", "da" to "Danish", "nl" to "Dutch", "fi" to "Finnish",
-        "fr" to "French", "de" to "German", "el" to "Greek", "he" to "Hebrew",
-        "hi" to "Hindi", "hu" to "Hungarian", "id" to "Indonesian", "it" to "Italian",
-        "ja" to "Japanese", "ko" to "Korean", "no" to "Norwegian", "pl" to "Polish",
-        "pt" to "Portuguese", "ro" to "Romanian", "ru" to "Russian", "sk" to "Slovak",
-        "es" to "Spanish", "sv" to "Swedish", "th" to "Thai", "tr" to "Turkish",
-        "uk" to "Ukrainian", "vi" to "Vietnamese",
+        "af" to "Afrikaans", "sq" to "Albanian", "am" to "Amharic", "ar" to "Arabic",
+        "hy" to "Armenian", "az" to "Azerbaijani", "eu" to "Basque", "bn" to "Bengali",
+        "bs" to "Bosnian", "bg" to "Bulgarian", "my" to "Burmese", "ca" to "Catalan",
+        "ceb" to "Cebuano", "zh" to "Chinese", "hr" to "Croatian", "cs" to "Czech",
+        "da" to "Danish", "nl" to "Dutch", "en" to "English", "et" to "Estonian",
+        "tl" to "Filipino", "fi" to "Finnish", "fr" to "French", "ka" to "Georgian",
+        "de" to "German", "el" to "Greek", "gu" to "Gujarati", "ha" to "Hausa",
+        "he" to "Hebrew", "hi" to "Hindi", "hu" to "Hungarian", "is" to "Icelandic",
+        "ig" to "Igbo", "id" to "Indonesian", "ga" to "Irish", "it" to "Italian",
+        "ja" to "Japanese", "jv" to "Javanese", "kn" to "Kannada", "kk" to "Kazakh",
+        "km" to "Khmer", "ko" to "Korean", "lo" to "Lao", "lv" to "Latvian",
+        "lt" to "Lithuanian", "mk" to "Macedonian", "ms" to "Malay", "ml" to "Malayalam",
+        "mr" to "Marathi", "mn" to "Mongolian", "ne" to "Nepali", "no" to "Norwegian",
+        "ps" to "Pashto", "fa" to "Persian", "pl" to "Polish", "pt" to "Portuguese",
+        "pa" to "Punjabi", "ro" to "Romanian", "ru" to "Russian", "sr" to "Serbian",
+        "si" to "Sinhala", "sk" to "Slovak", "sl" to "Slovenian", "so" to "Somali",
+        "es" to "Spanish", "sw" to "Swahili", "sv" to "Swedish", "ta" to "Tamil",
+        "te" to "Telugu", "th" to "Thai", "tr" to "Turkish", "uk" to "Ukrainian",
+        "ur" to "Urdu", "uz" to "Uzbek", "vi" to "Vietnamese", "cy" to "Welsh",
+        "xh" to "Xhosa", "yo" to "Yoruba", "zu" to "Zulu",
     )
+
+    /** Listed languages DeepL can't translate into or from. Google handles every listed one. */
+    private val DEEPL_MISSING = setOf("am", "km", "kn", "lo", "si", "so", "yo")
+
     fun name(code: String): String = common[languageCode(code)] ?: Locale.forLanguageTag(code).getDisplayLanguage(Locale.getDefault()).ifBlank { code }
+
+    /** Whether [provider] can translate into or from [code]. A language not listed here is left to the provider. */
+    fun supports(provider: TranslationProvider, code: String): Boolean = when (provider) {
+        TranslationProvider.Google -> true
+        TranslationProvider.DeepL -> languageCode(code) !in DEEPL_MISSING
+    }
+
+    /** The languages [provider] can translate into, by name, plus [current] so a saved choice still shows. */
+    fun targets(provider: TranslationProvider, current: String? = null): List<Pair<String, String>> =
+        withCurrent(common.filterKeys { supports(provider, it) }, listOfNotNull(current))
+
+    /** Every listed language by name, for languages left untranslated or a song's language, plus [current] ones. */
+    fun all(current: Collection<String> = emptyList()): List<Pair<String, String>> = withCurrent(common, current)
+
+    private fun withCurrent(languages: Map<String, String>, current: Collection<String>): List<Pair<String, String>> =
+        (languages + current.mapNotNull(::languageCode).filter { it !in languages }.associateWith(::name))
+            .toList().sortedBy { it.second }
+
+    /** [code] as Google's endpoints take it: they still use the old codes for Hebrew and Javanese. */
+    fun googleCode(code: String): String = when (val language = languageCode(code)) {
+        null -> code
+        "he" -> "iw"
+        "jv" -> "jw"
+        else -> language
+    }
 }

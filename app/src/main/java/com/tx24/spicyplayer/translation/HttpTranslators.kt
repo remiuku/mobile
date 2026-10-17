@@ -45,7 +45,8 @@ internal fun googleChromeRequest(request: TranslatorRequest): Request {
     }
     val url = "https://translate.googleapis.com/translate_a/t".toHttpUrl().newBuilder()
         .addQueryParameter("client", "dict-chrome-ex")
-        .addQueryParameter("sl", request.source ?: "auto").addQueryParameter("tl", request.target).build()
+        .addQueryParameter("sl", request.source?.let(TranslationLanguages::googleCode) ?: "auto")
+        .addQueryParameter("tl", TranslationLanguages.googleCode(request.target)).build()
     val body = FormBody.Builder().apply { request.lines.forEach { add("q", it) } }.build()
     return Request.Builder().url(url).post(body).build()
 }
@@ -74,7 +75,8 @@ internal fun googleRequest(request: TranslatorRequest): Request {
     if (text.length > TranslationBatching.GOOGLE_TEXT_LIMIT) throw TranslationFailure("This request exceeds Google's text limit.")
     val url = "https://translate.googleapis.com/translate_a/single".toHttpUrl().newBuilder()
         .addQueryParameter("client", "gtx").addQueryParameter("dt", "t").addQueryParameter("dj", "1")
-        .addQueryParameter("sl", request.source ?: "auto").addQueryParameter("tl", request.target).build()
+        .addQueryParameter("sl", request.source?.let(TranslationLanguages::googleCode) ?: "auto")
+        .addQueryParameter("tl", TranslationLanguages.googleCode(request.target)).build()
     return Request.Builder().url(url).post(FormBody.Builder().add("q", text).build()).build()
 }
 
@@ -122,10 +124,14 @@ class DeepLTranslator(private val client: OkHttpClient, private val key: String)
  */
 internal fun deepLRequest(request: TranslatorRequest, key: String): Request {
     fun code(language: String): String = if (languageCode(language) == "no") "NB" else language.uppercase(java.util.Locale.ROOT)
+    if (!TranslationLanguages.supports(TranslationProvider.DeepL, request.target)) {
+        throw TranslationFailure("DeepL can't translate into ${TranslationLanguages.name(request.target)}. Pick another target language or use Google.")
+    }
     val body = FormBody.Builder().apply {
         request.lines.forEach { add("text", it) }
         add("target_lang", code(request.target))
-        request.source?.let { add("source_lang", code(it)) }
+        // A song language DeepL doesn't know is left for it to detect line by line.
+        request.source?.takeIf { TranslationLanguages.supports(TranslationProvider.DeepL, it) }?.let { add("source_lang", code(it)) }
         if (request.context.isNotBlank()) add("context", request.context)
         add("split_sentences", "nonewlines")
         add("preserve_formatting", "1")

@@ -5,6 +5,7 @@ import androidx.core.content.edit
 import com.tx24.spicyplayer.translation.TranslationPreferences
 import com.tx24.spicyplayer.translation.TranslationProvider
 import com.tx24.spicyplayer.translation.TranslationConsent
+import com.tx24.spicyplayer.translation.languageCode
 
 /** Lookup preferences travel in backups; credentials and consent stay on this device. */
 internal class TranslationSettingsStore(context: Context) {
@@ -17,10 +18,11 @@ internal class TranslationSettingsStore(context: Context) {
         val provider = TranslationProvider.stored(stored)
         if (stored != provider.name) preferences.edit { putString("provider", provider.name) }
         return TranslationPreferences(
-            targetLanguage = preferences.getString("targetLanguage", null) ?: java.util.Locale.getDefault().language,
+            // Read as the listed code: a phone set to Filipino reports `fil`, an older one `iw` for Hebrew.
+            targetLanguage = languageCode(preferences.getString("targetLanguage", null) ?: java.util.Locale.getDefault().language) ?: "en",
             automatic = preferences.getBoolean("automatic", false),
             provider = provider,
-            excludedLanguages = preferences.getStringSet("excludedLanguages", emptySet()).orEmpty().toSet(),
+            excludedLanguages = preferences.getStringSet("excludedLanguages", emptySet()).orEmpty().mapNotNull(::languageCode).toSet(),
             humanTranslations = preferences.getBoolean("humanTranslations", true),
         )
     }
@@ -35,7 +37,7 @@ internal class TranslationSettingsStore(context: Context) {
     }
     fun key(): String = keys.getString("key", "").orEmpty()
     fun saveKey(key: String) { keys.edit { putString("key", key) } }
-    fun language(song: String?): String? = song?.let { languages.getString(it, null) }
+    fun language(song: String?): String? = song?.let { languageCode(languages.getString(it, null)) }
     fun saveLanguage(song: String, language: String?) {
         languages.edit { if (language == null) remove(song) else putString(song, language) }
     }
