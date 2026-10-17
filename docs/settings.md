@@ -16,7 +16,7 @@ The settings screen lives in `ui/settings/`; its controls in `ui/components/Sett
    - Keep the logic free of Android code where possible, for the Kotlin Multiplatform move after v1.
 3. **Build it from the shared controls**, never Material ones:
    - `ToggleRow` for on/off;
-   - `SettingRow` with an `SpicySelect` for a choice between a few named options;
+   - `SettingRow` with an `SpicySelect` for a choice between named options, or `SpicyMultiSelect` to pick several. From 12 options on, the menu gets a search field (`matchingOptions`), so a long list like the languages needs nothing extra;
    - `SettingRow` with an `SpicyButton` or `SpicyTextField` for actions and text;
    - `SettingRow(stacked = true)` with `SpicyBipolarSlider` for amounts.
 
