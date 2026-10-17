@@ -57,6 +57,7 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.Easing
 import androidx.compose.animation.core.keyframes
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
@@ -780,6 +781,37 @@ private const val SHADE_ALPHA = 0.3f
  * it starts, steepest in the middle, flat again at full strength.
  */
 private val ShadeEasing = CubicBezierEasing(0.45f, 0f, 0.35f, 1f)
+
+/** How strong the shade's blur gets before text under it looks soft: about 1dp of [SHADE_BLUR]. */
+private const val SHADE_SOFT_INTENSITY = 0.05f
+
+/**
+ * How much of the page's bottom [LyricsControls] keep from being read clearly, in px: the
+ * controls themselves ([controlsHeightPx], as reported by `onControlsHeight`) and the part of the
+ * shade above them that blurs text. A notice kept above this is sharp.
+ */
+internal fun controlsClearancePx(controlsHeightPx: Int, wide: Boolean, density: Float): Float {
+    val reachPx = (if (wide) BAR_SHADE_REACH else SHADE_REACH).value * density
+    return controlsHeightPx + shadeBlurAbovePx(reachPx, controlsHeightPx.toFloat(), ShadeEasing, SHADE_SOFT_INTENSITY)
+}
+
+/**
+ * How far above the controls a shade [reachPx] tall blurs at [intensity] or more. The blur ramps
+ * on [easing] from nothing at the shade's top to full at the controls' bottom, across the reach
+ * and the controls together, so taller controls leave less of the reach blurred.
+ */
+internal fun shadeBlurAbovePx(reachPx: Float, controlsHeightPx: Float, easing: Easing, intensity: Float): Float {
+    val span = reachPx + controlsHeightPx.coerceAtLeast(0f)
+    if (reachPx <= 0f) return 0f
+    // Where the ramp reaches [intensity], as a fraction of the span; the easing only rises.
+    var low = 0f
+    var high = 1f
+    repeat(20) {
+        val mid = (low + high) / 2f
+        if (easing.transform(mid) < intensity) low = mid else high = mid
+    }
+    return (reachPx - low * span).coerceIn(0f, reachPx)
+}
 
 /** [ShadeEasing] sampled into stops, since a gradient only ramps linearly between stops. */
 private val ShadeGradient = Brush.verticalGradient(

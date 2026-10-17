@@ -110,8 +110,9 @@ internal fun LyricsNotice(
  * copy the details, ask on Discord, find the song on Spotify) and, when it's worth reporting, its
  * code in small monospace. Centred, at most 34em of body text wide, rising in over 350 ms. On a box
  * narrower than 360dp it's left-aligned with a smaller title. Text is sized off the box's width.
- * [bottomPx] is how much of the box's bottom the controls cover right now; the notice moves up by
- * half of it, or far enough to clear it when the notice is tall, while there's room.
+ * [bottomPx] is how much of the box's bottom the controls and their shade's blur cover right
+ * now; the notice moves up by half of it, or far enough to clear it when the notice is tall,
+ * while there's room.
  *
  * [compact], for the floating window: the title alone, stepped down until two lines fit the
  * window's height, and the detail's first sentence on one line if there's room under it.

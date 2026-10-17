@@ -154,6 +154,7 @@ import com.tx24.spicyplayer.ui.settings.QuickScreen
 import com.tx24.spicyplayer.ui.settings.QuickSettingsModal
 import com.tx24.spicyplayer.ui.components.LocalUiAnimations
 import com.tx24.spicyplayer.ui.controls.LyricsControls
+import com.tx24.spicyplayer.ui.controls.controlsClearancePx
 import com.tx24.spicyplayer.ui.controls.kind
 import com.tx24.spicyplayer.ui.nowplaying.LandscapeMetrics
 import com.tx24.spicyplayer.ui.settings.PanelSide
@@ -839,9 +840,19 @@ private fun LyricsApp(
                 var pinnedHeightPx by remember { mutableIntStateOf(0) }
                 val pinnedGapPx = with(LocalDensity.current) { PINNED_FOOTER_GAP.toPx() }
                 val pinnedClearPx = with(LocalDensity.current) { 8.dp.toPx() }
-                // While the controls show, a notice centres in the space they leave above them.
-                val noticeBottomPx by animateFloatAsState(
+                // While the controls show, the scroll-to-active button keeps clear of them.
+                val controlsBottomPx by animateFloatAsState(
                     if (controlsVisible && bottomBar) controlsHeightPx.toFloat() else 0f,
+                    tween(SpicyMotion.CONTROLS_FADE_MS),
+                    label = "controlsBottom",
+                )
+                // A notice centres in the space they leave above them and the blurring part of
+                // their shade, so its buttons stay sharp. It sits in what the shade blurs.
+                val controlsClearPx = remember(controlsHeightPx, landscape, density) {
+                    controlsClearancePx(controlsHeightPx, wide = landscape, density = density)
+                }
+                val noticeBottomPx by animateFloatAsState(
+                    if (controlsVisible && bottomBar) controlsClearPx else 0f,
                     tween(SpicyMotion.CONTROLS_FADE_MS),
                     label = "noticeBottom",
                 )
@@ -1177,7 +1188,7 @@ private fun LyricsApp(
                             hideHeader -> headerMetrics.barTopPx
                             else -> headerMetrics.lyricsTopPx
                         },
-                        bottomPx = { pinnedGapPx + maxOf(noticeBottomPx, if (pinnedHeightPx > 0) pinnedHeightPx + pinnedClearPx else 0f) },
+                        bottomPx = { pinnedGapPx + maxOf(controlsBottomPx, if (pinnedHeightPx > 0) pinnedHeightPx + pinnedClearPx else 0f) },
                         modifier = Modifier.padding(belowTop).inLyricsBox(),
                     )
                 }
