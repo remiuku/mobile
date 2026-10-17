@@ -35,7 +35,7 @@ class KugouLyricsProvider @Inject constructor(private val client: OkHttpClient, 
             if (SpotifyTrackMatcher.normalize(title) != SpotifyTrackMatcher.normalize(request.title)) continue
             if (!SpotifyTrackMatcher.normalize(artist).contains(SpotifyTrackMatcher.normalize(request.artist))) continue
             val duration = song.get("duration")?.asInt ?: request.durationSeconds
-            if (kotlin.math.abs(duration - request.durationSeconds) > 8) continue
+            if (!request.lengthMatches(duration)) continue
             val hash = song.get("hash")?.asString ?: continue
             val candidates = get("https://krcs.kugou.com/search".toHttpUrl().newBuilder()
                 .addQueryParameter("ver","1").addQueryParameter("man","yes").addQueryParameter("client","mobi")

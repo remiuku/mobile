@@ -13,7 +13,15 @@ data class LyricsLookupRequest(
     val durationSeconds: Int,
     /** Manual/cache override; bypasses metadata matching when present. */
     val spotifyTrackId: String? = null,
-)
+) {
+    /**
+     * Whether a catalogue entry [seconds] long can be this track. A length of zero on either side is
+     * unknown and rules nothing out: a queue entry fetched ahead, or a player that sends the length
+     * after the title, has none, and taken as zero it would rule out every song.
+     */
+    fun lengthMatches(seconds: Int, toleranceSeconds: Int = 8): Boolean =
+        seconds <= 0 || durationSeconds <= 0 || kotlin.math.abs(seconds - durationSeconds) <= toleranceSeconds
+}
 
 enum class LyricsCapability {
     WORD_SYNC,

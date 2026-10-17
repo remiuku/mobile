@@ -27,9 +27,12 @@ class QqMusicLyricsProvider @Inject constructor(private val client:OkHttpClient,
    if(!response.isSuccessful)throw ProviderHttpException("QQ",response.code)
    gson.fromJson(response.body?.string(),JsonObject::class.java)
   }
+  // A throttled search (code 2001, which comes in bursts) carries an empty list: no answer, not a miss.
+  val code=root.get("code")?.asInt?.takeIf{it!=0}?:root.getAsJsonObject("req_1")?.get("code")?.asInt?.takeIf{it!=0}
+  if(code!=null)return ProviderResult.Unavailable(ProviderFailureCategory.SERVER,"QQ search code $code",true)
   val songs=root.getAsJsonObject("req_1")?.getAsJsonObject("data")?.getAsJsonObject("body")?.getAsJsonObject("song")?.getAsJsonArray("list")?:return ProviderResult.Miss
   for(song in songs.map{it.asJsonObject}){val title=song.get("name")?.asString.orEmpty();val artists=song.getAsJsonArray("singer")?.joinToString(" "){it.asJsonObject.get("name").asString}.orEmpty();val dur=song.get("interval")?.asInt?:0
-   if(SpotifyTrackMatcher.normalize(title)!=SpotifyTrackMatcher.normalize(request.title)||!SpotifyTrackMatcher.normalize(artists).contains(SpotifyTrackMatcher.normalize(request.artist))||(dur>0&&kotlin.math.abs(dur-request.durationSeconds)>8))continue
+   if(SpotifyTrackMatcher.normalize(title)!=SpotifyTrackMatcher.normalize(request.title)||!SpotifyTrackMatcher.normalize(artists).contains(SpotifyTrackMatcher.normalize(request.artist))||!request.lengthMatches(dur))continue
    val mid=song.get("mid")?.asString?:continue
    fetchQrc(mid)?.let { return ProviderResult.Hit(RemoteLyricsPayload(ttmlLyrics=it)) }
    val lyric="https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg".toHttpUrl().newBuilder().addQueryParameter("songmid",mid).addQueryParameter("format","json").addQueryParameter("nobase64","1").build()
@@ -59,7 +62,7 @@ class KuwoLyricsProvider @Inject constructor(private val client:OkHttpClient):Re
    .addQueryParameter("vipver","1").addQueryParameter("strategy","2012").addQueryParameter("mobi","1").addQueryParameter("issubtitle","1").addQueryParameter("show_copyright_off","1").build()
   for(song in kuwoSearchResults(getBytes(url).toString(Charsets.UTF_8))){
    if(SpotifyTrackMatcher.normalize(song.title)!=SpotifyTrackMatcher.normalize(request.title)||!SpotifyTrackMatcher.normalize(song.artist).contains(SpotifyTrackMatcher.normalize(request.artist)))continue
-   if(song.durationSeconds>0&&request.durationSeconds>0&&kotlin.math.abs(song.durationSeconds-request.durationSeconds)>8)continue
+   if(!request.lengthMatches(song.durationSeconds))continue
    val query=Base64.getEncoder().encodeToString("user=12345,web,web,web&requester=localhost&req=1&rid=${song.rid}".toByteArray().mapIndexed{i,b->(b.toInt() xor "yeelion".encodeToByteArray()[i%7].toInt()).toByte()}.toByteArray())
    val bytes=getBytes("https://newlyric.kuwo.cn/newlyric.lrc?$query".toHttpUrl());val split=bytes.indexOfSequence("\r\n\r\n".toByteArray());if(split<0)continue
    val lrc=decodeKuwoLrc(InflaterInputStream(ByteArrayInputStream(bytes.copyOfRange(split+4,bytes.size))).readBytes())

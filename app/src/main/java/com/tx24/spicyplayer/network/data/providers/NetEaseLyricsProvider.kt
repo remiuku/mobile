@@ -44,7 +44,7 @@ class NetEaseLyricsProvider @Inject constructor(private val client: OkHttpClient
             val duration = (item.get("dt") ?: item.get("duration"))?.asLong?.div(1000) ?: 0
             SpotifyTrackMatcher.normalize(name) == SpotifyTrackMatcher.normalize(request.title) &&
                 SpotifyTrackMatcher.normalize(artists).contains(SpotifyTrackMatcher.normalize(request.artist)) &&
-                (duration == 0L || kotlin.math.abs(duration - request.durationSeconds) <= 8)
+                request.lengthMatches(duration.toInt())
         }.take(TRIES)
         if (songs.isEmpty()) return ProviderResult.Miss
         // Word timing belongs to a release, not a song, and the search's favourite is often an
