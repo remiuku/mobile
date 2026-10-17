@@ -118,7 +118,8 @@ private val CoverEnterEasing = CubicBezierEasing(0.835f, -0.008f, 0.149f, 0.866f
  * text centred under it, at [panelLeft] (it slides when the sides swap). Expanding then only
  * moves it to the centre. [coverOverlay] is drawn over the cover and moves with it; touches it
  * leaves alone reach the cover's gestures. While the cover stage shows ([stage], 0..1), the
- * panel's cover and text dissolve into it.
+ * panel's cover and text dissolve into it, as the big cover and its text do into the portrait
+ * Canvas ([immersive]).
  */
 @Composable
 fun CompactNowPlayingHeader(
@@ -138,6 +139,8 @@ fun CompactNowPlayingHeader(
     panelLeft: () -> Float = { panel?.artLeftPx ?: 0f },
     coverOverlay: (@Composable () -> Unit)? = null,
     stage: () -> Float = { 0f },
+    /** Portrait, while the song's Canvas fills the screen (0..1): the big cover and its text give way to it. */
+    immersive: () -> Float = { 0f },
 ) {
     val year = releaseYear?.takeIf { it.position != ReleaseYearPosition.Off }?.let { y ->
         when {
@@ -150,7 +153,7 @@ fun CompactNowPlayingHeader(
     val density = LocalDensity.current
     val artwork = rememberSessionArtwork(info.artwork, info.artworkUri, maxDimension = ARTWORK_MAX_PX, hasSession = info.hasSession)
     val motionQuery = MotionCoverQuery(info.artists, info.album, info.title)
-    val motionUrl = rememberMotionCoverUrl(animatedCover, motionQuery)
+    val motion = rememberMotionCover(animatedCover, motionQuery)
     // Everything moves in the layout and draw phases, so the transition doesn't recompose the header.
     fun p() = if (expanded == null) 0f else expansion()
     // Hidden, the layout stays expanded and only the opacity follows the transition.
@@ -165,7 +168,8 @@ fun CompactNowPlayingHeader(
         Box(modifier.fillMaxSize().graphicsLayer { alpha = if (hidden) p() else 1f }) {
             HeaderArtwork(
                 artwork = artwork,
-                motionUrl = motionUrl,
+                motionUrl = motion.url,
+                motionSettled = motion.settled,
                 motionQuery = motionQuery,
                 direction = info.direction,
                 metrics = metrics,
@@ -178,10 +182,10 @@ fun CompactNowPlayingHeader(
                         layout(size, size) { placeable.place(0, 0) }
                     }
                     .offset { IntOffset(artLeft().roundToInt(), artTop().roundToInt()) }
-                    // Under the stage it fades out, growing a little.
+                    // Under the stage it fades out, growing a little; under the portrait Canvas too.
                     .graphicsLayer {
                         val s = stageP()
-                        alpha = 1f - s
+                        alpha = (1f - s) * (1f - immersive())
                         scaleX = 1f + 0.04f * s
                         scaleY = 1f + 0.04f * s
                     }
@@ -223,7 +227,10 @@ fun CompactNowPlayingHeader(
                             )
                         }
                         // The panel's text is always there; the compact bar's gives way to it.
-                        .graphicsLayer { alpha = if (panel != null) 1f - stageP() else ((layoutP() - (1f - TEXT_SWAP)) / TEXT_SWAP).coerceIn(0f, 1f) }
+                        .graphicsLayer {
+                            alpha = (1f - immersive()) *
+                                if (panel != null) 1f - stageP() else ((layoutP() - (1f - TEXT_SWAP)) / TEXT_SWAP).coerceIn(0f, 1f)
+                        }
                         .width(expanded.artSizePx.toDp())
                         .height(expanded.textHeightPx.toDp()),
                 )
@@ -534,6 +541,8 @@ internal fun MarqueeLine(
 private fun HeaderArtwork(
     artwork: SessionArtwork?,
     motionUrl: String?,
+    /** False while the next song's loop is looked up: [motionUrl] is still the last song's, fading out. */
+    motionSettled: Boolean,
     motionQuery: MotionCoverQuery,
     direction: TrackDirection,
     metrics: CompactHeaderMetrics,
@@ -648,7 +657,7 @@ private fun HeaderArtwork(
                     url = motionUrl,
                     // Hidden while a cover change slides in, so the old record's loop never plays
                     // over the new cover.
-                    visible = incoming == null && current != null,
+                    visible = incoming == null && current != null && motionSettled,
                     onFailed = {
                         failedMotionUrl = motionUrl
                         scope.launch { forgetMotionCover(context, motionQuery) }

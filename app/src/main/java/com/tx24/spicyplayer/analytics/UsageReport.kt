@@ -1,5 +1,6 @@
 package com.tx24.spicyplayer.analytics
 
+import com.tx24.spicyplayer.ui.nowplaying.StageArt
 import com.tx24.spicyplayer.ui.settings.AppSettings
 
 /** How often the settings snapshot and the usage counts go out. */
@@ -96,8 +97,8 @@ fun configSnapshot(settings: AppSettings): Map<String, Any> = with(settings) {
         "static_background" to staticBackground,
         "release_year" to releaseYearPosition.name,
         "animated_cover" to animatedCover,
-        "cover_stage" to coverStage,
-        "stage_art" to stageArt.name,
+        "cover_stage" to stageArt.isNotEmpty(),
+        "stage_art" to StageArt.store(stageArt),
         "animated_background" to animatedBackground,
         "refined_background" to refinedBackground,
         "background_follows_motion" to backgroundFollowsMotion,

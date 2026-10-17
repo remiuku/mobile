@@ -62,6 +62,7 @@ import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Tune
 import com.tx24.spicyplayer.ui.nowplaying.HeaderSize
 import com.tx24.spicyplayer.ui.nowplaying.StageArt
+import com.tx24.spicyplayer.ui.nowplaying.LoopKind
 import android.content.ClipboardManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -499,7 +500,7 @@ internal fun ScrollSyncContent(state: PlayerUiState, viewModel: ExternalPlayback
 }
 
 @Composable
-internal fun BackgroundContent(settings: AppSettings) {
+internal fun BackgroundContent(settings: AppSettings, viewModel: ExternalPlaybackViewModel) {
     val type = settings.backgroundType
     SettingRow(
         label = "Background Type",
@@ -599,6 +600,18 @@ internal fun BackgroundContent(settings: AppSettings) {
             searchDescription = "When the song has an animated cover, the background moves with it.",
         )
     }
+    // Next to the animated cover's rows: the other video a background can show.
+    ToggleRow(
+        label = "Show Canvas Where Available",
+        checked = settings.canvasBackground && !settings.lowPerformance,
+        onCheckedChange = { on ->
+            // Canvas asks a third-party service, so it says what it sends first.
+            if (on) viewModel.chooseCanvas { settings.canvasBackground = true } else settings.canvasBackground = false
+        },
+        description = "Where the song has a Spotify Canvas, the background is that Canvas, blurred. Other songs keep your background.",
+        icon = Icons.Rounded.VideoLibrary,
+        enabled = !settings.lowPerformance,
+    )
 }
 
 @Composable
@@ -650,34 +663,71 @@ internal fun NowPlayingContent(settings: AppSettings, viewModel: ExternalPlaybac
         icon = Icons.Rounded.Animation,
         enabled = !settings.lowPerformance,
     )
-    ToggleRow(
+    SettingRow(
         label = "Cover stage",
-        checked = settings.coverStage && !settings.lowPerformance,
-        onCheckedChange = { settings.coverStage = it },
-        description = "In landscape, the cover fills its side of the screen, with the song docked along its bottom.",
+        description = if (!settings.animatedCover && StageArt.AnimatedCover in settings.stageArt) {
+            "In landscape, the first of these the song has fills its side of the screen. The animated cover needs Animated Cover on."
+        } else {
+            "In landscape, the first of these the song has fills its side of the screen, with the song docked along its bottom. None picked is off."
+        },
         icon = Icons.Rounded.Panorama,
         enabled = !settings.lowPerformance,
-    )
-    SettingRow(
-        label = "Stage art",
-        description = if (!settings.animatedCover && settings.stageArt != StageArt.CoverArt) {
-            "What fills the cover stage; its animated cover needs Animated Cover on."
-        } else {
-            "What fills the cover stage, falling back down the list when the song has none."
-        },
-        icon = Icons.Rounded.VideoLibrary,
-        enabled = settings.coverStage && !settings.lowPerformance,
-        searchDescription = "What fills the cover stage, falling back down the list when the song has none. Spotify Canvas, animated cover or cover art.",
+        searchDescription = "In landscape, the song's Spotify Canvas, animated cover or cover art fills its side of the screen, with the song docked along its bottom.",
     ) {
-        SpicySelect(
-            value = settings.stageArt.name,
+        SpicyMultiSelect(
+            selected = settings.stageArt.mapTo(mutableSetOf()) { it.name },
             options = StageArt.entries.map { it.name },
             labels = StageArt.entries.map { it.label },
-            onChange = {
-                val art = StageArt.valueOf(it)
+            none = "Off",
+            enabled = !settings.lowPerformance,
+            onChange = { picked ->
+                val arts = StageArt.entries.filter { it.name in picked }.toSet()
                 // Canvas asks a third-party service, so it says what it sends first.
-                if (art == StageArt.Canvas) viewModel.chooseCanvas { settings.stageArt = art } else settings.stageArt = art
+                if (StageArt.Canvas in arts && StageArt.Canvas !in settings.stageArt) {
+                    viewModel.chooseCanvas { settings.stageArt = arts }
+                } else {
+                    settings.stageArt = arts
+                }
             },
+        )
+    }
+    ToggleRow(
+        label = "Canvas on the Big Cover",
+        checked = settings.bigCoverCanvas && !settings.lowPerformance,
+        onCheckedChange = { on ->
+            // Canvas asks a third-party service, so it says what it sends first.
+            if (on) viewModel.chooseCanvas { settings.bigCoverCanvas = true } else settings.bigCoverCanvas = false
+        },
+        description = "In portrait, the song's Spotify Canvas fills the screen while the big cover is open.",
+        icon = Icons.Rounded.Fullscreen,
+        enabled = !settings.lowPerformance,
+    )
+    val showsCanvas = StageArt.Canvas in settings.stageArt || settings.bigCoverCanvas
+    ToggleRow(
+        label = "Blurred Canvas Behind",
+        checked = settings.canvasBackdrop && showsCanvas && !settings.lowPerformance,
+        onCheckedChange = { settings.canvasBackdrop = it },
+        description = if (showsCanvas) {
+            "While the stage or the big cover shows a Canvas, the background becomes it, blurred."
+        } else {
+            "Needs Spotify Canvas on the cover stage or the big cover."
+        },
+        icon = Icons.Rounded.BlurOn,
+        enabled = showsCanvas && !settings.lowPerformance,
+        searchDescription = "While the stage or the big cover shows a Canvas, the background becomes it, blurred.",
+    )
+    SettingRow(
+        label = "Pause with the Music",
+        description = "These hold their frame while the music is paused.",
+        icon = Icons.Rounded.PauseCircle,
+        searchDescription = "Animated covers and Canvas videos hold their frame while the music is paused.",
+    ) {
+        SpicyMultiSelect(
+            selected = settings.pauseWithMusic.mapTo(mutableSetOf()) { it.name },
+            options = LoopKind.entries.map { it.name },
+            labels = LoopKind.entries.map { it.label },
+            none = "Neither",
+            onChange = { picked -> settings.pauseWithMusic = LoopKind.entries.filter { it.name in picked }.toSet() },
         )
     }
     SettingsSection("Credits") {

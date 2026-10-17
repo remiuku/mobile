@@ -1,13 +1,25 @@
 package com.tx24.spicyplayer.ui.nowplaying
 
 /**
- * What fills the cover stage. Each choice falls back down the list when the song doesn't have it:
- * a Spotify Canvas, then the record's animated cover, then the still cover art.
+ * What may fill the cover stage, in the order it's tried: a Spotify Canvas, then the record's
+ * animated cover, then the still cover art. A song gets the first picked one it has; with none of
+ * them, or nothing picked, there's no stage.
  */
 enum class StageArt(val label: String) {
     Canvas("Spotify Canvas"),
     AnimatedCover("Animated cover"),
-    CoverArt("Cover art only"),
+    CoverArt("Cover art");
+
+    companion object {
+        /** The stage before it could be picked: the animated cover, else the still one. */
+        val DEFAULT: Set<StageArt> = setOf(AnimatedCover, CoverArt)
+
+        /** Stored as names joined by commas, in list order; an unknown name is dropped. */
+        fun parse(stored: String): Set<StageArt> =
+            stored.split(',').mapNotNull { name -> entries.firstOrNull { it.name == name.trim() } }.toSet()
+
+        fun store(arts: Set<StageArt>): String = entries.filter { it in arts }.joinToString(",") { it.name }
+    }
 }
 
 /** Where the song's canvas lookup stands. */
@@ -29,36 +41,38 @@ sealed interface StagePicture {
 /** Picks the cover stage's picture from the setting and what the song has. */
 object StageArtChoice {
     /** Whether the song's canvas should be looked up. Off in low performance mode, like the stage. */
-    fun wantsCanvas(art: StageArt, lowPerformance: Boolean): Boolean =
-        art == StageArt.Canvas && !lowPerformance
+    fun wantsCanvas(arts: Set<StageArt>, lowPerformance: Boolean): Boolean =
+        StageArt.Canvas in arts && !lowPerformance
 
     /**
-     * Whether the record's animated cover should be looked up for the stage: the choice reaches
-     * it, and Animated Cover (Now Playing) is on, as the stage shares the header's loop.
+     * Whether the record's animated cover should be looked up for the stage: it's picked, and
+     * Animated Cover (Now Playing) is on, as the stage shares the header's loop.
      */
-    fun wantsAnimated(art: StageArt, animatedCover: Boolean, lowPerformance: Boolean): Boolean =
-        art != StageArt.CoverArt && animatedCover && !lowPerformance
+    fun wantsAnimated(arts: Set<StageArt>, animatedCover: Boolean, lowPerformance: Boolean): Boolean =
+        StageArt.AnimatedCover in arts && animatedCover && !lowPerformance
 
     /**
-     * The stage's picture. While a wanted canvas is still being looked up, the still cover stays
-     * rather than the animated cover showing first and giving way to the canvas a moment later.
-     * [motionUrl] is the animated cover's stream when there is one.
+     * The stage's picture, or null for no stage: nothing picked that the song has. While a wanted
+     * canvas is still being looked up, nothing later in the list shows, so the animated cover
+     * doesn't play first and give way to the canvas a moment later; the still cover holds the
+     * stage meanwhile when it's picked. [motionUrl] is the animated cover's stream when there is one.
      */
     fun pick(
-        art: StageArt,
+        arts: Set<StageArt>,
         animatedCover: Boolean,
         lowPerformance: Boolean,
         canvas: CanvasLookup,
         motionUrl: String?,
-    ): StagePicture {
-        if (wantsCanvas(art, lowPerformance)) {
+    ): StagePicture? {
+        val still = StagePicture.Still.takeIf { StageArt.CoverArt in arts }
+        if (wantsCanvas(arts, lowPerformance)) {
             when (canvas) {
                 is CanvasLookup.Found -> return StagePicture.Canvas(canvas.url)
-                CanvasLookup.Pending -> return StagePicture.Still
+                CanvasLookup.Pending -> return still
                 CanvasLookup.None -> Unit
             }
         }
-        if (motionUrl != null && wantsAnimated(art, animatedCover, lowPerformance)) return StagePicture.Animated(motionUrl)
-        return StagePicture.Still
+        if (motionUrl != null && wantsAnimated(arts, animatedCover, lowPerformance)) return StagePicture.Animated(motionUrl)
+        return still
     }
 }

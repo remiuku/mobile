@@ -17,6 +17,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.LaunchedEffect
+import kotlinx.coroutines.delay
+import androidx.compose.foundation.layout.Box
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -61,15 +66,75 @@ data class MotionCoverQuery(val artist: String, val album: String, val title: St
  * or the album has no animation). Resets to null the moment the record changes.
  */
 @Composable
-fun rememberMotionCoverUrl(enabled: Boolean, query: MotionCoverQuery): String? {
+fun rememberMotionCoverUrl(enabled: Boolean, query: MotionCoverQuery): String? =
+    rememberMotionCover(enabled, query).let { if (it.settled) it.url else null }
+
+/**
+ * The animated cover's lookup for [query]. While a new song's is under way, it holds the last
+ * answer, not [settled], so a loop on screen can fade out or give way to the next one instead
+ * of vanishing the moment the song changes.
+ */
+data class MotionCoverLookup(val url: String?, val settled: Boolean)
+
+@Composable
+fun rememberMotionCover(enabled: Boolean, query: MotionCoverQuery): MotionCoverLookup {
     val context = LocalContext.current
     val artist = leadArtist(query.artist)
     val key = MotionCoverFinder.key(artist, query.album, query.title)
-    return produceState<String?>(null, enabled, key) {
-        value = null
-        if (!enabled || key == null) return@produceState
-        value = MotionCovers.finder(context).find(artist, query.album, query.title)
+    return produceState(MotionCoverLookup(null, settled = true), enabled, key) {
+        if (!enabled || key == null) {
+            value = MotionCoverLookup(null, settled = true)
+            return@produceState
+        }
+        value = value.copy(settled = false)
+        value = MotionCoverLookup(MotionCovers.finder(context).find(artist, query.album, query.title), settled = true)
     }.value
+}
+
+/**
+ * [MotionCoverVideo] across changes of [url], the way a song change swaps one loop for the next:
+ * the outgoing loop holds under the incoming one until that has drawn a frame and faded in, so
+ * what's beneath never shows in between. A null [url] fades the last one out. [onFailed] gets
+ * the loop that failed.
+ */
+@Composable
+fun CrossfadingMotionVideo(
+    url: String?,
+    onFailed: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    cropFromTop: Float? = null,
+) {
+    // Oldest first: at most the newest loop that has shown a frame and the one coming in.
+    val layers = remember { mutableStateListOf<String>() }
+    val ready = remember { mutableStateMapOf<String, Boolean>() }
+    if (url != null && layers.lastOrNull() != url) {
+        val holding = layers.lastOrNull { ready[it] == true }
+        layers.retainAll { it == holding }
+        layers.remove(url)
+        layers.add(url)
+    }
+    val current = url?.takeIf { ready[it] == true }
+    LaunchedEffect(url, current) {
+        // Once the new loop has faded in, or the last one out, nothing beneath is needed.
+        if (url != null && current == null) return@LaunchedEffect
+        delay(FADE_MS.toLong())
+        layers.retainAll { it == url }
+        ready.keys.retainAll(layers.toSet())
+    }
+    Box(modifier) {
+        for (layer in layers) {
+            key(layer) {
+                MotionCoverVideo(
+                    url = layer,
+                    visible = url != null,
+                    onFailed = { onFailed(layer) },
+                    modifier = Modifier.matchParentSize(),
+                    cropFromTop = cropFromTop,
+                    onFirstFrame = { ready[layer] = true },
+                )
+            }
+        }
+    }
 }
 
 /**
@@ -79,8 +144,8 @@ fun rememberMotionCoverUrl(enabled: Boolean, query: MotionCoverQuery): String? {
  * same decode ([MotionCoverStream]).
  *
  * With [cropFromTop] set, the video keeps its own shape instead, as big as it takes to cover the
- * box, centred across and with that share of the overflow cut from the top ([assumedAspect] until
- * the video reports its size).
+ * box, centred across and with that share of the overflow cut from the top (square until the video
+ * reports its size, while it's still hidden).
  *
  * A TextureView rather than a SurfaceView, so the cover's rounded clip and alpha apply to it.
  */
@@ -93,8 +158,9 @@ fun MotionCoverVideo(
     /** Drawn through this paint, e.g. a colour filter. */
     layerPaint: Paint? = null,
     cropFromTop: Float? = null,
-    assumedAspect: Float = 1f,
+    onFirstFrame: () -> Unit = {},
 ) = key(url) {
+    val latestOnFirstFrame by rememberUpdatedState(onFirstFrame)
     val stream = rememberMotionCoverStream(url, onFailed)
     var firstFrame by remember { mutableStateOf(false) }
     val alpha by animateFloatAsState(
@@ -107,7 +173,10 @@ fun MotionCoverVideo(
             TextureView(it).apply {
                 surfaceTextureListener = object : TextureView.SurfaceTextureListener {
                     override fun onSurfaceTextureAvailable(surface: SurfaceTexture, width: Int, height: Int) {
-                        stream.addView(surface) { firstFrame = true }
+                        stream.addView(surface) {
+                            firstFrame = true
+                            latestOnFirstFrame()
+                        }
                     }
 
                     override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture, width: Int, height: Int) {
@@ -128,7 +197,7 @@ fun MotionCoverVideo(
         modifier = modifier
             .then(
                 if (cropFromTop == null) Modifier else Modifier.layout { measurable, constraints ->
-                    val aspect = stream.videoAspect.takeIf { it > 0f } ?: assumedAspect
+                    val aspect = stream.videoAspect.takeIf { it > 0f } ?: 1f
                     val (width, height) = coverSize(constraints.maxWidth, constraints.maxHeight, aspect)
                     val placeable = measurable.measure(Constraints.fixed(width, height))
                     layout(constraints.maxWidth, constraints.maxHeight) {
@@ -163,16 +232,20 @@ internal fun rememberMotionCoverStream(url: String, onFailed: () -> Unit): Motio
         onDispose { stream.player.removeListener(listener) }
     }
     DisposableEffect(stream, lifecycle) {
-        // Only loops while the app is on screen.
+        // Only loops while the app is on screen, and not held with the music ([MotionCovers.pausedNow]).
+        var started = false
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
-                Lifecycle.Event.ON_START -> stream.player.play()
-                Lifecycle.Event.ON_STOP -> stream.player.pause()
+                Lifecycle.Event.ON_START -> if (!started) { started = true; stream.onScreen(true) }
+                Lifecycle.Event.ON_STOP -> if (started) { started = false; stream.onScreen(false) }
                 else -> Unit
             }
         }
         lifecycle.addObserver(observer)
-        onDispose { lifecycle.removeObserver(observer) }
+        onDispose {
+            lifecycle.removeObserver(observer)
+            if (started) stream.onScreen(false)
+        }
     }
     return stream
 }
@@ -234,6 +307,26 @@ internal object MotionCovers {
 
     /** Streams by URL, with how many hold each. Main thread. */
     private val streams = HashMap<String, MotionCoverStream>()
+
+    /**
+     * The kinds of loop that hold their frame while the music is paused (both, unless unpicked), and
+     * whether it is. A stream pauses as a whole, so every view of it stays on the same frame.
+     */
+    var pausedKinds: Set<LoopKind> = emptySet()
+        set(value) {
+            if (field == value) return
+            field = value
+            streams.values.forEach { it.sync() }
+        }
+    var musicPaused = false
+        set(value) {
+            if (field == value) return
+            field = value
+            streams.values.forEach { it.sync() }
+        }
+
+    /** Whether a loop at [url] is held still right now. */
+    fun pausedNow(url: String): Boolean = musicPaused && LoopKind.of(url) in pausedKinds
     private val main = Handler(Looper.getMainLooper())
 
     fun acquire(context: Context, url: String): MotionCoverStream =
@@ -283,11 +376,12 @@ internal object MotionCovers {
                     .build()
                 setMediaItem(MediaItem.fromUri(url))
                 prepare()
-                playWhenReady = true
+                // Started once a view of it is on screen ([MotionCoverStream.sync]).
+                playWhenReady = false
             }
     }
 
-    private fun isHls(url: String) = url.substringBefore('?').endsWith(".m3u8", ignoreCase = true)
+    internal fun isHls(url: String) = url.substringBefore('?').endsWith(".m3u8", ignoreCase = true)
 
     private const val CACHE_BYTES = 256L shl 20
     private const val MAX_VIDEO_PX = 1080
@@ -310,4 +404,21 @@ private object CountedTransfers : TransferListener {
 /** Forgets a remembered stream that failed, so the next song change searches afresh. */
 internal suspend fun forgetMotionCover(context: Context, query: MotionCoverQuery) {
     MotionCovers.finder(context).forget(leadArtist(query.artist), query.album, query.title)
+}
+
+/** The kinds of loop the app plays, which can each be set to hold still while the music is paused. */
+enum class LoopKind(val label: String) {
+    AnimatedCover("Animated covers"),
+    Canvas("Spotify Canvas");
+
+    companion object {
+        /** Apple's animated covers are HLS streams; a Spotify Canvas is a single MP4. */
+        fun of(url: String): LoopKind = if (MotionCovers.isHls(url)) AnimatedCover else Canvas
+
+        /** Stored as names joined by commas; an unknown name is dropped. */
+        fun parse(stored: String): Set<LoopKind> =
+            stored.split(',').mapNotNull { name -> entries.firstOrNull { it.name == name.trim() } }.toSet()
+
+        fun store(kinds: Set<LoopKind>): String = entries.filter { it in kinds }.joinToString(",") { it.name }
+    }
 }

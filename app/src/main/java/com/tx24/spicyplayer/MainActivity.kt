@@ -180,12 +180,19 @@ import com.tx24.spicyplayer.ui.nowplaying.StageMetadata
 import com.tx24.spicyplayer.ui.nowplaying.STAGE_FADE_MS
 import com.tx24.spicyplayer.ui.nowplaying.forgetMotionCover
 import com.tx24.spicyplayer.ui.nowplaying.rememberMotionCoverUrl
+import com.tx24.spicyplayer.ui.nowplaying.rememberMotionCover
 import com.tx24.spicyplayer.ui.nowplaying.ReleaseYear
 import com.tx24.spicyplayer.ui.settings.BackgroundType
 import com.tx24.spicyplayer.ui.settings.ReleaseYearPosition
 import com.tx24.spicyplayer.playback.TrackExtrasWanted
 import com.tx24.spicyplayer.ui.nowplaying.CanvasLookup
 import com.tx24.spicyplayer.ui.nowplaying.StageArtChoice
+import com.tx24.spicyplayer.ui.nowplaying.StagePicture
+import com.tx24.spicyplayer.ui.nowplaying.PortraitCanvas
+import com.tx24.spicyplayer.ui.nowplaying.MotionCovers
+import com.tx24.spicyplayer.ui.controls.controlsContentStartPx
+import com.tx24.spicyplayer.ui.nowplaying.PortraitCanvasDock
+import com.tx24.spicyplayer.ui.background.CanvasAmbient
 import com.tx24.spicyplayer.ui.nowplaying.TrackDirection
 import androidx.compose.animation.core.spring
 import com.tx24.spicyplayer.ui.settings.AppSettings
@@ -576,8 +583,49 @@ private fun LyricsApp(
     // The cover stage: beside the lyrics, the cover fills its side of the screen; with the big
     // cover up it stands in the middle in its place. Only over the moving background, which
     // already takes its colours from the cover.
-    val stageOn = settings.coverStage && landscape && (!hideHeader || headerExpanded) && !inPip &&
+    val stageAllowed = settings.stageArt.isNotEmpty() && landscape && (!hideHeader || headerExpanded) && !inPip &&
         settings.backgroundType == BackgroundType.Default && !lowPerformance
+    // The song's Spotify Canvas is looked up only while something may show it: the stage, where
+    // it's picked; the big cover in portrait; the Canvas background.
+    val stageCanvas = stageAllowed && StageArtChoice.wantsCanvas(settings.stageArt, lowPerformance)
+    val portraitCanvas = !landscape && !inPip && settings.bigCoverCanvas && !lowPerformance
+    val canvasBackground = settings.canvasBackground && !lowPerformance
+    val canvasWanted = stageCanvas || portraitCanvas || canvasBackground
+    LaunchedEffect(canvasWanted) { viewModel.setCanvasWanted(canvasWanted) }
+    // The song's canvas, held while the next song's is looked up, so it gives way to the next one
+    // instead of vanishing with the song change.
+    var heldCanvasUrl by remember { mutableStateOf<String?>(null) }
+    if (!state.canvasPending || !canvasWanted) heldCanvasUrl = state.canvasUrl
+    // The loops picked to pause with the music hold their frame while it's paused.
+    LaunchedEffect(state.isPlaying, settings.pauseWithMusic) {
+        MotionCovers.pausedKinds = settings.pauseWithMusic
+        MotionCovers.musicPaused = !state.isPlaying
+    }
+    // The panel's own loop: the same stream, so no second decode.
+    val stageMotion = rememberMotionCover(
+        StageArtChoice.wantsAnimated(settings.stageArt, settings.animatedCover, lowPerformance),
+        MotionCoverQuery(state.artist, state.album, state.title),
+    )
+    // The first picked picture the song has; with none, no stage for this song.
+    val stagePicture = StageArtChoice.pick(
+        arts = settings.stageArt,
+        animatedCover = settings.animatedCover,
+        lowPerformance = lowPerformance,
+        canvas = state.canvasUrl?.let { CanvasLookup.Found(it) }
+            ?: if (state.canvasPending) CanvasLookup.Pending else CanvasLookup.None,
+        motionUrl = stageMotion.url.takeIf { stageMotion.settled },
+    )
+    // While a new song's videos are still looked up, the stage holds what it shows (the last
+    // song's loop keeps playing), then gives way to the answer, as Spotify's own player does.
+    val stageSettled = !(stageCanvas && state.canvasPending) && stageMotion.settled
+    var stageHasPicture by remember { mutableStateOf(false) }
+    var shownStagePicture by remember { mutableStateOf<StagePicture>(StagePicture.Still) }
+    if (stageSettled || !stageAllowed) {
+        stageHasPicture = stagePicture != null
+        // Fading out, the stage keeps what it last showed.
+        if (stagePicture != null) shownStagePicture = stagePicture
+    }
+    val stageOn = stageAllowed && stageHasPicture
     // How far it has moved to the middle: with the big cover's expansion, or there throughout
     // without the panel, where it only shows while the big cover is up.
     val stageCentred = { if (hideHeader) 1f else expansion }
@@ -587,9 +635,6 @@ private fun LyricsApp(
         label = "coverStage",
     )
     val stageVisible by remember { derivedStateOf { stageShown.value > 0f } }
-    // The song's Spotify Canvas is looked up only while the stage is up and set to show it.
-    val canvasWanted = stageOn && StageArtChoice.wantsCanvas(settings.stageArt, lowPerformance)
-    LaunchedEffect(canvasWanted) { viewModel.setCanvasWanted(canvasWanted) }
     // Fully up, the panel's cover underneath stops playing its loop.
     val stageCovers by remember { derivedStateOf { stageShown.value == 1f } }
     // Swapping sides, the stage slides out toward the new side, flips while it's hidden, and slides
@@ -685,7 +730,8 @@ private fun LyricsApp(
     // show). On the landscape cover they always go, like the desktop page's once the mouse
     // rests: they'd keep the cover darkened.
     val hold = (!state.isPlaying && !controlsOnCover && !settings.hideControlsWhilePaused) ||
-        (headerExpanded && !landscape) || !settings.autoHideControls
+        // Over a Canvas there's something to see, so there they go as usual.
+        (headerExpanded && !landscape && !(portraitCanvas && heldCanvasUrl != null)) || !settings.autoHideControls
     val idleMs = settings.controlsHideDelay.millis
     LaunchedEffect(hold, idleMs) {
         if (hold) {
@@ -733,7 +779,7 @@ private fun LyricsApp(
     Scaffold(contentWindowInsets = WindowInsets.safeDrawing) { padding ->
         // The floating window has room for the lyrics and nothing else.
         if (inPip) {
-            PipLyrics(state, viewModel, settings, renderConfig, lyricsViewState, romanize, lowPerformance)
+            PipLyrics(state, viewModel, settings, renderConfig, lyricsViewState, romanize, lowPerformance, heldCanvasUrl)
             return@Scaffold
         }
         CompositionLocalProvider(LocalControlsRevealGuard provides revealGuard) {
@@ -924,6 +970,29 @@ private fun LyricsApp(
                         !lowPerformance && !settings.staticBackground && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU,
                     backgroundMotionQuery,
                 )
+                // While the stage shows a canvas, or the Canvas background has one, the page's
+                // backdrop is that canvas, blurred; the moving background fades out under it and
+                // holds still once it's hidden.
+                val stageAmbientUrl = (shownStagePicture as? StagePicture.Canvas)?.url?.takeIf { stageOn && settings.canvasBackdrop }
+                    ?: heldCanvasUrl?.takeIf { portraitCanvas && headerExpanded && settings.canvasBackdrop }
+                val backgroundAmbientUrl = heldCanvasUrl?.takeIf { canvasBackground }
+                val ambientShown by animateFloatAsState(
+                    if (stageAmbientUrl != null || backgroundAmbientUrl != null) 1f else 0f,
+                    tween(STAGE_FADE_MS, easing = StageEaseOut),
+                    label = "canvasAmbient",
+                )
+                // Fading out, it keeps what it showed.
+                var ambientUrl by remember { mutableStateOf<String?>(null) }
+                (stageAmbientUrl ?: backgroundAmbientUrl)?.let { ambientUrl = it }
+                // Portrait, with the big cover up: the song's canvas fills the screen in its place.
+                val immersiveShown by animateFloatAsState(
+                    if (portraitCanvas && heldCanvasUrl != null) 1f else 0f,
+                    tween(STAGE_FADE_MS, easing = StageEaseOut),
+                    label = "portraitCanvas",
+                )
+                var immersiveUrl by remember { mutableStateOf<String?>(null) }
+                heldCanvasUrl?.takeIf { portraitCanvas }?.let { immersiveUrl = it }
+                val immersive = { immersiveShown * expansion }
                 var failedFollowMotionUrl by remember { mutableStateOf<String?>(null) }
                 val motionScope = rememberCoroutineScope()
                 val stageInfo = NowPlayingInfo(state.title, state.artist, state.album, state.artwork, state.artworkUri, state.trackDirection, hasSession = state.sourcePackage != null)
@@ -936,7 +1005,7 @@ private fun LyricsApp(
                         hasSession = state.sourcePackage != null,
                         modifier = Modifier.fillMaxSize(),
                         type = backgroundType,
-                        animate = !lowPerformance && !settings.staticBackground,
+                        animate = !lowPerformance && !settings.staticBackground && ambientShown < 1f,
                         blurDp = settings.backgroundBlurFor(backgroundType),
                         artistHeaderUrl = state.artistHeaderUrl,
                         artistHeaderPending = state.artistHeaderPending,
@@ -953,6 +1022,13 @@ private fun LyricsApp(
                             motionScope.launch { forgetMotionCover(context, backgroundMotionQuery) }
                         },
                     )
+                    ambientUrl?.takeIf { ambientShown > 0f }?.let { url ->
+                        CanvasAmbient(
+                            url = url,
+                            onFailed = { viewModel.canvasFailed(url) },
+                            modifier = Modifier.fillMaxSize().graphicsLayer { alpha = ambientShown },
+                        )
+                    }
                     if (landscape && stageVisible) {
                         CoverStage(
                             info = stageInfo,
@@ -960,24 +1036,20 @@ private fun LyricsApp(
                             onRight = stageRight,
                             startInsetPx = startInsetPx,
                             endInsetPx = endInsetPx,
-                            // The panel's own loop: the same stream, so no second decode.
-                            picture = StageArtChoice.pick(
-                                art = settings.stageArt,
-                                animatedCover = settings.animatedCover,
-                                lowPerformance = lowPerformance,
-                                canvas = state.canvasUrl?.let { CanvasLookup.Found(it) }
-                                    ?: if (state.canvasPending) CanvasLookup.Pending else CanvasLookup.None,
-                                motionUrl = rememberMotionCoverUrl(
-                                    StageArtChoice.wantsAnimated(settings.stageArt, settings.animatedCover, lowPerformance),
-                                    backgroundMotionQuery,
-                                ),
-                            ),
+                            picture = shownStagePicture,
                             onCanvasFailed = viewModel::canvasFailed,
                             shown = { stageShown.value },
                             controlsShown = { controlsShown },
                             swapAlpha = { stageSwapAlpha.value },
                             swapX = { stageSwapX.value },
                             centred = stageCentred,
+                        )
+                    }
+                    if (!landscape) immersiveUrl?.takeIf { immersive() > 0f }?.let { url ->
+                        PortraitCanvas(
+                            url = url,
+                            onFailed = viewModel::canvasFailed,
+                            modifier = Modifier.fillMaxSize().graphicsLayer { alpha = immersive() },
                         )
                     }
                     Column(
@@ -1079,7 +1151,7 @@ private fun LyricsApp(
                                 metadata = {
                                     val gutter = landscapeMetrics.coverSizePx * 0.04f
                                     val alignment = remember(stageRight) { SlidingAlignment(stageAlign) }
-                                    StageMetadata(stageInfo, landscapeMetrics, alignment, landscapeMetrics.coverSizePx - gutter * 2f)
+                                    StageMetadata(stageInfo, landscapeMetrics.panel, alignment, stageAlign, landscapeMetrics.coverSizePx - gutter * 2f)
                                 },
                             )
                         }
@@ -1107,6 +1179,7 @@ private fun LyricsApp(
                     panel = landscapeMetrics.panel.takeIf { landscape },
                     panelLeft = { landscapeMetrics.coverLeftPx(panelSide.value) },
                     stage = { stageShown.value },
+                    immersive = { if (landscape) 0f else immersive() },
                     coverOverlay = if (!controlsOnCover || controlsGone || stageOn) null else {
                         {
                             // No glass blur here: the cover is part of what the glass blurs.
@@ -1140,6 +1213,23 @@ private fun LyricsApp(
                         }
                     },
                 )
+                // The song docked over the portrait Canvas, where the big cover's text was. The
+                // controls' shade is off with the big cover up, so nothing blurs it here.
+                if (!landscape && immersiveUrl != null) {
+                    // In line with the controls' rows, so the song sits over the timeline.
+                    val gutter = controlsContentStartPx(pageWidth, density)
+                    PortraitCanvasDock(
+                        info = stageInfo,
+                        sizes = expandedHeader,
+                        controls = playbackControls,
+                        controlsShown = { if (bottomBar) controlsShown else 0f },
+                        controlsHeightPx = controlsHeightPx,
+                        widthPx = pageWidth - gutter * 2f,
+                        gutterPx = gutter,
+                        bottomPx = gutter,
+                        alpha = immersive,
+                    )
+                }
                 // The header sits in what the glass and the shade blur, so the shade blurs it
                 // rather than painting the blurred page over it.
                 }
@@ -1357,6 +1447,8 @@ private fun LyricsApp(
  * to the window (the 29.6sp minimum at 300x190dp, shrinking with it) so a few rows still fit.
  * With the lyrics turned off for the window, or none for the song and the song card picked for
  * that, the song's card stands in. A square or tall window names the song along its bottom.
+ *
+ * With the Canvas background, the song's [canvasUrl] is blurred behind the lyrics, as on the full screen.
  */
 @Composable
 private fun PipLyrics(
@@ -1367,6 +1459,7 @@ private fun PipLyrics(
     viewState: LyricsViewState,
     romanize: Boolean,
     lowPerformance: Boolean,
+    canvasUrl: String?,
 ) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
         // A short window fits few rows, so the height limits the text as much as the width does.
@@ -1390,6 +1483,17 @@ private fun PipLyrics(
             artistHeaderPending = state.artistHeaderPending,
             refined = settings.refinedBackground,
         )
+        // The Canvas background, as on the full screen.
+        val canvasShown by animateFloatAsState(
+            if (settings.canvasBackground && !lowPerformance && canvasUrl != null) 1f else 0f,
+            tween(STAGE_FADE_MS, easing = StageEaseOut),
+            label = "pipCanvas",
+        )
+        var shownCanvasUrl by remember { mutableStateOf<String?>(null) }
+        canvasUrl?.let { shownCanvasUrl = it }
+        shownCanvasUrl?.takeIf { canvasShown > 0f }?.let { url ->
+            CanvasAmbient(url, onFailed = { viewModel.canvasFailed(url) }, modifier = Modifier.fillMaxSize().graphicsLayer { alpha = canvasShown })
+        }
         val songCard = !settings.pipShowLyrics ||
             (state.lyrics is LyricsState.Error && settings.pipWithoutLyrics == PipWithoutLyrics.SongCard)
         if (songCard) {

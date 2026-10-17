@@ -783,6 +783,15 @@ private const val SHADE_ALPHA = 0.3f
 private val ShadeEasing = CubicBezierEasing(0.45f, 0f, 0.35f, 1f)
 
 /**
+ * How far in from the page's left edge the portrait controls' rows start, in px, on a page
+ * [pageWidthPx] wide: their side margin, inside the column they're centred in.
+ */
+internal fun controlsContentStartPx(pageWidthPx: Float, density: Float): Float {
+    val column = minOf(pageWidthPx, CONTROLS_MAX_WIDTH.value * density)
+    return (pageWidthPx - column) / 2f + SIDE_MARGIN.value * density
+}
+
+/**
  * How strong the shade's blur gets before a notice keeps above it: a fifth of [SHADE_BLUR]. Any
  * stricter and the notice sat well clear of the controls, too high to read as centred under them.
  */
@@ -1032,7 +1041,14 @@ private val TimeStyle = TextStyle(
  * seeking along the drag would make the lyrics jump about. Elapsed and total time sit underneath.
  */
 @Composable
-private fun Timeline(controls: PlaybackControlsState, shown: () -> Float, modifier: Modifier) {
+private fun Timeline(controls: PlaybackControlsState, shown: () -> Float, modifier: Modifier) = TimelineRow(controls, shown, modifier)
+
+/** The controls' timeline on its own, for a dock that shows it while the controls are hidden. */
+@Composable
+internal fun DockTimeline(controls: PlaybackControlsState, modifier: Modifier = Modifier) = TimelineRow(controls, { 1f }, modifier)
+
+@Composable
+private fun TimelineRow(controls: PlaybackControlsState, shown: () -> Float, modifier: Modifier) {
     val current by rememberUpdatedState(controls)
     val haptics by rememberUpdatedState(LocalHapticFeedback.current)
     var dragFraction by remember { mutableStateOf<Float?>(null) }

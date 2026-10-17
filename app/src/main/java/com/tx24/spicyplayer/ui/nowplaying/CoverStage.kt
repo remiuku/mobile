@@ -133,32 +133,28 @@ fun CoverStage(
                         Image(bitmap, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop, alignment = CropAlignment)
                     }
                 }
-                when (picture) {
-                    is StagePicture.Animated -> if (picture.url != failedMotionUrl) {
-                        val motionUrl = picture.url
-                        MotionCoverVideo(
-                            url = motionUrl,
-                            visible = true,
-                            onFailed = {
-                                failedMotionUrl = motionUrl
-                                scope.launch { forgetMotionCover(context, motionQuery) }
-                            },
-                            // The loop (square) covers the stage at its own shape, cropped like the
-                            // still cover.
-                            cropFromTop = CROP_FROM_TOP,
-                        )
-                    }
-                    // A portrait loop (9:16) as wide as the stage, cropped from its middle; the
-                    // feather and veil apply to it as to the cover.
-                    is StagePicture.Canvas -> MotionCoverVideo(
-                        url = picture.url,
-                        visible = true,
-                        onFailed = { onCanvasFailed(picture.url) },
-                        cropFromTop = CANVAS_CROP_FROM_TOP,
-                        assumedAspect = CANVAS_ASPECT,
-                    )
-                    StagePicture.Still -> Unit
+                // Canvas or animated cover, crossfading from one to the next as songs change. Both
+                // cover the stage at their own shape, cropped like the still cover: faces sit in
+                // the upper half of most. The feather and veil apply to them as to the cover.
+                val canvasUrls = remember { mutableSetOf<String>() }
+                val videoUrl = when (picture) {
+                    is StagePicture.Canvas -> picture.url.also { canvasUrls += it }
+                    is StagePicture.Animated -> picture.url.takeIf { it != failedMotionUrl }
+                    StagePicture.Still -> null
                 }
+                CrossfadingMotionVideo(
+                    url = videoUrl,
+                    onFailed = { failed ->
+                        if (failed in canvasUrls) {
+                            onCanvasFailed(failed)
+                        } else {
+                            failedMotionUrl = failed
+                            scope.launch { forgetMotionCover(context, motionQuery) }
+                        }
+                    },
+                    modifier = Modifier.fillMaxSize(),
+                    cropFromTop = CROP_FROM_TOP,
+                )
                 // A black veil at 1 - b is the picture at brightness b, without a filter pass per frame.
                 Box(
                     Modifier.fillMaxSize().drawBehind {
@@ -270,13 +266,15 @@ class SlidingAlignment(private val bias: () -> Float) : Alignment, Alignment.Hor
 }
 
 /**
- * The song for the stage's dock: name over artists, caption-sized, lined up by [alignment];
- * long lines scroll.
+ * The song docked over a video (the stage, the portrait Canvas): name over artists, sized as
+ * [sizes]' dock caption, lined up by [alignment] as [bias] slides (-1 start, 1 end); long lines scroll. Each line carries padding under its edge
+ * fade, so the rows are pulled out by it: the glyphs sit on the dock's gutter, in line with the
+ * timeline below.
  */
 @Composable
-fun StageMetadata(info: NowPlayingInfo, metrics: LandscapeMetrics, alignment: Alignment.Horizontal, widthPx: Float) {
-    val title = metrics.stageTitleSizeSp
-    val artists = metrics.stageArtistsSizeSp
+fun StageMetadata(info: NowPlayingInfo, sizes: ExpandedHeader, alignment: Alignment.Horizontal, bias: () -> Float, widthPx: Float) {
+    val title = sizes.dockTitleSizeSp
+    val artists = sizes.dockArtistsSizeSp
     HeaderMetadata(
         title = info.title,
         artists = info.artists,
@@ -287,7 +285,14 @@ fun StageMetadata(info: NowPlayingInfo, metrics: LandscapeMetrics, alignment: Al
         artistsWidthPx = widthPx,
         centered = false,
         alignment = alignment,
-        modifier = Modifier,
+        modifier = Modifier.layout { measurable, constraints ->
+            val placeable = measurable.measure(constraints)
+            layout(placeable.width, placeable.height) {
+                val end = (bias() + 1f) / 2f
+                val shift = end * HeaderMarquee.spanEndPaddingPx(widthPx) - (1f - end) * HeaderMarquee.spanStartPaddingPx(widthPx)
+                placeable.place(shift.roundToInt(), 0)
+            }
+        },
     )
 }
 
@@ -295,9 +300,6 @@ fun StageMetadata(info: NowPlayingInfo, metrics: LandscapeMetrics, alignment: Al
 private const val CROP_FROM_TOP = 0.4f
 private val CropAlignment = BiasAlignment(0f, CROP_FROM_TOP * 2f - 1f)
 
-/** A Spotify Canvas is cut from its middle: it's made to fill a phone screen, centred on its subject. */
-private const val CANVAS_CROP_FROM_TOP = 0.5f
-private const val CANVAS_ASPECT = 9f / 16f
 
 /** The stage's own opacity, so the background reads through it as one surface. */
 private const val STAGE_OPACITY = 0.75f
