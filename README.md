@@ -12,7 +12,7 @@
 [![Discord](https://img.shields.io/badge/Discord-join-5865f2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.com/invite/uqgXU5wh8j)
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-support-ff5e5b?style=for-the-badge&logo=ko-fi&logoColor=white)](https://ko-fi.com/tx24dev)
 
-[Download](https://github.com/spicylyrics/mobile/releases) · [Get started](#get-started) · [Report a bug](https://github.com/spicylyrics/mobile/issues/new/choose) · [Privacy](#privacy)
+[Download](https://github.com/spicylyrics/mobile/releases) · [Install guide](docs/install.md) · [Get started](#get-started) · [Report a bug](https://github.com/spicylyrics/mobile/issues/new/choose) · [Privacy](#privacy)
 
 </div>
 
@@ -37,6 +37,7 @@ An Android lyrics screen for music playing in *another* app. It follows the acti
 
 1. **Install.** Grab the APK from [Releases](https://github.com/spicylyrics/mobile/releases). The app offers new versions itself afterwards.
    Play Protect may block a browser-installed APK because the app asks for notification access. [Obtainium](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.tx24.spicyplayer.next%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2Fspicylyrics%2Fmobile%22%2C%22author%22%3A%22TheX24%22%2C%22name%22%3A%22Spicy%20Lyrics%20Mobile%22%2C%22preferredApkIndex%22%3A0%2C%22additionalSettings%22%3A%22%7B%5C%22includePrereleases%5C%22%3A%20true%7D%22%7D) installs the same signed APK and handles updates.
+   The [install guide](docs/install.md) covers each step, Play Protect, restricted settings and troubleshooting.
 2. **Grant notification access** when prompted. Android uses it to discover active media sessions, and you can revoke it any time.
 3. **Play something** in another app, then switch back. Lyrics follow the active player.
 4. **Tweak it** in Settings: sources, timing, backgrounds. Settings → Advanced → Last lookup shows what each source returned for the current song.
