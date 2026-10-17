@@ -31,6 +31,11 @@ internal class GeniusSongPages(
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Mutex>) = size > MAX_ANSWERS
     }
 
+    /** Forgets every answer, so clearing a cache or trying again really asks Genius again. */
+    fun clear() {
+        synchronized(answers) { answers.clear() }
+    }
+
     /** [fetch]'s answer for [key], from a recent answer or a request already out. Failures aren't kept. */
     @Suppress("UNCHECKED_CAST")
     private suspend fun <T> remembered(key: String, fetch: suspend () -> T): T {

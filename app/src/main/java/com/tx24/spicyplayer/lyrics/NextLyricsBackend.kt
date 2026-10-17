@@ -139,6 +139,8 @@ internal class NextLyricsBackend(context: Context, clientKey: String) {
 
     fun forget(request: LyricsLookupRequest) {
         cacheFile(request).delete()
+        // Genius's recent answers are kept in memory too, for its lyrics, romanization and translation alike.
+        geniusPages.clear()
     }
 
     /** Drops every stored pick and Genius lookup; the next lookups ask the sources again. */
@@ -146,6 +148,7 @@ internal class NextLyricsBackend(context: Context, clientKey: String) {
         diskCache.deleteRecursively()
         romanCache.deleteRecursively()
         humanTranslationCache.clear()
+        geniusPages.clear()
     }
 
     /** Each source with a live provider, in order, with those providers and the sync types it has off. */
@@ -439,6 +442,7 @@ internal class NextLyricsBackend(context: Context, clientKey: String) {
     fun forgetRomanization(title: String, artist: String) {
         File(romanCache, cacheKey(title, artist) + ".json").delete()
         humanTranslationCache.forget(title, artist)
+        geniusPages.clear()
     }
 
     private data class StoredRoman(val expiresAt: Long, val lines: List<String>?)
