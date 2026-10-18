@@ -72,7 +72,6 @@ fun PortraitCanvasDock(
     modifier: Modifier = Modifier,
 ) {
     val density = LocalDensity.current
-    val gap = with(density) { (sizes.artSizePx * DOCK_GAP).toDp() }
     Box(modifier.fillMaxSize()) {
         // The controls hidden: the song and the timeline, at the bottom.
         Column(
@@ -83,23 +82,21 @@ fun PortraitCanvasDock(
                 .graphicsLayer { this.alpha = (1f - controlsShown()) * alpha() },
         ) {
             StageMetadata(info, sizes, Alignment.Start, bias = { -1f }, widthPx = widthPx)
-            Spacer(Modifier.height(gap))
+            // No spacer: the bar's touch height already stands it 11dp clear of the artists, as on the stage.
             DockTimeline(controls)
         }
-        // The controls up: the song alone, just above them.
+        // The controls up: the song alone, just above them. Their top is the timeline's touch row,
+        // which stands the bar as far from the song as the hidden dock's does: no margin on top.
         Box(
             Modifier
                 .align(Alignment.BottomStart)
-                .padding(start = with(density) { gutterPx.toDp() }, bottom = with(density) { (controlsHeightPx + bottomPx).toDp() })
+                .padding(start = with(density) { gutterPx.toDp() }, bottom = with(density) { controlsHeightPx.toDp() })
                 .graphicsLayer { this.alpha = controlsShown() * alpha() },
         ) {
             StageMetadata(info, sizes, Alignment.Start, bias = { -1f }, widthPx = widthPx)
         }
     }
 }
-
-/** The gap between the song and the timeline, against the big cover's width, as on the stage. */
-private const val DOCK_GAP = 0.025f
 
 /** The Canvas at brightness 0.8, so the docked song and the controls read over it. */
 private const val VEIL = 0.2f

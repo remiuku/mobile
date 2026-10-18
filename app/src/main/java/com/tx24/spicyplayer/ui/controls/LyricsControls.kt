@@ -739,7 +739,7 @@ fun StageControls(
                     horizontalAlignment = sliding,
                 ) {
                     metadata()
-                    Spacer(Modifier.height(side * STAGE_GAP))
+                    // No spacer: the bar's touch height already stands it 11dp clear of the artists.
                     Timeline(controls, { 1f }, Modifier)
                 }
                 Spacer(Modifier.height(side * STAGE_GAP))
