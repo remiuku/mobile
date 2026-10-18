@@ -1313,6 +1313,7 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
     fun requestModelSync() {
         val request = lookedUp ?: return
         if (mutableState.value.modelSyncing) return
+        UsageStats.count(UsageCounter.MODEL_SYNC)
         mutableState.value = mutableState.value.copy(modelSyncing = true)
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) { lyricsBackend.requestModelSync(request) }

@@ -1,5 +1,6 @@
 package com.tx24.spicyplayer.analytics
 
+import com.tx24.spicyplayer.ui.nowplaying.LoopKind
 import com.tx24.spicyplayer.ui.nowplaying.StageArt
 import com.tx24.spicyplayer.ui.settings.AppSettings
 
@@ -26,6 +27,8 @@ object UsageCounter {
     /** The floating expand button only; a tap on the cover isn't counted. */
     const val EXPAND_BUTTON = "expand_button_tapped"
     const val PLAYER_ACTION = "player_action_tapped"
+    /** lrc.red's model asked to word-sync a song from the source picker. */
+    const val MODEL_SYNC = "model_sync_requested"
 
     fun lyrics(outcome: String) = "lyrics_$outcome"
     fun page(name: String) = "page_${slug(name)}"
@@ -74,12 +77,17 @@ fun configSnapshot(settings: AppSettings): Map<String, Any> = with(settings) {
         // Default, System or Custom; a custom font's own name stays on the phone.
         "font" to lyricsFont.name,
         "romanize" to romanize,
+        "romanization_mode" to romanizationMode.name,
+        "duet_line_padding" to duetLinePadding,
+        "ttml_upload_saves" to ttmlUploadSaves,
         "translation_mode" to translationMode.name,
         "scroll_to_active" to showScrollToActive,
         "pinned_footer" to pinnedFooter.name,
         "profiles_in_browser" to profilesInBrowser,
         "syllable_merge" to syllableMerge.name,
         "scroll_lead" to scrollLeadEnabled,
+        "scroll_lead_ms" to scrollLeadMs,
+        "seek_fade_compensation" to seekFadeCompensation,
         "smooth_scrolling" to smoothScrolling,
         "static_auto_scroll" to staticAutoScroll,
         "distance_blur" to distanceBlur,
@@ -99,6 +107,12 @@ fun configSnapshot(settings: AppSettings): Map<String, Any> = with(settings) {
         "animated_cover" to animatedCover,
         "cover_stage" to stageArt.isNotEmpty(),
         "stage_art" to StageArt.store(stageArt),
+        "canvas_background" to canvasBackground,
+        "big_cover_canvas" to bigCoverCanvas,
+        "canvas_backdrop" to canvasBackdrop,
+        "pause_with_music" to LoopKind.store(pauseWithMusic),
+        "timeline_outside_cover" to timelineOutsideCover,
+        "expand_without_lyrics" to expandWithoutLyrics,
         "animated_background" to animatedBackground,
         "refined_background" to refinedBackground,
         "background_follows_motion" to backgroundFollowsMotion,
@@ -116,9 +130,13 @@ fun configSnapshot(settings: AppSettings): Map<String, Any> = with(settings) {
         "panel_side" to panelSide.name,
         "high_refresh_rate" to highRefreshRate,
         "auto_hide_controls" to autoHideControls,
+        "controls_hide_delay" to controlsHideDelay.name,
+        "hide_controls_while_paused" to hideControlsWhilePaused,
+        "system_bars" to systemBars.name,
         "touch_haptics" to touchHaptics,
         "music_haptics" to musicHaptics,
         "music_haptics_style" to musicHapticsStyle.name,
+        "music_haptics_strength" to musicHapticsStrength,
         "quick_settings_button" to quickSettingsButton,
         "lyrics_manager_button" to lyricsManagerButton,
         "queue_button" to queueButton,

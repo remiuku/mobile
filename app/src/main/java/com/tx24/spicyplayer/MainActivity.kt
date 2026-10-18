@@ -427,6 +427,9 @@ private fun lookupSnapshot(state: PlayerUiState): Map<String, Any> = buildMap {
     val on = ranking.origins.map { it.id }.filter { LyricsSourceSettings.isOn(ranking, it) }
     on.firstOrNull()?.let { put("first_source", if (CustomLyricsSource.isCustom(it)) "custom" else it) }
     put("sources_off", ranking.origins.size - on.size)
+    // The built-in sources that are on, by id, in a fixed order; custom ones are only counted.
+    put("sources_on", on.filterNot(CustomLyricsSource::isCustom).sorted().joinToString(","))
+    put("blends_on", ranking.liveBlends.size)
     put("human_romanizations", state.humanRomanizations)
     // Which translation is set up; never what was translated.
     state.translationPreferences.let { translation ->
