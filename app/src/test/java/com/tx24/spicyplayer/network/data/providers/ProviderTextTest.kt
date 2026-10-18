@@ -16,6 +16,16 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ProviderTextTest {
+    @Test fun youtubeCaptionsMustBeInTheSongsOwnScript() {
+        val yt = YouTubeTranscriptLyricsProvider(okhttp3.OkHttpClient(), Gson())
+        val pinyin = "[00:28.00]gù shì de xiǎo huáng huā\n[00:35.00]tóng nián de dàng qiū qiān"
+        val hanzi = "[00:00.30]Qing Tian\n[00:28.00]故事的小黃花\n[00:35.00]童年的盪鞦韆"
+        assertFalse(yt.inSongScript(pinyin, "晴天"))
+        assertTrue(yt.inSongScript(hanzi, "晴天"))
+        // A Latin title asks nothing of the captions.
+        assertTrue(yt.inSongScript(pinyin, "Sunny Day"))
+    }
+
     @Test fun instrumentalNoteIsNotLyrics() {
         assertTrue(RemoteLyricsPayload(syncedLyrics = "[00:00.00]作词 : 无\n[00:01.00]纯音乐，请欣赏").isNoWordsNote())
         assertTrue(RemoteLyricsPayload(plainLyrics = "此歌曲为没有填词的纯音乐，请您欣赏").isNoWordsNote())
