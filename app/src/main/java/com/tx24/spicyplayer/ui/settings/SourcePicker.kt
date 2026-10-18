@@ -28,6 +28,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tx24.spicyplayer.playback.ExternalPlaybackViewModel
 import com.tx24.spicyplayer.playback.PlayerUiState
+import com.tx24.spicyplayer.ui.components.SpicyButton
 import com.tx24.spicyplayer.ui.theme.SpicyColors
 import com.tx24.spicyplayer.ui.theme.SpicyRadii
 import com.tx24.spicyplayer.ui.theme.SpicySpacing
@@ -55,13 +56,30 @@ fun SourceList(state: PlayerUiState, viewModel: ExternalPlaybackViewModel, onCho
                 status = if (choice.shown && state.sourceOverride == null) "${choice.status} · showing now" else choice.status,
                 selected = state.sourceOverride == choice.id,
                 enabled = choice.available,
+                action = if (choice.canModelSync) {
+                    {
+                        SpicyButton(
+                            text = if (state.modelSyncing) "Timing every word…" else "Word-sync with lrc.red's model",
+                            onClick = viewModel::requestModelSync,
+                            enabled = !state.modelSyncing,
+                        )
+                    }
+                } else null,
             ) { viewModel.useSource(choice.id); onChosen() }
         }
     }
 }
 
 @Composable
-private fun SourceRow(name: String, status: String, selected: Boolean, enabled: Boolean, onClick: () -> Unit) {
+private fun SourceRow(
+    name: String,
+    status: String,
+    selected: Boolean,
+    enabled: Boolean,
+    /** A button of its own under the status, such as asking for a model sync. */
+    action: (@Composable () -> Unit)? = null,
+    onClick: () -> Unit,
+) {
     val shape = RoundedCornerShape(SpicyRadii.Md)
     Row(
         Modifier
@@ -84,6 +102,9 @@ private fun SourceRow(name: String, status: String, selected: Boolean, enabled: 
                 style = SpicyType.Body.copy(fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium),
             )
             Text(status, maxLines = 2, style = SpicyType.Caption.copy(color = SpicyColors.TextSecondary))
+            if (action != null) {
+                Box(Modifier.padding(top = SpicySpacing.S2)) { action() }
+            }
         }
     }
 }

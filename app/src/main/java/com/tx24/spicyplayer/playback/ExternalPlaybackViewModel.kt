@@ -29,6 +29,7 @@ import com.tx24.spicyplayer.haptics.MusicHapticsStyle
 import com.tx24.spicyplayer.lyrics.LocalLyricsStore
 import com.tx24.spicyplayer.lyrics.LyricsFolder
 import com.tx24.spicyplayer.network.data.providers.CustomLyricsSource
+import com.tx24.spicyplayer.network.data.providers.ModelSyncResult
 import com.tx24.spicyplayer.lyrics.LyricsNotices
 import com.tx24.spicyplayer.lyrics.LyricsState
 import com.tx24.spicyplayer.lyrics.NoticeKind
@@ -43,6 +44,7 @@ import com.tx24.spicyplayer.network.data.ProviderResult
 import com.tx24.spicyplayer.network.data.RemoteLyricsResolution
 import com.tx24.spicyplayer.network.data.RemoteLyricsSelection
 import com.tx24.spicyplayer.network.data.TrackNameCleaner
+import com.tx24.spicyplayer.network.data.LyricsOrigins
 import com.tx24.spicyplayer.network.data.TrafficCounter
 import com.tx24.spicyplayer.network.data.counted
 import com.tx24.spicyplayer.network.data.measuredQuality
@@ -109,8 +111,18 @@ private const val SKIP_DIRECTION_WINDOW_MS = 3_000L
 private const val SYNC_TAG = "SpicySync"
 private const val TRANSLATE_TAG = "SpicyTranslate"
 
-/** A source the user can choose for one song: what it had, whether it can be picked, whether it's up. */
-data class SourceChoice(val id: String, val name: String, val status: String, val available: Boolean, val shown: Boolean)
+/**
+ * A source the user can choose for one song: what it had, whether it can be picked, whether it's up,
+ * and whether lrc.red's model could word-sync what it had ([ExternalPlaybackViewModel.requestModelSync]).
+ */
+data class SourceChoice(
+    val id: String,
+    val name: String,
+    val status: String,
+    val available: Boolean,
+    val shown: Boolean,
+    val canModelSync: Boolean = false,
+)
 private const val SPOTIFY_PACKAGE = "com.spotify.music"
 /** How long a skip may take before Spotify is taken to have refused it. */
 private const val SKIP_REFUSED_AFTER_MS = 2_500L
@@ -205,6 +217,8 @@ data class PlayerUiState(
     val localLyricsKey: String? = null,
     /** The source chosen for this song, over the automatic pick; null when the pick is automatic. */
     val sourceOverride: String? = null,
+    /** lrc.red's model is syncing this song at the user's request. */
+    val modelSyncing: Boolean = false,
     /** Brackets at a synced line's ends shown as background vocals. */
     val splitBackgroundVocals: Boolean = true,
     /** The user's own sources, in the order they were added; their place in the lookup is in [sourcePolicy]. */
@@ -1292,6 +1306,28 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
         loadLyrics()
     }
 
+    /**
+     * Has lrc.red's model word-sync this song (a few seconds), then shows its sync, chosen for the
+     * song. A refusal (lrc.red can't find the recording, say) shows as a message.
+     */
+    fun requestModelSync() {
+        val request = lookedUp ?: return
+        if (mutableState.value.modelSyncing) return
+        mutableState.value = mutableState.value.copy(modelSyncing = true)
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { lyricsBackend.requestModelSync(request) }
+            mutableState.value = mutableState.value.copy(modelSyncing = false)
+            when (result) {
+                is ModelSyncResult.Synced -> {
+                    lookupCache[request]?.put(RemoteLyricsSource.LRC_RED_ID, ProviderResult.Hit(result.payload))
+                    if (lookedUp == request) useSource(RemoteLyricsSource.LRC_RED_ID)
+                    showMessage("Word-synced by lrc.red's model.")
+                }
+                is ModelSyncResult.Failed -> showMessage(result.message)
+            }
+        }
+    }
+
     /** The providers that could be chosen for this song, by where they rank, with what each had. */
     fun sourceChoices(): List<SourceChoice> {
         val known = lookedUp?.let { lookupCache[it] }.orEmpty()
@@ -1318,6 +1354,11 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
                     },
                     available = result == null || result is ProviderResult.Hit && result.payload.measuredQuality() != RemoteLyricsQuality.NONE,
                     shown = source.id == shown,
+                    // lrc.red has the song, but only Apple's line sync or unsynced text.
+                    canModelSync = source.id == RemoteLyricsSource.LRC_RED_ID && result is ProviderResult.Hit &&
+                        result.payload.attribution?.originName != LyricsOrigins.LRC_RED_AI_NAME &&
+                        result.payload.measuredQuality().let { it == RemoteLyricsQuality.LINE_SYNCED || it == RemoteLyricsQuality.PLAIN } &&
+                        lyricsBackend.canRequestModelSync(),
                 )
             }
     }

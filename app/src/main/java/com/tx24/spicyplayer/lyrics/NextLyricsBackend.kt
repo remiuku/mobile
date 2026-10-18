@@ -15,6 +15,7 @@ import com.tx24.spicyplayer.network.data.spotify.SpotifyTrackResolver
 import com.tx24.spicyplayer.network.service.LyricsService
 import java.io.File
 import java.security.MessageDigest
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.coroutineScope
@@ -38,8 +39,13 @@ internal class NextLyricsBackend(context: Context, clientKey: String) {
     // One set of Genius pages for its lyrics, romanization and translation lookups, so a song's
     // lookups share their requests.
     private val geniusPages = GeniusSongPages(client, gson)
-    private val builtIn: Set<RemoteLyricsProvider> =
-        createProviders(client, gson, clientKey, SharedSpotify.resolver, geniusPages)
+    /** The songs lrc.red's model synced at the user's request ([requestModelSync]), by ISRC. */
+    private val lrcRedSyncs = context.getSharedPreferences("lrc_red_syncs", Context.MODE_PRIVATE)
+    private val builtIn: Set<RemoteLyricsProvider> = createProviders(
+        client, gson, clientKey, SharedSpotify.resolver, geniusPages,
+        lrcRedSynced = ConcurrentHashMap(lrcRedSyncs.all.mapNotNull { (isrc, at) -> (at as? Long)?.let { isrc to it } }.toMap()),
+    )
+    private val lrcRed = builtIn.filterIsInstance<LrcRedLyricsProvider>().single()
     private val cooldowns = ProviderCooldownTracker()
     // Custom sources come and go, so these are rebuilt with them ([rebuild]).
     @Volatile private var providers: Set<RemoteLyricsProvider> = builtIn
@@ -83,6 +89,22 @@ internal class NextLyricsBackend(context: Context, clientKey: String) {
             }.toMap(),
         )
         return source.resolveLyrics(request, only, known = known)
+    }
+
+    /** Whether lrc.red's model may be asked to sync a song: while its AI syncs are on as a source. */
+    fun canRequestModelSync(): Boolean = ranking().let { ranking ->
+        ranking.origins.firstOrNull { it.id == LyricsOrigins.LRC_RED_AI }?.let { ranking.live(it, RemoteLyricsSource.LRC_RED_ID) } == true
+    }
+
+    /** Has lrc.red's model word-sync [request]'s song, remembering it so later lookups get the sync. */
+    suspend fun requestModelSync(request: LyricsLookupRequest): ModelSyncResult {
+        if (!canRequestModelSync()) return ModelSyncResult.Failed("lrc.red AI syncs are switched off in Sources.")
+        val result = lrcRed.requestSync(request)
+        if (result is ModelSyncResult.Synced) {
+            lrcRed.synced[result.isrc]?.let { lrcRedSyncs.edit().putLong(result.isrc, it).apply() }
+            cacheFile(request).delete()  // the stored pick predates the sync
+        }
+        return result
     }
 
     /**
@@ -261,6 +283,7 @@ internal class NextLyricsBackend(context: Context, clientKey: String) {
             clientKey: String,
             spotifyResolver: SpotifyTrackResolver = SpotifyTrackResolver(AnonymousSpotifyCatalogSearch(client, gson)),
             geniusPages: GeniusSongPages = GeniusSongPages(client, gson),
+            lrcRedSynced: MutableMap<String, Long> = ConcurrentHashMap(),
         ): Set<RemoteLyricsProvider> {
             val lrclib = Retrofit.Builder()
                 .baseUrl(LyricsService.BASE_URL)
@@ -277,7 +300,7 @@ internal class NextLyricsBackend(context: Context, clientKey: String) {
                 AmllLyricsProvider(client, gson),
                 UnisonLyricsProvider(client, gson),
                 RmmRevivalLyricsProvider(client, gson),
-                LrcRedLyricsProvider(client, gson),
+                LrcRedLyricsProvider(client, gson, lrcRedSynced),
                 KugouLyricsProvider(client, gson),
                 QqMusicLyricsProvider(client, gson),
                 KuwoLyricsProvider(client),

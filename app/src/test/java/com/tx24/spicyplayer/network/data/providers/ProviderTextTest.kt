@@ -91,6 +91,12 @@ class ProviderTextTest {
         val model = LrcRedLyricsProvider.songPayload(song("\"byModel\":true," + source(apple)))!!
         assertEquals(LyricsOrigins.LRC_RED_AI_NAME, model.attribution?.originName)
 
+        // The sync request's answer leaves byModel out; it is the model's all the same.
+        assertEquals(LyricsOrigins.LRC_RED_AI_NAME, LrcRedLyricsProvider.songPayload(song(source(apple)), byModel = true)?.attribution?.originName)
+        // A refused sync explains itself (HTTP 422 for a song lrc.red has no recording of).
+        assertEquals("We can't find the recording this comes from.", LrcRedLyricsProvider.syncError("""{"error": "We can't find the recording this comes from."}"""))
+        assertEquals(null, LrcRedLyricsProvider.syncError("<html>Bad gateway</html>"))
+
         // No TTML, no answer.
         assertEquals(null, LrcRedLyricsProvider.songPayload(song("\"byModel\":false")))
         assertEquals(null, LrcRedLyricsProvider.songPayload(song(source(""))))
