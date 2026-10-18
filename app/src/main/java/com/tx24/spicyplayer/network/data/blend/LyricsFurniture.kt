@@ -49,6 +49,8 @@ internal object LyricsFurniture {
             "|backing vocals?|guitars?|bass|drums|keyboards?|strings?|piano" +
             ")\\s*(?:by)?\\s*[:：]" +
             "|^\\s*\\p{L}[\\p{L}\\p{N}_&/'’.\\- ]{0,38}?\\s[:：]\\s*\\S" +
+            // A full-width colon after a Latin role is the catalogue's credit too ("Percussion：David Stewart").
+            "|^\\s*[A-Za-z][A-Za-z&/'’.\\- ]{0,38}：\\s*\\S" +
             "|^\\s*(?:recorded|mixed|mastered|engineered|published|administered)\\s+(?:at|by|in)\\b|^\\s*[℗©]",
         RegexOption.IGNORE_CASE,
     )
@@ -70,10 +72,12 @@ internal object LyricsFurniture {
         var items = lines.indices.filterNot { SECTION_HEAD.containsMatchIn(text(it)) }
         val dropped = translations(items.map { lines[it] })
         items = items.filterIndexed { k, _ -> k !in dropped }
+        // A run of credits from either end may be longer than the reach (BTS's "Dynamite" has 21);
+        // a run is unbroken from the end, and the reach only bounds how far in a title card may sit.
         var lo = 0
-        while (lo < minOf(items.size, EDGE_REACH) && (credit(text(items[lo])) || (title.isNotBlank() && card(text(items[lo]), title, artist)))) lo++
+        while (lo < items.size && (credit(text(items[lo])) || (lo < EDGE_REACH && title.isNotBlank() && card(text(items[lo]), title, artist)))) lo++
         var hi = items.size
-        while (hi > maxOf(lo, items.size - EDGE_REACH) && credit(text(items[hi - 1]))) hi--
+        while (hi > lo && credit(text(items[hi - 1]))) hi--
         return items.subList(lo, hi)
     }
 

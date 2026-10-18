@@ -41,6 +41,12 @@ class AllSourcesLiveCheckTest {
                     val started = System.nanoTime()
                     val result = runCatching { withTimeoutOrNull(30_000) { provider.fetch(song) } }
                         .getOrElse { ProviderResult.Unavailable(com.tx24.spicyplayer.network.data.ProviderFailureCategory.UNKNOWN, it.toString()) }
+                        // As the app shows them: without the catalogues' title cards and credits.
+                        .let { r ->
+                            if (r is ProviderResult.Hit && provider.descriptor.id in com.tx24.spicyplayer.network.data.RemoteLyricsSource.FURNISHED)
+                                r.copy(payload = com.tx24.spicyplayer.network.data.blend.LyricsFurniture.clean(r.payload, song.title, song.artist))
+                            else r
+                        }
                     val ms = (System.nanoTime() - started) / 1_000_000
                     result to ms
                 }

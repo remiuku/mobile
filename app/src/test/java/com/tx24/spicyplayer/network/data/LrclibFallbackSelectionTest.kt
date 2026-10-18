@@ -43,6 +43,19 @@ class LrclibFallbackSelectionTest {
         assertEquals(false, source.thin("Hey", null, 45))
     }
 
+    @Test fun anOverloadedExactLookupAsksTheSearch() = kotlinx.coroutines.runBlocking {
+        val full = entry("Never Gonna Give You Up", "Rick Astley", "Whenever You Need Somebody", 213.0)
+        fun busy(found: List<LrclibSearchEntry>) = LyricsSource(object : LyricsService {
+            override suspend fun getSongLyrics(artistName: String, trackName: String, albumName: String?, durationSeconds: Int?): SongLyricsNetwork =
+                throw retrofit2.HttpException(retrofit2.Response.error<Any>(503, okhttp3.ResponseBody.Companion.run { "".toResponseBody() }))
+            override suspend fun searchSongLyrics(artistName: String, trackName: String) = found
+        })
+        val request = LyricsLookupRequest("Rick Astley", "Never Gonna Give You Up", "Whenever You Need Somebody", 213)
+        assertEquals(full.plainLyrics, (busy(listOf(full)).fetch(request) as ProviderResult.Hit).payload.plainLyrics)
+        // Nothing found either way: still worth asking again later.
+        assertEquals(true, busy(emptyList()).fetch(request) is ProviderResult.Queued)
+    }
+
     private fun entry(title: String, artist: String, album: String, duration: Double) =
         LrclibSearchEntry(title, artist, album, duration, "We're no strangers to love\nYou know the rules and so do I\nA full commitment's what I'm thinking of", null)
 }

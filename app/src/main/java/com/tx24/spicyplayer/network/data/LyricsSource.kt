@@ -66,11 +66,13 @@ class LyricsSource @Inject constructor(
                 429 -> ProviderResult.CoolingDown(
                     RetryAfterParser.deadline(e.response()?.headers()?.get("Retry-After"))
                 )
-                503 -> ProviderResult.Queued(
-                    e.response()?.headers()?.get("Retry-After")?.let {
-                        RetryAfterParser.deadline(it, Instant.now())
-                    }
-                )
+                // The exact lookup is overloaded far more often than the search: ask that before queueing.
+                503 -> runCatching { searchFallback(request) }.getOrNull()?.takeIf { it is ProviderResult.Hit }
+                    ?: ProviderResult.Queued(
+                        e.response()?.headers()?.get("Retry-After")?.let {
+                            RetryAfterParser.deadline(it, Instant.now())
+                        }
+                    )
                 401, 403 -> ProviderResult.Unavailable(
                     category = ProviderFailureCategory.AUTHENTICATION,
                     message = "LRCLIB rejected the request (HTTP ${e.code()})",

@@ -449,7 +449,7 @@ class RemoteLyricsSource @Inject constructor(
         const val LRC_RED_ID = "lrc_red"
         const val LRCMUX_ID = "lrcmux"
         /** Whose answers [LyricsFurniture] tidies. */
-        private val FURNISHED = setOf("qq_music", "kugou", "kuwo", "netease")
+        internal val FURNISHED = setOf("qq_music", "kugou", "kuwo", "netease")
         /** Origin names (SpicyLyricsProvider.spicyOriginName) for Spicy Lyrics' own syncs. */
         val SPICY_OWN_ORIGINS = setOf("Spicy Lyrics", "Spicy Lyrics Community")
 

@@ -24,6 +24,11 @@ class GeniusSongPagesTest {
         }.build()
     }
 
+    @Test fun `shown lyrics leave out section headers and title cards`() {
+        val page = "​[米津玄師「Lemon」歌詞]\n\n[Verse 1]\n夢ならばどれほどよかったでしょう\n(Ooh)\n\n[Chorus: Jung Kook]\nあの日の悲しみさえ"
+        assertEquals("夢ならばどれほどよかったでしょう\n(Ooh)\n\nあの日の悲しみさえ", withoutHeaders(page))
+    }
+
     @Test fun `the romanization and translation lookups share a song's requests`() = runBlocking {
         val genius = Genius(200)
         val pages = GeniusSongPages(genius.client, Gson())

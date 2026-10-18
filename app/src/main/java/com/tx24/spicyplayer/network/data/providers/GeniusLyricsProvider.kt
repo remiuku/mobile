@@ -18,7 +18,7 @@ class GeniusLyricsProvider internal constructor(private val pages: GeniusSongPag
 
     override suspend fun fetch(request: LyricsLookupRequest): ProviderResult = try {
         val song = pages.original(request.title, request.artist)
-        val text = song?.let { pages.textAt(it.get("url")?.asString.orEmpty(), strict = true) }
+        val text = song?.let { pages.textAt(it.get("url")?.asString.orEmpty(), strict = true) }?.let(::withoutHeaders)
         if (text.isNullOrBlank()) ProviderResult.Miss else ProviderResult.Hit(RemoteLyricsPayload(plainLyrics = text))
     } catch (c: CancellationException) {
         throw c
@@ -30,6 +30,17 @@ class GeniusLyricsProvider internal constructor(private val pages: GeniusSongPag
         ProviderResult.Unavailable(ProviderFailureCategory.MALFORMED_RESPONSE, e.message)
     }
 }
+
+/**
+ * Genius's text as it's sung: no "[Verse 1: Jung Kook]" headers or "​[米津玄師「Lemon」歌詞]" cards,
+ * which shown as lyrics would be lines nobody sings. Stanza breaks stay.
+ */
+internal fun withoutHeaders(text: String): String = text.lines()
+    .map { it.replace(ZERO_WIDTH, "").trim() }
+    .filterNot { it.startsWith("[") && it.endsWith("]") }
+    .joinToString("\n").replace(Regex("\n{3,}"), "\n\n").trim()
+
+private val ZERO_WIDTH = Regex("[​-‍﻿]")
 
 /**
  * The lyrics on a Genius song page: the text of every `data-lyrics-container` div, which nest

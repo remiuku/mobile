@@ -34,6 +34,16 @@ class LyricsFurnitureTest {
     }
 
     @Test
+    fun `a credit run longer than the reach goes whole, full-width colons and all`() {
+        val roles = listOf("Lyrics by", "Drums", "Percussion", "Bass Guitar", "Synths", "Pads", "Piano", "Electric Guitars",
+            "Programmed Horns", "Live Horns", "Vocal Produced", "Mix Engineer")
+        val lines = listOf(line("Dynamite - BTS", 0.0)) + roles.mapIndexed { i, r -> line("$r：David Stewart", i + 1.0) } +
+            listOf(line("Cos ah ah I'm in the stars tonight", 20.0), line("So watch me bring the fire", 24.0))
+        assertEquals(listOf("Cos ah ah I'm in the stars tonight", "So watch me bring the fire"),
+            LyricsFurniture.kept(lines, "Dynamite", "BTS").map { lineText(lines[it]) })
+    }
+
+    @Test
     fun `an exact title on a card stands without the byline`() {
         val lines = listOf(line("unravel - TK from 凛冽时雨", 0.0), line("Oshiete oshiete yo", 5.0), line("Sono shikumi wo", 9.0))
         assertEquals(listOf(1, 2), LyricsFurniture.kept(lines, "unravel", "TK from 凛として時雨"))
