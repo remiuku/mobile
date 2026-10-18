@@ -11,6 +11,8 @@ internal object BlendText {
     const val RECUT_LIKE = 0.65
     const val WORDED_SHARE = 0.5
     private const val CONTRACTED = "'’"
+    /** Marks that open a word or an aside, and so belong with the word after them. */
+    private const val OPENS = "«“¿¡([{\"'‘"
 
     val CRIES = setOf(
         "yeah", "yea", "yah", "yuh", "ye", "oh", "ooh", "ohh", "oo", "ah",
@@ -108,7 +110,16 @@ internal object BlendText {
         var held: Double? = null
         for ((span, at) in spans.zip(cuts)) {
             val (s, _) = span
-            val stop = if (at < idx.size) idx[at] else text.length
+            var stop = if (at < idx.size) idx[at] else text.length
+            // A cut that lands on a word goes back to where the word before it ended, then over
+            // the spaces, so an opening bracket starts the word it opens ("destiny (destiny)").
+            if (at > 0 && at < idx.size) {
+                val lo = idx[at - 1] + 1
+                var j = stop
+                while (j > lo && (text[j - 1].isWhitespace() || text[j - 1] in OPENS && text[j - 2].isWhitespace())) j--
+                while (j < stop && text[j].isWhitespace()) j++
+                stop = j
+            }
             val piece = if (stop > cut) text.substring(cut, stop) else ""
             if (key(piece).isEmpty()) {
                 if (out.isNotEmpty()) out[out.lastIndex] = out.last().copy(end = maxOf(out.last().end, s.end))
@@ -180,9 +191,16 @@ internal object BlendText {
             val found = lumpParts.findAll(y.text).map { it.value }.toList()
             if (found.size < 2) { out += y; continue }
             val parts = mutableListOf<String>()
+            // An opening mark on its own rides on the word after it, not the one before.
+            var opened = ""
             for (piece in found) {
-                if (parts.isNotEmpty() && piece.none(::isAlnum)) parts[parts.lastIndex] += piece else parts += piece
+                when {
+                    piece.none(::isAlnum) && piece.trim().all { it in OPENS } -> opened += piece
+                    opened.isNotEmpty() || parts.isEmpty() || piece.any(::isAlnum) -> { parts += opened + piece; opened = "" }
+                    else -> parts[parts.lastIndex] += piece
+                }
             }
+            if (opened.isNotEmpty()) { if (parts.isNotEmpty()) parts[parts.lastIndex] += opened else parts += opened }
             if (parts.size < 2) { out += y; continue }
             val span = maxOf(0.0, y.end - y.start)
             val total = parts.sumOf { it.trim().length }.takeIf { it > 0 } ?: 1

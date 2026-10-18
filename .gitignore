@@ -18,4 +18,5 @@ CLAUDE.local.md
 docs/upstream-notes.md
 PUBLICATION_CHECKLIST.md
 tools/make_blend_fixtures.py
+tools/make_synthetic_blend_fixture.py
 app/src/test/java/com/tx24/spicyplayer/network/data/blend/BlendParityTest.kt

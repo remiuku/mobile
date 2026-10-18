@@ -61,6 +61,8 @@ internal object LyricsBlender {
     private const val RESTREAM_FLOOR = 0.80
     private const val STRAY_REACH = 0.6
     private const val DOUBLE_SLACK = 0.15
+    /** How much further from the base line a re-cut may sit and still take a line over ([oneOwner]). */
+    private const val OWNER_SLACK = 0.5
     private const val ASIDE_TRIM = " \t,;:.-\u2014\u2013~(\uff08[\u3010"
     private const val OPENERS = "(\uff08[\u3010"
     private const val CLOSERS = ")\uff09]\u3011"
@@ -100,13 +102,20 @@ internal object LyricsBlender {
         return real > 0 && pairs.size >= floor * real
     }
 
-    /** base line index -> other's, by text, or null if these are not one song (`_pair`). */
+    /**
+     * base line index -> other's, by text, or null if these are not one song (`_pair`). The near
+     * pairs count towards enough: they are only found inside the windows the exact ones leave, so
+     * a donor writing "can have" for "could have" all song isn't turned away. Ad-libs the donor
+     * files apart from its lines come out of ours before comparing.
+     */
     private fun pair(base: List<BlendLine>, other: List<BlendLine>): MutableMap<Int, Int>? {
-        val a = base.map { key(lineText(it)) }
+        val apart = filedApart(other)
+        val a = base.map { key(unaside(lineText(it), apart)) }
         val b = other.map { key(lineText(it)) }
         val pairs = exactPairs(a, b)
-        if (!shared(a, b, pairs)) return null
+        if (pairs.isEmpty()) return null
         pairs.putAll(nearPairs(a, b, pairs))
+        if (!shared(a, b, pairs)) return null
         return pairs
     }
 
@@ -206,11 +215,27 @@ internal object LyricsBlender {
         val delta = offsetsByLine(bit, dit, pairs)
         val keys = delta.keys.sorted()
         if (keys.size < 4) return out
+        // Only a pairing that could be the wrong repeat is judged: a line said as often on each
+        // side, paired with the same repeat, has one place to go, and its wobble is the base's.
+        val a = nth(bit)
+        val b = nth(dit)
         for ((pos, i) in keys.withIndex()) {
+            if (a[i] == b[pairs.getValue(i)]) continue
             val near = keys.subList(maxOf(0, pos - 3), minOf(keys.size, pos + 4)).filter { it != i }.map { delta.getValue(it) }.sorted()
             if (near.isNotEmpty() && abs(delta.getValue(i) - near[near.size / 2]) > tol) out.remove(i)
         }
         return out
+    }
+
+    /** Each line's (which time its words are said, how many times in all). */
+    private fun nth(items: List<BlendLine>): List<Pair<Int, Int>> {
+        val seen = HashMap<String, Int>()
+        val at = items.map { x ->
+            val k = key(lineText(x))
+            seen[k] = (seen[k] ?: 0) + 1
+            k to seen.getValue(k)
+        }
+        return at.map { (k, n) -> n to seen.getValue(k) }
     }
 
     private fun offsetsByLine(bit: List<BlendLine>, dit: List<BlendLine>, map: Map<Int, Int>): Map<Int, Double> {
@@ -243,6 +268,42 @@ internal object LyricsBlender {
         val mid = off[off.size / 2]
         val apart = off.map { v -> abs(v - mid) }.sorted()
         return mid to apart[apart.size / 2]
+    }
+
+    /**
+     * Paired lines whose donor syllables a re-cut line already took, moved onto their own re-cut
+     * too, so no syllable times two lines (`_one_owner`). Only where the re-cut times as many of
+     * the line's words and sits no more than [OWNER_SLACK] further from the base line's span.
+     */
+    private fun oneOwner(
+        start: MutableMap<Int, Int>,
+        items: List<BlendLine>,
+        recut: List<BlendLine?>,
+        timed: (Map<Int, Int>, List<BlendLine>, Int) -> Pair<Int, Double>,
+    ): Pair<MutableMap<Int, Int>, List<BlendLine>> {
+        var qmap = start
+        var qit = items
+        while (true) {
+            val taken = identitySet().apply {
+                for (k in qmap.values) if (qit[k].recut) qit[k].lead?.syllables?.let { addAll(it) }
+            }
+            var moved = false
+            for ((i, k) in qmap.entries.sortedBy { it.key }) {
+                if (qit[k].recut) continue
+                val mine = qit[k].lead?.syllables.orEmpty()
+                val alt = recut.getOrNull(i)
+                if (alt == null || mine.none { it in taken }) continue
+                val trial = LinkedHashMap(qmap).apply { put(i, qit.size) }
+                val (nNow, farNow) = timed(qmap, qit, i)
+                val (nAlt, farAlt) = timed(trial, qit + alt, i)
+                if (nNow == 0 || nAlt < nNow || farAlt > farNow + OWNER_SLACK) continue
+                qit = qit + alt
+                qmap = trial
+                moved = true
+                break
+            }
+            if (!moved) return qmap to qit
+        }
     }
 
     /** The blend's two donors, the one holding THIS recording first (`in_order`). */
@@ -466,7 +527,12 @@ internal object LyricsBlender {
             val group = slide(BlendGroup(syls, begin, lineEnd(q) ?: begin), slid[host] ?: 0.0)
             if (doubled(out, k, group.start!!, group.end!!)) continue
             line.background = (line.background + group).sortedBy { it.start ?: 0.0 }
-            line.end?.let { line.end = maxOf(it, group.end) }
+            line.end?.let { ends ->
+                // An ad-lib may run on as a background, not stretch its host over the next line.
+                val next = out.getOrNull(host + 1)?.let(::lineStart)
+                val reach = if (next != null) minOf(group.end!!, maxOf(ends, next)) else group.end!!
+                line.end = maxOf(ends, reach)
+            }
         }
     }
 
@@ -595,6 +661,19 @@ internal object LyricsBlender {
             return syls.isNotEmpty() && relay(unaside(lineText(bit[i]), apart), syls, alike(got)) != null
         }
 
+        /** How many of line [i]'s words its pairing times, and how far those sit from the base line's span. */
+        fun timed(m: Map<Int, Int>, items: List<BlendLine>, i: Int): Pair<Int, Double> {
+            val j = m[i]
+            val got = if (j != null && j < items.size) items[j] else null
+            val syls = got?.lead?.syllables.orEmpty()
+            val lent = (if (syls.isNotEmpty()) relay(unaside(lineText(bit[i]), apart), syls, alike(got)) else null)
+                ?: return 0 to Double.POSITIVE_INFINITY
+            val bS = lineStart(bit[i]) ?: return lent.size to 0.0
+            var far = abs(lent[0].start - bS)
+            lineEnd(bit[i])?.let { bE -> far += abs(lent.maxOf(BlendSyllable::end) - bE) }
+            return lent.size to far
+        }
+
         val qpairs: Map<Int, Int> = if (qit.isNotEmpty()) pair(bit, qit).orEmpty() else emptyMap()
         var qmap: MutableMap<Int, Int>? = if (qit.isNotEmpty()) timely(qpairs, bit, qit) else null
         val astrayQ = qpairs.filterKeys { it !in qmap.orEmpty() }
@@ -609,7 +688,12 @@ internal object LyricsBlender {
                     map[i] = qit.size + extra.size - 1
                 }
                 qmap = map
-                if (extra.isNotEmpty()) qit = qit + extra
+                if (extra.isNotEmpty()) {
+                    qit = qit + extra
+                    val (owned, items) = oneOwner(map, qit, recut, ::timed)
+                    qmap = owned
+                    qit = items
+                }
             }
         }
 
@@ -704,10 +788,15 @@ internal object LyricsBlender {
             }
             val qby = if (qS != null) start - qS else 0.0
             var syls: List<BlendSyllable> = relay(line.text.orEmpty(), q?.lead?.syllables.orEmpty(), alike(q)).orEmpty()
+            var relayed = false
             if (syls.isNotEmpty()) {
                 syls = syls.map { y -> slide(y, qby) }
-                if (i in rhythm && !fits(syls, start, bNext)) syls = emptyList()
-                else used += if (i in borrowed) "spare" else "qq"
+                if (i in rhythm && !fits(syls, start, bNext)) {
+                    syls = emptyList()
+                } else {
+                    used += if (i in borrowed) "spare" else "qq"
+                    relayed = true
+                }
             } else {
                 val own = it.lead?.syllables.orEmpty()
                 if (own.isNotEmpty() && bS != null) syls = own.map { y -> slide(y, start - bS) }
@@ -755,10 +844,15 @@ internal object LyricsBlender {
             line.start = start
             line.end = end
             over[out.size] = if (bE != null && bNext != null) maxOf(0.0, bE - bNext) else 0.0
-            slid[out.size] = qby
+            // qby is a measured offset only where the donor's words placed this line; otherwise it
+            // would slide strays seconds off.
+            slid[out.size] = if (relayed) qby else 0.0
             if (syls.isNotEmpty()) line.lead = BlendGroup(syls, start, end)
-            val bg = it.background + asides
-            if (bg.isNotEmpty()) line.background = if (bS != null) bg.map { g -> slide(g, start - bS) } else bg
+            // The base's own backing groups move with its line; the asides are the donor's, on
+            // its clock, and move with its words.
+            val bg = (if (bS != null) it.background.map { g -> slide(g, start - bS) } else it.background) +
+                asides.map { g -> slide(g, qby) }
+            if (bg.isNotEmpty()) line.background = bg
             out += line
             based += bS to bE
         }
