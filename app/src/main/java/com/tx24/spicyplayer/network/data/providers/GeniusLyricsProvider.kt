@@ -32,7 +32,7 @@ class GeniusLyricsProvider internal constructor(private val pages: GeniusSongPag
 }
 
 /**
- * Genius's text as it's sung: no "[Verse 1: Jung Kook]" headers or "​[米津玄師「Lemon」歌詞]" cards,
+ * Genius's text as it's sung: no "[Verse 1: Jung Kook]" headers or "[米津玄師「Lemon」歌詞]" cards (which Genius starts with a zero-width space),
  * which shown as lyrics would be lines nobody sings. Stanza breaks stay.
  */
 internal fun withoutHeaders(text: String): String = text.lines()
@@ -40,7 +40,7 @@ internal fun withoutHeaders(text: String): String = text.lines()
     .filterNot { it.startsWith("[") && it.endsWith("]") }
     .joinToString("\n").replace(Regex("\n{3,}"), "\n\n").trim()
 
-private val ZERO_WIDTH = Regex("[​-‍﻿]")
+private val ZERO_WIDTH = Regex("[\u200B-\u200D\uFEFF]")
 
 /**
  * The lyrics on a Genius song page: the text of every `data-lyrics-container` div, which nest
