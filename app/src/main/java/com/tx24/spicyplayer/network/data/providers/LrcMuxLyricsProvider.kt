@@ -37,7 +37,13 @@ class LrcMuxLyricsProvider @Inject constructor(
                 if (response.code in 400..499) ProviderFailureCategory.CLIENT_REQUEST else ProviderFailureCategory.SERVER,
                 "LRCMux returned HTTP ${response.code}", response.code >= 500,
             )
-            parse(gson.fromJson(response.body?.string(), JsonObject::class.java))
+            val root = gson.fromJson(response.body?.string(), JsonObject::class.java)
+            // It matches on title and length alone, so a remix as long as the song can answer for it:
+            // "Dynamite (NightTime Version)" runs six seconds behind the original.
+            val track = root.getAsJsonObject("track")
+            val theirs = listOfNotNull(track?.get("title"), track?.get("album")).filter { it.isJsonPrimitive }.joinToString(" ") { it.asString }
+            if (GeniusSongPages.otherVersion(theirs, "${request.title} ${request.album}")) return ProviderResult.Miss
+            parse(root)
         }
     } catch (cancelled: CancellationException) { throw cancelled }
       catch (error: IOException) { ProviderResult.Unavailable(ProviderFailureCategory.NETWORK, error.message, true) }
@@ -48,19 +54,23 @@ class LrcMuxLyricsProvider @Inject constructor(
         // Where LRCMux found them (KuGou, LRCLIB, Genius, YouTube Music): ranked in that source's place.
         val attribution = LyricsAttribution("LRCMux", originName = root.getAsJsonObject("meta")?.getAsJsonObject("source")
             ?.get("name")?.takeIf { it.isJsonPrimitive }?.asString?.takeIf(String::isNotBlank))
-        val ttml = wordTtml(lines)
+        // Milliseconds or seconds, decided once for the whole answer: judged value by value, a line
+        // in the first ten seconds read as seconds (6403 ms became 6403 s, an hour and three quarters in).
+        val times = lines.flatMap { l -> l.asJsonObject.let { o -> listOfNotNull(o.number("start"), o.number("end")) } }
+        val scale = if ((times.maxOrNull() ?: 0.0) > 1_000) 1_000.0 else 1.0
+        val ttml = wordTtml(lines, scale)
         if (ttml != null) return ProviderResult.Hit(RemoteLyricsPayload(ttmlLyrics = ttml, attribution = attribution))
         val synced = lines.mapNotNull { element ->
             val line = element.asJsonObject
             val text = line.get("text")?.asString?.takeIf(String::isNotBlank) ?: return@mapNotNull null
             val start = line.number("start") ?: return@mapNotNull null
-            "[${clock(start)}]$text"
+            "[${clock(start / scale)}]$text"
         }.joinToString("\n").takeIf(String::isNotBlank)
         val plain = lines.mapNotNull { it.asJsonObject.get("text")?.asString }.joinToString("\n").takeIf(String::isNotBlank)
         return if (synced != null || plain != null) ProviderResult.Hit(RemoteLyricsPayload(plain, synced, attribution = attribution)) else ProviderResult.Miss
     }
 
-    private fun wordTtml(lines: JsonArray): String? {
+    private fun wordTtml(lines: JsonArray, scale: Double): String? {
         val paragraphs = lines.mapNotNull { element ->
             val line = element.asJsonObject
             val words = line.getAsJsonArray("words") ?: return@mapNotNull null
@@ -69,19 +79,19 @@ class LrcMuxLyricsProvider @Inject constructor(
                 val text = word.get("text")?.asString ?: return@mapNotNull null
                 val start = word.number("start") ?: return@mapNotNull null
                 val end = word.number("end") ?: return@mapNotNull null
-                "<span begin=\"${seconds(start)}\" end=\"${seconds(end)}\"> ${xml(text)}</span>"
+                "<span begin=\"${seconds(start / scale)}\" end=\"${seconds(end / scale)}\"> ${xml(text)}</span>"
             }
             if (spans.isEmpty()) return@mapNotNull null
             val start = line.number("start") ?: words.first().asJsonObject.number("start") ?: return@mapNotNull null
             val end = line.number("end") ?: words.last().asJsonObject.number("end") ?: return@mapNotNull null
-            "<p begin=\"${seconds(start)}\" end=\"${seconds(end)}\">${spans.joinToString("")}</p>"
+            "<p begin=\"${seconds(start / scale)}\" end=\"${seconds(end / scale)}\">${spans.joinToString("")}</p>"
         }
         if (paragraphs.isEmpty()) return null
         return """<tt xmlns="http://www.w3.org/ns/ttml" xmlns:itunes="http://music.apple.com/lyric-ttml-internal" itunes:timing="word"><body><div>${paragraphs.joinToString("")}</div></body></tt>"""
     }
 
     private fun JsonObject.number(key: String): Double? = get(key)?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isNumber }?.asDouble
-    private fun seconds(v: Double) = "${"%.3f".format(Locale.ROOT, if (v > 10_000) v / 1000 else v)}s"
-    private fun clock(v: Double): String { val s = if (v > 10_000) v / 1000 else v; return "%02d:%05.2f".format(Locale.ROOT, (s/60).toInt(), s%60) }
+    private fun seconds(s: Double) = "${"%.3f".format(Locale.ROOT, s)}s"
+    private fun clock(s: Double) = "%02d:%05.2f".format(Locale.ROOT, (s / 60).toInt(), s % 60)
     private fun xml(s: String) = s.replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")
 }

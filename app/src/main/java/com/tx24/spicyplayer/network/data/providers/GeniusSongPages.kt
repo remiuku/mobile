@@ -222,12 +222,6 @@ internal class GeniusSongPages(
             .filter { it.length >= 2 && !CREDIT.containsMatchIn(it) && !VERSION.containsMatchIn(it) }
             .toList()
 
-    /** [theirs] names a version (in brackets or after a dash) that [ours] doesn't. */
-    private fun otherVersion(theirs: String, ours: String): Boolean {
-        val extras = BRACKETED.findAll(theirs).map { it.value } + listOfNotNull(theirs.substringAfter(" - ", "").takeIf(String::isNotEmpty))
-        return extras.any { extra -> VERSION.findAll(extra).any { it.value.lowercase() !in ours.lowercase() } }
-    }
-
     private fun sameArtist(hit: JsonObject, artist: String): Boolean {
         val who = norm(artistOf(hit))
         val asked = norm(artist)
@@ -299,7 +293,17 @@ internal class GeniusSongPages(
         .map { if (it in 'ぁ'..'ゖ') it + 0x60 else it }.joinToString("")
     private fun JsonObject.str(name: String): String = get(name)?.takeIf { it.isJsonPrimitive }?.asString.orEmpty()
 
-    private companion object {
+    internal companion object {
+        /** [theirs] names a version (in brackets or after a dash) that [ours] doesn't. */
+        fun otherVersion(theirs: String, ours: String): Boolean {
+            val extras = BRACKETED.findAll(theirs).map { it.value } + listOfNotNull(theirs.substringAfter(" - ", "").takeIf(String::isNotEmpty))
+            return extras.filterNot(SAME_RECORDING::containsMatchIn)
+                .any { extra -> VERSION.findAll(extra).any { it.value.lowercase() !in ours.lowercase() } }
+        }
+
+        /** Version notes that keep the recording: "(Deluxe Version)", "(Taylor's Version)", "(2015 Remaster)". */
+        private val SAME_RECORDING = Regex("""deluxe|expanded|edition|taylor|explicit|clean|remaster|anniversary|original|album|single""", RegexOption.IGNORE_CASE)
+
         /** How many of our lines are asked of Genius's lyric index ([byLyrics]). */
         const val LYRIC_ASKS = 3
         const val MAX_ANSWERS = 64

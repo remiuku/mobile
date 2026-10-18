@@ -211,8 +211,11 @@ object TtmlLyricsParser {
                             convertTimeToSeconds(p["begin"]), convertTimeToSeconds(p["end"]))
                     }
                 }
-                var leadStart = convertTimeToSeconds(p["begin"]) ?: lead.firstOrNull()?.start
-                var leadEnd = convertTimeToSeconds(p["end"]) ?: lead.lastOrNull()?.end
+                // The line's window covers its own words too: catalogues write zero-length lines
+                // ("Galileo" in KuGou's Bohemian Rhapsody), which would read as a gap and show the
+                // interlude dots, and hold the scroll, while the words are being sung.
+                var leadStart = listOfNotNull(convertTimeToSeconds(p["begin"]), lead.mapNotNull { it.start }.minOrNull()).minOrNull()
+                var leadEnd = listOfNotNull(convertTimeToSeconds(p["end"]), lead.mapNotNull { it.end }.maxOrNull()).maxOrNull()
 
                 val backgrounds = pSpans.filter { isSpanObject(it) && it["ttm:role"] == "x-bg" }.mapNotNull { bgSpan ->
                     val bgChildren = bgSpan.elements("span")

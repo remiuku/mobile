@@ -63,7 +63,8 @@ class AllSourcesLiveCheckTest {
                         (com.tx24.spicyplayer.network.data.blend.BlendDocuments.from(result.payload)?.lines
                             ?.map(com.tx24.spicyplayer.network.data.blend.BlendText::lineText)
                             ?.firstOrNull { it.isNotBlank() && !com.tx24.spicyplayer.network.data.blend.BlendDonors.isCredit(it) }
-                            ?.let { " | ${it.take(40)}" } ?: "")
+                            ?.let { " | ${it.take(40)}" } ?: "") +
+                        dotsOverWords(id, result, SONGS[i]).let { if (it > 0) "  <- $it interlude(s) over sung words" else "" }
                     null -> "TIMEOUT"
                     is ProviderResult.Unavailable -> "UNAVAILABLE ${result.category} ${result.message.orEmpty().take(120)}"
                     else -> result.toString()
@@ -72,7 +73,66 @@ class AllSourcesLiveCheckTest {
             }
             if (results.none { it.first is ProviderResult.Hit }) silent += id
         }
+        printTiming(rows.toMap())
         assertTrue("No hits at all from: $silent", silent.isEmpty())
+    }
+
+    /**
+     * Interlude dots the lyrics screen would show while words are sung: what a line whose own
+     * times don't cover its words does, and the scroll waits on the dots meanwhile.
+     */
+    private fun dotsOverWords(id: String, hit: ProviderResult.Hit, song: LyricsLookupRequest): Int {
+        val descriptor = NextLyricsBackend.createProviders(OkHttpClient(), Gson(), "").firstOrNull { it.descriptor.id == id }?.descriptor ?: return 0
+        val ready = runCatching {
+            com.tx24.spicyplayer.lyrics.RemoteLyricsAdapter.render(
+                com.tx24.spicyplayer.network.data.RemoteLyricsSelection(descriptor, hit.payload, hit.payload.measuredQuality()), song.durationSeconds * 1000L)
+        }.getOrNull() ?: return 0
+        val lines = ready.lines.map { l ->
+            com.tx24.spicyplayer.lyrics.spicy.models.Line(
+                words = l.words.map { com.tx24.spicyplayer.lyrics.spicy.models.Word(it.text, it.startMs, it.endMs, isPartOfWord = it.attached) },
+                startMs = l.startMs, endMs = l.endMs, agent = l.agent, role = l.role, groupId = l.groupId,
+                oppositeAligned = l.oppositeAligned, lineTimed = l.lineTimed)
+        }
+        return com.tx24.spicyplayer.lyrics.spicy.models.buildDisplayTimeline(lines, minimalMode = false).filter { it.isInterlude }
+            .count { dots -> lines.any { l -> l.words.any { w -> w.startMs < dots.endMs - 300 && w.endMs > dots.startMs + 300 } } }
+    }
+
+    /**
+     * How each timed answer lines up with a trusted one for the same song (Spicy Lyrics, then AMLL,
+     * then lrc.red): lines matched by their words, in order, then the median offset (early or late)
+     * and the spread around it (drift, or lines out of place). Flags what's off by over half a second.
+     */
+    private fun printTiming(rows: Map<String, List<Pair<ProviderResult?, Long>>>) {
+        fun timed(result: ProviderResult?): List<Pair<String, Double>>? =
+            (result as? ProviderResult.Hit)?.let { com.tx24.spicyplayer.network.data.blend.BlendDocuments.from(it.payload) }?.lines
+                ?.mapNotNull { line ->
+                    val key = com.tx24.spicyplayer.network.data.spotify.SpotifyTrackMatcher
+                        .normalize(com.tx24.spicyplayer.network.data.blend.BlendText.lineText(line)).replace(" ", "").take(12)
+                    line.start?.takeIf { key.length >= 4 }?.let { key to it }
+                }?.takeIf { it.size >= 4 }
+        println("── timing against a trusted sync (median offset, spread, lines matched)")
+        SONGS.forEachIndexed { i, song ->
+            val refId = REFERENCES.firstOrNull { timed(rows[it]?.get(i)?.first) != null }
+            val ref = refId?.let { timed(rows[it]!![i].first) }
+            if (ref == null) { println("   ${song.title}: no trusted sync to compare with"); return@forEachIndexed }
+            println("   ${song.title} (against $refId)")
+            rows.keys.sorted().filter { it != refId }.forEach { id ->
+                val theirs = timed(rows[id]?.get(i)?.first) ?: return@forEach
+                val deltas = mutableListOf<Double>()
+                var j = 0
+                for ((key, at) in theirs) {
+                    val k = (j until minOf(ref.size, j + 6)).firstOrNull { ref[it].first == key } ?: continue
+                    deltas += at - ref[k].second
+                    j = k + 1
+                }
+                if (deltas.size < 3) { println("      %-20s too few lines in common (%d)".format(id, deltas.size)); return@forEach }
+                val median = deltas.sorted()[deltas.size / 2]
+                val spread = deltas.map { kotlin.math.abs(it - median) }.sorted()[(deltas.size * 9) / 10]
+                val flag = if (kotlin.math.abs(median) > 0.5 || spread > 0.5) "  <- off" else ""
+                println("      %-20s %+6d ms  ±%5d ms  %d/%d lines%s".format(id, (median * 1000).toInt(), (spread * 1000).toInt(), deltas.size, ref.size, flag))
+                if (flag.isNotEmpty() && System.getenv("ALL_SOURCES_DELTAS") == "1") println("         " + deltas.joinToString(" ") { "%+d".format((it * 1000).toInt()) })
+            }
+        }
     }
 
     @Test
@@ -85,6 +145,7 @@ class AllSourcesLiveCheckTest {
     }
 
     private companion object {
+        val REFERENCES = listOf("spicy_lyrics", "amll_ttml_db", "lrc_red")
         val SONGS = listOf(
             LyricsLookupRequest("Rick Astley", "Never Gonna Give You Up", "Whenever You Need Somebody", 213),
             LyricsLookupRequest("The Weeknd", "Blinding Lights", "After Hours", 200),

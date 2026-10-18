@@ -18,6 +18,14 @@ class TtmlLyricsParserTest {
         assertEquals(listOf(1_000L, 2_000L), words.map { it.startMs })
     }
 
+    @Test fun aLineCoversItsOwnWordsWhateverItsTagSays() {
+        // KuGou's Bohemian Rhapsody: "Galileo" written as a zero-length line, its word sung for 0.8s.
+        val line = parse(doc("""<div><p begin="195.973s" end="195.973s"><span begin="195.973s" end="196.777s">Galileo</span></p></div>""")).lines.single()
+        assertEquals(195_973L to 196_777L, line.startMs to line.endMs)
+        val late = parse(doc("""<div><p begin="12s" end="13s"><span begin="11.5s" end="12.5s">Early</span> <span begin="12.5s" end="14s">late</span></p></div>""")).lines.single()
+        assertEquals(11_500L to 14_000L, late.startMs to late.endMs)
+    }
+
     @Test fun syllablesJoinOnlyWhenTheirTagsTouch() {
         val p = """<p begin="1" end="5"><span begin="1" end="2">Ma</span><span begin="2" end="3">ma,</span><span begin="3" end="4">mi</span> <span begin="4" end="5">a</span></p>"""
         val words = parse(doc("<div>$p</div>")).lines.single().words

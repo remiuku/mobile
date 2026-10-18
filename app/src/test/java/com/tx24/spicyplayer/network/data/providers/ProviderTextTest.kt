@@ -48,6 +48,20 @@ class ProviderTextTest {
         val lines = parse("""{"lines":[{"text":"Hello there","start":1.5,"end":3.0}]}""")
         assertEquals(null, lines.payload.ttmlLyrics)
         assertEquals("[00:01.50]Hello there", lines.payload.syncedLyrics)
+        // Its own answers count milliseconds: a line in the first ten seconds stays there.
+        val ms = parse("""{"lines":[{"text":"Cos ah","start":6403,"end":7139,"words":[{"text":"Cos","start":6403,"end":6646},{"text":"ah","start":6646,"end":7139}]},{"text":"So watch","start":10121,"end":11354,"words":[{"text":"So","start":10121,"end":10600},{"text":"watch","start":10600,"end":11354}]}]}""")
+        assertTrue(ms.payload.ttmlLyrics!!.contains("<p begin=\"6.403s\" end=\"7.139s\">"))
+        assertTrue(ms.payload.ttmlLyrics!!.contains("begin=\"10.121s\""))
+        val msLines = parse("""{"lines":[{"text":"Cos ah","start":6403,"end":9387},{"text":"So watch","start":10121,"end":11354}]}""")
+        assertEquals("[00:06.40]Cos ah\n[00:10.12]So watch", msLines.payload.syncedLyrics)
+    }
+
+    @Test fun anotherVersionIsntThisSong() {
+        assertTrue(GeniusSongPages.otherVersion("Dynamite Dynamite (NightTime Version)", "Dynamite BE"))
+        assertTrue(GeniusSongPages.otherVersion("Blinding Lights (Remix)", "Blinding Lights After Hours"))
+        assertFalse(GeniusSongPages.otherVersion("Blinding Lights After Hours (Deluxe Version)", "Blinding Lights After Hours"))
+        assertFalse(GeniusSongPages.otherVersion("All Too Well Red (Taylor's Version)", "All Too Well Red (Taylor's Version)"))
+        assertFalse(GeniusSongPages.otherVersion("Live Forever Definitely Maybe", "Live Forever Definitely Maybe"))
     }
 
     @Test fun rmmSaysWhereItsLyricsComeFrom() {
