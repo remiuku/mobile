@@ -450,11 +450,11 @@ internal class NextLyricsBackend(context: Context, clientKey: String) {
      * week when found and a day when not, so a replayed song asks once; NetEase's comes with its
      * lyrics lookup. A lookup that failed throws and isn't kept, so the next play asks again.
      */
-    suspend fun humanRomanization(title: String, artist: String, durationSeconds: Int = 0): List<String>? {
+    suspend fun humanRomanization(title: String, artist: String, durationSeconds: Int = 0, lines: List<String> = emptyList()): List<String>? {
         val file = File(romanCache, cacheKey(title, artist) + ".json")
         val stored = runCatching { gson.fromJson(file.readText(), StoredRoman::class.java) }.getOrNull()
             ?.takeIf { it.expiresAt > System.currentTimeMillis() }
-        val lines = if (stored != null) stored.lines else geniusRomanization.find(title, artist).also { found ->
+        val lines = if (stored != null) stored.lines else geniusRomanization.find(title, artist, lines).also { found ->
             val keep = TimeUnit.DAYS.toMillis(if (found != null) 7 else 1)
             runCatching {
                 romanCache.mkdirs()

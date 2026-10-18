@@ -1623,7 +1623,7 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
         if (!lyricsBackend.humanRomanizations || !RemoteLyricsAdapter.wantsHumanRomanization(lyrics)) return
         val backend = lyricsBackend
         humanJob = viewModelScope.launch {
-            val genius = runCatching { withContext(Dispatchers.IO) { backend.humanRomanization(request.title, request.artist, request.durationSeconds) } }
+            val genius = runCatching { withContext(Dispatchers.IO) { backend.humanRomanization(request.title, request.artist, request.durationSeconds, RemoteLyricsAdapter.romanizedTexts(lyrics)) } }
                 .onFailure { if (it is CancellationException) throw it }
                 .getOrNull() ?: return@launch
             val human = withContext(Dispatchers.Default) {

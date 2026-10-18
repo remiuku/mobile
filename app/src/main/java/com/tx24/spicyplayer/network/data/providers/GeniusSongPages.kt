@@ -101,6 +101,34 @@ internal class GeniusSongPages(
     }
 
     /**
+     * The songs Genius's lyric index finds for our own [lines], most found first: the way in for a
+     * track whose names Genius files differently ("SIGN IS B" for サインはB). Asks with the
+     * [LYRIC_ASKS] longest lines; a song needs two of them to find it (one alone can be a quote),
+     * and at most three are returned.
+     */
+    suspend fun byLyrics(lines: List<String>): List<JsonObject> {
+        val asks = lines.map(String::trim).filter(String::isNotEmpty).distinct().sortedByDescending { it.length }.take(LYRIC_ASKS)
+        if (asks.isEmpty()) return emptyList()
+        val votes = LinkedHashMap<Long, Pair<JsonObject, Int>>()
+        for (line in asks) {
+            val url = "https://genius.com/api/search/multi".toHttpUrl().newBuilder().addQueryParameter("q", line.take(100)).build()
+            val sections = runCatching { getJson(url.toString()) }.getOrNull()?.getAsJsonObject("response")?.getAsJsonArray("sections") ?: continue
+            for (section in sections) {
+                val s = section.asJsonObject
+                if (s.str("type") != "lyric") continue
+                s.getAsJsonArray("hits")?.forEach { h ->
+                    val res = h.asJsonObject.getAsJsonObject("result") ?: return@forEach
+                    val id = res.get("id")?.takeIf { !it.isJsonNull }?.asLong ?: return@forEach
+                    if (!isSong(res)) return@forEach
+                    votes[id] = res to ((votes[id]?.second ?: 0) + 1)
+                }
+            }
+        }
+        val need = minOf(2, asks.size)
+        return votes.values.filter { it.second >= need }.sortedByDescending { it.second }.take(3).map { it.first }
+    }
+
+    /**
      * The search hits that are the song itself (not a romanization, translation or another
      * song), best first: a title that matches outright before one that only holds the other
      * ("Lemon" before "Lemon (Remix)").
@@ -272,6 +300,8 @@ internal class GeniusSongPages(
     private fun JsonObject.str(name: String): String = get(name)?.takeIf { it.isJsonPrimitive }?.asString.orEmpty()
 
     private companion object {
+        /** How many of our lines are asked of Genius's lyric index ([byLyrics]). */
+        const val LYRIC_ASKS = 3
         const val MAX_ANSWERS = 64
         /** Artist records asked for alternate names per lookup: the first title matches are the likely ones. */
         const val MAX_ALIAS_LOOKUPS = 2

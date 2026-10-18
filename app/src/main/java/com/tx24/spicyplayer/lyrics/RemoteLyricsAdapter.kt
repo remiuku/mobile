@@ -97,6 +97,11 @@ internal object RemoteLyricsAdapter {
         })
     }
 
+    /** The lead lines of [lyrics] that are romanized on the device, as their own text. */
+    fun romanizedTexts(lyrics: LyricsState.Ready): List<String> = lyrics.lines
+        .filter { line -> line.role != LineRole.BACKGROUND && line.words.any { it.romanized != null } }
+        .map { line -> line.words.joinToString("") { it.text }.trim() }
+
     /** Whether [lyrics] are in a script Genius writes romanizations for (Japanese, Korean, Chinese). */
     fun wantsHumanRomanization(lyrics: LyricsState.Ready): Boolean {
         if (lyrics.sourceRomanized || lyrics.lines.none { line -> line.words.any { it.romanized != null } }) return false
