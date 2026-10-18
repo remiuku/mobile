@@ -27,13 +27,19 @@ class QqMusicLyricsProvider @Inject constructor(private val client:OkHttpClient,
    if(!response.isSuccessful)throw ProviderHttpException("QQ",response.code)
    gson.fromJson(response.body?.string(),JsonObject::class.java)
   }
-  // A throttled search (code 2001, which comes in bursts) carries an empty list: no answer, not a miss.
+  // The search throttles an address for a while (code 2001, an empty list), often for every
+  // request in a row; QQ's suggestion search and track details still answer then.
   val code=root.get("code")?.asInt?.takeIf{it!=0}?:root.getAsJsonObject("req_1")?.get("code")?.asInt?.takeIf{it!=0}
-  if(code!=null)return ProviderResult.Unavailable(ProviderFailureCategory.SERVER,"QQ search code $code",true)
-  val songs=root.getAsJsonObject("req_1")?.getAsJsonObject("data")?.getAsJsonObject("body")?.getAsJsonObject("song")?.getAsJsonArray("list")?:return ProviderResult.Miss
-  for(song in songs.map{it.asJsonObject}){val title=song.get("name")?.asString.orEmpty();val artists=song.getAsJsonArray("singer")?.joinToString(" "){it.asJsonObject.get("name").asString}.orEmpty();val dur=song.get("interval")?.asInt?:0
+  val songs=if(code==null){
+   root.getAsJsonObject("req_1")?.getAsJsonObject("data")?.getAsJsonObject("body")?.getAsJsonObject("song")?.getAsJsonArray("list")
+    ?.map{it.asJsonObject}?.map{song->QqSong(song.get("name")?.asString.orEmpty(),song.getAsJsonArray("singer")?.joinToString(" "){it.asJsonObject.get("name").asString}.orEmpty(),song.get("interval")?.asInt?:0,song.get("mid")?.asString.orEmpty())}
+    ?:return ProviderResult.Miss
+  }else{
+   suggested("${request.artist} ${request.title}")?:return ProviderResult.Unavailable(ProviderFailureCategory.SERVER,"QQ search code $code",true)
+  }
+  for(song in songs){val title=song.title;val artists=song.artists;val dur=song.seconds
    if(!CatalogueTitles.sameTitle(title,request.title)||!CatalogueTitles.sameArtist(artists,request.artist,title,request.title,dur,request.durationSeconds)||!request.lengthMatches(dur))continue
-   val mid=song.get("mid")?.asString?:continue
+   val mid=song.mid;if(mid.isBlank())continue
    fetchQrc(mid)?.let { return ProviderResult.Hit(RemoteLyricsPayload(ttmlLyrics=it)) }
    val lyric="https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg".toHttpUrl().newBuilder().addQueryParameter("songmid",mid).addQueryParameter("format","json").addQueryParameter("nobase64","1").build()
    val data=getJson(lyric,headers);var text=data.get("lyric")?.asString.orEmpty();if(text.isBlank())continue
@@ -41,6 +47,24 @@ class QqMusicLyricsProvider @Inject constructor(private val client:OkHttpClient,
    if(text.isNotBlank())return ProviderResult.Hit(RemoteLyricsPayload(syncedLyrics=text))
   };ProviderResult.Miss
  }catch(c:CancellationException){throw c}catch(e:ProviderHttpException){e.unavailable()}catch(e:IOException){ProviderResult.Unavailable(ProviderFailureCategory.NETWORK,e.message,true)}catch(e:Exception){ProviderResult.Unavailable(ProviderFailureCategory.MALFORMED_RESPONSE,e.message)} }
+ /**
+  * Songs from QQ's suggestion search (the search box's own), with their lengths from one track
+  * details request, or null where either fails. Fewer hits than the real search, but it answers
+  * while that one is throttled.
+  */
+ private suspend fun suggested(query:String):List<QqSong>?{
+  val url="https://c.y.qq.com/splcloud/fcgi-bin/smartbox_new.fcg".toHttpUrl().newBuilder().addQueryParameter("key",query).addQueryParameter("format","json").build()
+  val items=runCatching{getJson(url,mapOf("Referer" to "https://y.qq.com/"))}.getOrNull()
+   ?.getAsJsonObject("data")?.getAsJsonObject("song")?.getAsJsonArray("itemlist")?.map{it.asJsonObject}?:return null
+  val mids=items.mapNotNull{it.get("mid")?.asString}.ifEmpty{return emptyList()}
+  val details=gson.toJson(mapOf("comm" to mapOf("ct" to "19","cv" to "1859","uin" to "0"),"req_1" to mapOf("module" to "music.trackInfo.UniformRuleCtrl","method" to "CgiGetTrackInfo","param" to mapOf("types" to mids.map{0},"mids" to mids))))
+  val tracks=client.newCall(Request.Builder().url("https://u.y.qq.com/cgi-bin/musicu.fcg").header("Referer","https://y.qq.com/").post(details.toRequestBody("application/json".toMediaType())).build()).awaitResponse().use{r->
+   if(!r.isSuccessful)return null
+   gson.fromJson(r.body?.string(),JsonObject::class.java)
+  }?.getAsJsonObject("req_1")?.takeIf{it.get("code")?.asInt==0}?.getAsJsonObject("data")?.getAsJsonArray("tracks")?.map{it.asJsonObject}?:return null
+  return tracks.map{t->QqSong(t.get("name")?.asString.orEmpty(),t.getAsJsonArray("singer")?.joinToString(" "){it.asJsonObject.get("name").asString}.orEmpty(),t.get("interval")?.asInt?:0,t.get("mid")?.asString.orEmpty())}
+ }
+
  private suspend fun getJson(url:okhttp3.HttpUrl,headers:Map<String,String>):JsonObject{val b=Request.Builder().url(url);headers.forEach{(k,v)->b.header(k,v)};return client.newCall(b.get().build()).awaitResponse().use{r->if(!r.isSuccessful)throw ProviderHttpException("QQ",r.code);gson.fromJson(r.body?.string(),JsonObject::class.java)}}
  private suspend fun fetchQrc(songMid:String):String? {
   val payload="""{"comm":{"ct":"19","cv":"1873","uin":"0"},"req":{"module":"music.musichallSong.PlayLyricInfo","method":"GetPlayLyricInfo","param":{"songMID":"$songMid","qrc":1,"qrc_t":0,"trans":1,"roma":1,"crypt":1}}}"""
@@ -79,6 +103,8 @@ class KuwoLyricsProvider @Inject constructor(private val client:OkHttpClient):Re
  private suspend fun getBytes(url:okhttp3.HttpUrl):ByteArray=client.newCall(Request.Builder().url(url).header("Referer","https://www.kuwo.cn/").get().build()).awaitResponse().use{r->if(!r.isSuccessful)throw ProviderHttpException("Kuwo",r.code);r.body?.bytes() ?: byteArrayOf()}
  private fun ByteArray.indexOfSequence(needle:ByteArray):Int{outer@for(i in 0..size-needle.size){for(j in needle.indices)if(this[i+j]!=needle[j])continue@outer;return i};return -1}
 }
+
+internal data class QqSong(val title: String, val artists: String, val seconds: Int, val mid: String)
 
 internal data class KuwoSong(val title: String, val artist: String, val durationSeconds: Int, val rid: String)
 
