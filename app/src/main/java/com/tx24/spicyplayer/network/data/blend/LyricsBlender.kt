@@ -26,6 +26,8 @@ internal data class BlendOutcome(
     val via: String?,
     /** Where the blend stood down or added nothing: the one source whose document this is. */
     val alone: String?,
+    /** How much the timing donor's clock wanders against the base (`_steady`); null where unmeasured. */
+    val steady: Double? = null,
 )
 
 /**
@@ -252,6 +254,19 @@ internal object LyricsBlender {
     /** Every paired line's distance from where the base puts it, sorted (`_offsets`). */
     private fun offsets(bit: List<BlendLine>, dit: List<BlendLine>, map: Map<Int, Int>): List<Double> =
         offsetsByLine(bit, dit, map).values.sorted()
+
+    /**
+     * How much a donor's clock wanders against the base's line sync (`_wander`): each paired line's
+     * offset, then the median distance of those from their own median, so the constant difference
+     * between the clocks is taken out and only the inconsistency is left. Null with under six lines.
+     */
+    private fun wander(bit: List<BlendLine>, dit: List<BlendLine>, map: Map<Int, Int>): Double? {
+        val off = offsets(bit, dit, map)
+        if (off.size < 6) return null
+        val mid = off[off.size / 2]
+        val apart = off.map { abs(it - mid) }.sorted()
+        return apart[apart.size / 2]
+    }
 
     /** (shift, wander) of a donor's whole clock against the base's line sync (`_clock`). */
     private fun clock(bit: List<BlendLine>, doc: BlendDoc?): Pair<Double, Double>? {
@@ -697,6 +712,8 @@ internal object LyricsBlender {
             }
         }
 
+        val steady = wander(bit, qit, qmap.orEmpty())
+
         val borrowed = HashSet<Int>()
         val rhythm = HashSet<Int>()
         val dropped = identitySet()
@@ -886,7 +903,8 @@ internal object LyricsBlender {
         val quality = BlendText.quality(doc)
         val parts = listOfNotNull(whose.takeIf { "qq" in used }, spareName.takeIf { "spare" in used && it.isNotEmpty() })
         return if (parts.isNotEmpty()) {
-            BlendOutcome(noOverlap(doc), quality, via = (listOf(words) + parts).joinToString(" + "), alone = null)
+            BlendOutcome(noOverlap(doc), quality, via = (listOf(words) + parts).joinToString(" + "), alone = null,
+                steady = steady?.let { Math.rint(it * 10_000) / 10_000 })
         } else {
             BlendOutcome(doc, quality, via = null, alone = origin)
         }

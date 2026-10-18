@@ -46,6 +46,37 @@ object LyricsBlends {
 
     fun byId(id: String): LyricsBlendDefinition? = ALL.firstOrNull { it.id == id }
 
+    /** How much steadier a blend must be than the first measured one to move ahead of it. */
+    private const val PICK = 0.015
+    /** ...or this share of the first one's figure, where that is more. */
+    private const val PICK_SHARE = 0.2
+
+    /**
+     * Answers tied at the best quality, in rank order, with a meaningfully steadier blend moved
+     * to the front of its run of consecutive blends (`_steadiest`). Two blends of one song differ
+     * in whose clock is under the words, and the measured wander says which is better where the
+     * user's order can't. A blend never passes an answer that isn't one. [isBlend] and
+     * [steadiness] read each answer.
+     */
+    fun <T> steadiestFirst(tied: List<T>, isBlend: (T) -> Boolean, steadiness: (T) -> Double?): List<T> {
+        val out = tied.toMutableList()
+        var k = 0
+        while (k < out.size) {
+            var end = k
+            while (end < out.size && isBlend(out[end])) end++
+            if (end == k) { k++; continue }
+            val run = out.subList(k, end)
+            val marks = run.withIndex().mapNotNull { (i, it) -> steadiness(it)?.let { v -> i to v } }
+            if (marks.size >= 2) {
+                val (at, best) = marks.minBy { it.second }
+                val first = marks.first().second
+                if (first - best > maxOf(PICK, PICK_SHARE * first)) run.add(0, run.removeAt(at))
+            }
+            k = end
+        }
+        return out
+    }
+
     /**
      * Builds [blend] from what the walk already holds. [above] is every
      * usable answer ranked above the blend, in rank order; the best of them by timing is the base,
@@ -93,6 +124,7 @@ object LyricsBlends {
         val writers = (base.payload.attribution?.songwriters.orEmpty() + outcome.doc.songwriters).distinct()
         return ProviderResult.Hit(RemoteLyricsPayload(
             ttmlLyrics = BlendDocuments.toTtml(BlendDoc(outcome.doc.lines), outcome.quality),
+            blendSteadiness = outcome.steady,
             attribution = LyricsAttribution(
                 providerName = blend.displayName,
                 originName = outcome.via ?: outcome.alone?.let(nameOf),

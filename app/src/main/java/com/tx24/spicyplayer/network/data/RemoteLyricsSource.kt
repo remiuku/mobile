@@ -263,6 +263,7 @@ class RemoteLyricsSource @Inject constructor(
     ): RemoteLyricsResolution {
         val attempts = mutableListOf<ProviderAttempt>()
         var best: RemoteLyricsSelection? = null
+        val counted = mutableListOf<RemoteLyricsSelection>()
         var hadUnavailableProvider = false
         var earliestRetryAt: Instant? = null
 
@@ -305,9 +306,9 @@ class RemoteLyricsSource @Inject constructor(
                         continue
                     }
                     attempts += ProviderAttempt(source.id, ProviderAttemptOutcome.HIT, quality)
-                    if (best == null || quality.rank > best.quality.rank) {
-                        best = RemoteLyricsSelection(source, result.payload, quality)
-                    }
+                    val selection = RemoteLyricsSelection(source, result.payload, quality)
+                    counted += selection
+                    if (best == null || quality.rank > best.quality.rank) best = selection
                 }
 
                 ProviderResult.Miss ->
@@ -349,7 +350,12 @@ class RemoteLyricsSource @Inject constructor(
             }
         }
 
-        best?.let { return RemoteLyricsResolution.Found(it, attempts) }
+        best?.let { top ->
+            // Among the answers tied at the best quality, a much steadier blend may go first.
+            val tied = counted.filter { it.quality == top.quality }
+            val pick = LyricsBlends.steadiestFirst(tied, { it.source.upstreamFamily == BLEND_FAMILY }, { it.payload.blendSteadiness }).first()
+            return RemoteLyricsResolution.Found(pick, attempts)
+        }
         return if (hadUnavailableProvider || pending.isNotEmpty()) {
             RemoteLyricsResolution.Unavailable(attempts, earliestRetryAt)
         } else {

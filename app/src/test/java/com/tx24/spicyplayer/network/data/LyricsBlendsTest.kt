@@ -114,6 +114,22 @@ class LyricsBlendsTest {
         assertEquals(starts.lines.last().start!! + 6.0, starts.lines.last().end!!, 1e-9)
     }
 
+    @Test
+    fun `a much steadier blend goes first within its run of blends only`() {
+        // (id, is a blend, wander)
+        fun pick(vararg tied: Triple<String, Boolean, Double?>) =
+            LyricsBlends.steadiestFirst(tied.toList(), { it.second }, { it.third }).map { it.first }
+        // Margin 0.015 at small figures: 0.051 vs 0.030 moves, 0.051 vs 0.040 doesn't.
+        assertEquals(listOf("qq", "ne"), pick(Triple("ne", true, 0.051), Triple("qq", true, 0.030)))
+        assertEquals(listOf("ne", "qq"), pick(Triple("ne", true, 0.051), Triple("qq", true, 0.040)))
+        // The margin scales: at 0.14 it is 0.028, so 0.02 steadier is left to the order (あの夢をなぞって).
+        assertEquals(listOf("ne", "kw"), pick(Triple("ne", true, 0.14), Triple("kw", true, 0.12)))
+        // Never past an answer that isn't a blend.
+        assertEquals(listOf("ne", "netease", "kw"), pick(Triple("ne", true, 0.14), Triple("netease", false, null), Triple("kw", true, 0.01)))
+        // Unmeasured blends stay where they are.
+        assertEquals(listOf("a", "b"), pick(Triple("a", true, null), Triple("b", true, 0.01)))
+    }
+
     /** The NetEase blend switched on in NetEase, below the base. */
     private val blendOn = RemoteLyricsPolicy(
         sourceOrder = listOf("spicy", LyricsOrigins.NETEASE, LyricsOrigins.LRCLIB),

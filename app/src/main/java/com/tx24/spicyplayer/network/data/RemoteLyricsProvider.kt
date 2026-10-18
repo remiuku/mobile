@@ -69,6 +69,11 @@ data class RemoteLyricsPayload(
     val ttmlLyrics: String? = null,
     val sourceId: String? = null,
     val attribution: LyricsAttribution? = null,
+    /**
+     * For a blend: how much its timing donor's clock wanders against the base's line sync
+     * (lower is steadier), where enough of the song paired to say. See [LyricsBlends.steadiestFirst].
+     */
+    val blendSteadiness: Double? = null,
 ) {
     fun isEmpty(): Boolean =
         plainLyrics.isNullOrBlank() && syncedLyrics.isNullOrBlank() && ttmlLyrics.isNullOrBlank()
