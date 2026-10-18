@@ -146,12 +146,13 @@ class SettingsPeek(private val allowRows: () -> Boolean = { true }) {
         private set
     var plate by mutableStateOf(false)
         private set
-    /** Held open by a quick tap on the peek button, until the next tap anywhere. */
+    /** Kept open by a quick tap on the peek button, until a tap on it or Back brings the settings back. */
     var latched by mutableStateOf(false)
 
     fun start(keep: Rect?, plate: Boolean) {
         this.keep = keep
         this.plate = plate
+        latched = false
         active = true
     }
 

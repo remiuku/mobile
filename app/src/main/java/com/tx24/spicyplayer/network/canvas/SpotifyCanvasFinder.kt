@@ -125,8 +125,8 @@ class SpotifyCanvasFinder(
         /** The lookup service, asked as `?trackId=<id>`. */
         const val BASE_URL = "https://spotify-canva.vercel.app/api/canvas"
 
-        /** How long a miss is trusted before the track is asked about again. */
-        const val MISS_TTL_MS = 7L * 24 * 60 * 60 * 1000
+        /** How long a miss is trusted before the track is asked about again: a day, so a stretch where the service wrongly answered "none" doesn't cost canvases for long. */
+        const val MISS_TTL_MS = 24L * 60 * 60 * 1000
 
         /** How long nothing is asked after a failed lookup. */
         const val FAILURE_PAUSE_MS = 5L * 60 * 1000

@@ -226,7 +226,9 @@ fun SettingsScreen(
     // player underneath takes touches again, and once faded out the pages step off screen, so no
     // unseen row takes a tap. Only the peek button stays, to come back with.
     val peekClear = peek.active && !peek.plate
-    val pagesAway = peekClear && peekAmount >= 1f
+    // Only a peek kept with a tap sends the pages away: under a held finger the peek button would go
+    // with them, out from under it, and the hold would never see its lift (nor buzz for it).
+    val pagesAway = peekClear && peek.latched && peekAmount >= 1f
     val onPeekChangeUpdated by rememberUpdatedState(onPeekChange)
     LaunchedEffect(peekClear) { onPeekChangeUpdated(peekClear) }
     DisposableEffect(Unit) { onDispose { onPeekChangeUpdated(false) } }
