@@ -2,6 +2,7 @@ package com.tx24.spicyplayer.network.data.providers
 
 import com.google.gson.Gson
 import com.google.gson.JsonObject
+import com.tx24.spicyplayer.lyrics.spicy.romanization.JapaneseRomanizerProvider
 import com.tx24.spicyplayer.network.data.LyricsLookupRequest
 import com.tx24.spicyplayer.network.data.awaitResponse
 import com.tx24.spicyplayer.network.data.spotify.SpotifyTrackMatcher
@@ -57,6 +58,20 @@ internal object CatalogueTitles {
         val b = kinds(ours)
         return a.isNotEmpty() && b.isNotEmpty() && a != b && norm(ourTitle).isNotEmpty() && norm(theirTitle) == norm(ourTitle) &&
             ourSeconds > 0 && theirSeconds > 0 && abs(theirSeconds - ourSeconds) <= BILLED_APART_SLACK
+    }
+
+    /**
+     * Whether a Japanese title [theirs] reads as the romanised [ours] ("可愛くてごめん" for
+     * "Kawaikutegomen"), bracketed tags off both. Exact only; for a player that shows Japanese
+     * titles romanised where the catalogue files them in their own script.
+     */
+    fun sameReading(theirs: String, ours: String): Boolean {
+        if (kinds(ours) != setOf("latin") || theirs.none { it in '぀'..'ヿ' || it in '一'..'鿿' }) return false
+        fun letters(s: String) = norm(s).filter(Char::isLetterOrDigit)
+        val want = letters(BRACKETED.replace(ours, ""))
+        if (want.isEmpty()) return false
+        val read = runCatching { JapaneseRomanizerProvider.get().romanize(BRACKETED.replace(theirs, "")) }.getOrNull() ?: return false
+        return letters(read) == want
     }
 
     /** The scripts a name is written in: cjk, hangul, latin. */

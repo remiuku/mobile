@@ -34,6 +34,14 @@ class CatalogueTitlesTest {
     }
 
     @Test
+    fun `a Japanese title matches the romanised one by its reading`() {
+        assertTrue(CatalogueTitles.sameReading("可愛くてごめん (feat. かぴ)", "Kawaikutegomen (feat. capi)"))
+        assertFalse(CatalogueTitles.sameReading("可愛くてごめん", "Kawaii Gomen"))
+        // Ours in its own script already: nothing to read.
+        assertFalse(CatalogueTitles.sameReading("可愛くてごめん", "可愛くてごめん"))
+    }
+
+    @Test
     fun `native names come from the song's home storefront`() = runBlocking {
         assumeTrue(System.getenv("RUN_ALL_SOURCES_TEST") == "1")
         val names = NativeNames(OkHttpClient(), Gson())
