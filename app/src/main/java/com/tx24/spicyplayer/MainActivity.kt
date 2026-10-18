@@ -139,6 +139,7 @@ import com.tx24.spicyplayer.playback.ExternalPlaybackViewModel
 import com.tx24.spicyplayer.playback.PlayerLimit
 import com.tx24.spicyplayer.playback.PlayerUiState
 import com.tx24.spicyplayer.translation.TranslationResult
+import com.tx24.spicyplayer.translation.translateButtonHelps
 import com.tx24.spicyplayer.translation.TranslationMode
 import com.tx24.spicyplayer.translation.TranslationPresentation
 import com.tx24.spicyplayer.lyrics.spicy.romanization.RomanizationMode
@@ -948,7 +949,15 @@ private fun LyricsApp(
                         viewModel.sendCustomAction(action)
                     },
                     onResync = viewModel::resync,
-                    onTranslate = viewModel::toggleTranslation.takeIf { state.lyrics is LyricsState.Ready },
+                    // Only where a translation would help: not on songs already in the target language
+                    // or one left untranslated, going by what the phone guesses before anything is sent.
+                    onTranslate = viewModel::toggleTranslation.takeIf {
+                        state.lyrics is LyricsState.Ready && settings.translateButton && translateButtonHelps(
+                            state.translationEnabled,
+                            state.lyricsLanguageOverride ?: state.lyricsLanguage ?: state.guessedLanguage,
+                            state.translationPreferences,
+                        )
+                    },
                     translated = state.translationEnabled,
                     translating = state.translating,
                 )

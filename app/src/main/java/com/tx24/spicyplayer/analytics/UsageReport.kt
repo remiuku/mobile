@@ -143,6 +143,7 @@ fun configSnapshot(settings: AppSettings): Map<String, Any> = with(settings) {
         "source_button" to sourceButton,
         "player_buttons" to playerButtons,
         "romanize_button" to romanizeButton,
+        "translate_button" to translateButton,
         "resync_button" to resyncButton,
         "expand_button" to expandButton,
         "prereleases" to includePrereleases,

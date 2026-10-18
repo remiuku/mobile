@@ -94,6 +94,14 @@ fun skipTranslation(source: String?, target: String, excluded: Set<String>): Boo
     return language == languageCode(target) || excluded.any { languageCode(it) == language }
 }
 
+/**
+ * Whether the translate button would help with lyrics in [language]: not once they're known to be
+ * in the target language or one left untranslated, but always while a translation shows, so it
+ * can be turned off. An unknown language keeps the button.
+ */
+fun translateButtonHelps(translated: Boolean, language: String?, preferences: TranslationPreferences): Boolean =
+    translated || !skipTranslation(language, preferences.targetLanguage, preferences.excludedLanguages)
+
 internal fun translationHash(parts: List<String>): String {
     val digest = MessageDigest.getInstance("SHA-256")
     parts.forEach {

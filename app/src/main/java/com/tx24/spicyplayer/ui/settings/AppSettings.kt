@@ -200,6 +200,7 @@ class AppSettings(private val prefs: SharedPreferences) {
     /** The player's own extra actions (like, shuffle modes, …) as floating buttons. */
     var playerButtons by boolean("playerButtons", false)
     var romanizeButton by boolean("romanizeButton", true)
+    var translateButton by boolean("translateButton", true)
     var resyncButton by boolean("resyncButton", true)
     var expandButton by boolean("expandButton", true)
     /** How the Lyrics Manager's last upload was applied; the upload screen reopens on it. */

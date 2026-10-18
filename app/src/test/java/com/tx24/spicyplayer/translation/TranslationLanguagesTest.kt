@@ -49,6 +49,17 @@ class TranslationLanguagesTest {
         assertFalse(skipTranslation("und", "en", setOf("tl")))
     }
 
+    @Test fun `the translate button shows only where a translation would help`() {
+        val prefs = TranslationPreferences(targetLanguage = "en", excludedLanguages = setOf("tl"))
+        assertFalse(translateButtonHelps(false, "en", prefs))
+        assertFalse(translateButtonHelps(false, "fil", prefs))
+        assertTrue(translateButtonHelps(false, "ko", prefs))
+        // Not known yet: the button stays.
+        assertTrue(translateButtonHelps(false, null, prefs))
+        // While a translation shows, it stays to turn it off.
+        assertTrue(translateButtonHelps(true, "en", prefs))
+    }
+
     @Test fun `a cached translation drops lines in a newly excluded language under any of its codes`() {
         val key = TranslationKey("hash", "en", TranslationProvider.Google, null)
         val result = TranslationResult(key, listOf("I love you", "hello", "thank you"), "tl", languages = listOf("fil", "ko", null))

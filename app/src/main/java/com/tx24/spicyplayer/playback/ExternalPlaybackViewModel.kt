@@ -237,6 +237,11 @@ data class PlayerUiState(
     val translation: TranslationResult? = null,
     val lyricsLanguage: String? = null,
     val lyricsLanguageOverride: String? = null,
+    /**
+     * The lyrics' language as the phone guesses it, before any translation: only for deciding
+     * whether the translate button would help. Never sent as a translation's source language.
+     */
+    val guessedLanguage: String? = null,
     val deepLKeyPresent: Boolean = false,
 ) {
     /** [sourcePolicy] read against the providers there are. */
@@ -283,6 +288,8 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
         .followRedirects(false).followSslRedirects(false).build()
     private var translationJob: Job? = null
     private var translatedDocument: String? = null
+    private val languageGuesser = SystemLanguageDetector(application)
+    private var guessedDocument: String? = null
     private var pendingTranslationAction: String? = null
     /** The rest a provider's limit was last announced for, so it's said once. */
     private var restingNotice = 0L
@@ -395,6 +402,19 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
     }
 
     fun detectLyricsLanguage() = translateCurrent(detectOnly = true)
+
+    /** Guesses the lyrics' language on the phone, once per lyrics, for the translate button. */
+    private fun guessLanguage() {
+        val document = translationDocument() ?: return
+        if (guessedDocument == document.hash) return
+        guessedDocument = document.hash
+        viewModelScope.launch {
+            val language = withContext(Dispatchers.Default) { languageGuesser.detect(document.context) }
+            if (translationDocument()?.hash == document.hash) {
+                mutableState.value = mutableState.value.copy(guessedLanguage = languageCode(language))
+            }
+        }
+    }
 
     private fun traceTranslation(line: String) {
         Log.d(TRANSLATE_TAG, line)
@@ -1597,6 +1617,7 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
             },
         )
         translateCurrent()
+        guessLanguage()
     }
 
     /** [selection] rendered for the renderer, from [renderedCache] when it holds it. */
@@ -1825,6 +1846,7 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
         val lyricsChanged = lyricsKey != currentLyricsKey
         if (lyricsChanged) {
             clearTranslation()
+            guessedDocument = null
             currentLyricsKey = lyricsKey
             shownSelection = null
             temporaryLyrics = null
@@ -1865,6 +1887,7 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
             localLyricsKey = localKey,
             songDelayMs = if (lyricsChanged) songDelays.delayMs(localKey) else mutableState.value.songDelayMs,
             lyricsLanguage = if (lyricsChanged) null else mutableState.value.lyricsLanguage,
+            guessedLanguage = if (lyricsChanged) null else mutableState.value.guessedLanguage,
             humanRomanizedLines = if (lyricsChanged) 0 else mutableState.value.humanRomanizedLines,
             lyricsLanguageOverride = if (lyricsChanged) translationStore.language(localKey) else mutableState.value.lyricsLanguageOverride,
             sourceOverride = if (lyricsChanged) localKey?.let { sourceOverrides.getString(it, null) } else mutableState.value.sourceOverride,

@@ -61,10 +61,13 @@ internal fun RomanizationTranslationContent(state: PlayerUiState, viewModel: Ext
                 labels = languages.map { it.second })
         }
     }
-    MoreOptions("The romanize button, how translations show, the provider, Genius translations") {
+    MoreOptions("The romanize and translate buttons, how translations show, the provider, Genius translations") {
         ToggleRow("Romanize button", settings.romanizeButton, { settings.romanizeButton = it },
             description = "Show the romanize button.", icon = SpicyGlyphs.EnableRomanization,
             searchDescription = "Show the button that romanizes lyrics, on songs that have them.")
+        ToggleRow("Translate button", settings.translateButton, { settings.translateButton = it },
+            description = "Show the translate button on songs in other languages.", icon = Icons.Rounded.Translate,
+            searchDescription = "Show the button that translates lyrics, on songs that aren't in your language or one you left untranslated.")
         SettingRow("Display mode", description = "Show translations below or replace lyrics.", icon = Icons.Rounded.ViewAgenda,
             searchDescription = "Show translations below the lyrics or in their place.") {
             SpicySelect(settings.translationMode.name, TranslationMode.entries.map { it.name },
