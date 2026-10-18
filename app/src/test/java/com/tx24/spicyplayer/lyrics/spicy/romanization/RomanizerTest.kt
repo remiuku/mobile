@@ -74,7 +74,21 @@ class RomanizerTest {
     }
 
     @Test fun lineSyllablesKeepGeminationAndLongVowels() {
-        assertEquals(listOf("ki", "tto"), JapaneseRomanizer.romanizeLine(listOf("きっ", "と")))
+        // The っ's consonant goes where the っ is sung.
+        assertEquals(listOf("kit", "to"), JapaneseRomanizer.romanizeLine(listOf("きっ", "と")))
         assertEquals(listOf("ki", "tto"), JapaneseRomanizer.romanizeLine(listOf("き", "っと")))
+    }
+
+    @Test fun syllableSeamsKeepEverySound() {
+        fun line(vararg syllables: String) = JapaneseRomanizer.romanizeLine(syllables.toList()).map(String::trim)
+        assertEquals(listOf("damat", "te iro"), line("黙っ", "ていろ"))
+        assertEquals(listOf("hak", "ka"), line("発", "火"))
+        assertEquals(listOf("mat", "cha"), line("待っ", "ちゃ"))
+        // Before a vowel or the end of the line, a っ is a stop and unwritten.
+        assertEquals(listOf("ma", "ik", "ka"), line("まっ", "いっ", "か"))
+        assertEquals(listOf("a"), line("あっ"))
+        // 々 repeats the kanji before it; a bracketed reading is the kanji's, said once.
+        assertEquals(listOf("san", "san"), line("燦", "々"))
+        assertEquals(listOf("itan", "kabu", "ke ba"), line("異端", "傾(かぶ)", "けば"))
     }
 }

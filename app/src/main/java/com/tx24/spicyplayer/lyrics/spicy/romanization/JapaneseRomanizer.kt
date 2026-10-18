@@ -35,42 +35,80 @@ object JapaneseRomanizer : Romanizer {
      *
      * A syllable that starts a new word (a token of its own) gets a leading space, so the romaji
      * reads and wraps by word ("anata no koto") although the syllables were written glued.
+     *
+     * A っ ending a syllable keeps the consonant it doubles there (黙っ|て → damat|te, 発|火 →
+     * hak|ka), so each piece fills with what is sung in it; before a vowel, a pause or the line's
+     * end it is a stop and unwritten (まっ|いっ|か → ma|ik|ka, あっ → a). A kana reading in brackets
+     * after kanji (傾(かぶ)けば) is the kanji's, said once.
      */
     fun romanizeLine(syllables: List<String>): List<String> {
         val tk = tokenizer ?: return syllables.map(KanaRomanizer::romanize)
-        val owner = syllables.flatMapIndexed { index, text -> List(text.length) { index } }
+        val text = syllables.joinToString("")
+        val owner = syllables.flatMapIndexed { index, s -> List(s.length) { index } }
         val kana = List(syllables.size) { mutableListOf<String>() }
-        val startsAt = syllables.runningFold(0) { at, text -> at + text.length }
+        val startsAt = syllables.runningFold(0) { at, s -> at + s.length }
         val startsWord = BooleanArray(syllables.size)
         return try {
-            for (token in tokens(tk, syllables.joinToString(""))) {
+            val tokens = tokens(tk, text)
+            val ruby = rubyReadings(text, tokens)
+            var lastReading: String? = null
+            for (token in tokens) {
                 if (token.surface.isNotBlank()) {
                     val syllable = startsAt.indexOf(token.position)
                     if (syllable > 0 && syllable < syllables.size) startsWord[syllable] = true
                 }
-                val readings = if (hasJapanese(token.surface)) charReadings(token.surface, token.pronunciation ?: token.reading)
-                else token.surface.map(Char::toString)
+                val readings = when {
+                    // 々 the dictionary didn't read repeats the kanji before it (燦々 → san san).
+                    token.surface.all { it == '々' } && token.pronunciation.orEmpty().none(::isKanaChar) && lastReading != null ->
+                        token.surface.map { lastReading!! }
+                    hasJapanese(token.surface) -> charReadings(token.surface, token.pronunciation ?: token.reading)
+                    else -> token.surface.map(Char::toString)
+                }.mapIndexed { i, r -> ruby[token.position + i] ?: r }
+                readings.lastOrNull { it.isNotEmpty() }?.let { lastReading = it }
                 val bySyllable = readings.indices.groupBy { owner[token.position + it] }.toSortedMap()
-                var carry = ""
                 for ((syllable, chars) in bySyllable) {
-                    var piece = carry + chars.joinToString("") { readings[it] }
-                    carry = ""
-                    // A っ closing a syllable doubles the next one's consonant (き|っ|と → ki, tto).
-                    if (syllable != bySyllable.lastKey()) {
-                        while (piece.lastOrNull() == 'ッ') {
-                            carry = "ッ$carry"
-                            piece = piece.dropLast(1)
-                        }
-                    }
+                    val piece = chars.joinToString("") { readings[it] }
                     if (piece.isNotBlank()) kana[syllable] += piece
                 }
             }
-            kana.mapIndexed { i, pieces ->
-                val romaji = pieces.joinToString(" ") { KanaRomanizer.romanize(it).trim() }.trim()
-                if (startsWord[i] && romaji.isNotEmpty()) " $romaji" else romaji
+            val pieces = kana.flatMapIndexed { i, list -> list.map { i to it } }
+            val romaji = List(syllables.size) { mutableListOf<String>() }
+            pieces.forEachIndexed { k, (syllable, piece) ->
+                romaji[syllable] += if (piece.endsWith('ッ')) {
+                    // The consonant the stop doubles, from the first sound after it.
+                    val next = pieces.getOrNull(k + 1)?.second?.let { KanaRomanizer.romanize(it).trim() }.orEmpty()
+                    val doubled = when {
+                        next.startsWith("ch") -> "t"
+                        next.firstOrNull()?.let { it.isLetter() && it.lowercaseChar() !in "aeiouāēīōūn" } == true -> next.first().toString()
+                        else -> ""
+                    }
+                    KanaRomanizer.romanize(piece.trimEnd('ッ')).trim() + doubled
+                } else {
+                    KanaRomanizer.romanize(piece).trim()
+                }
+            }
+            romaji.mapIndexed { i, list ->
+                val joined = list.filter(String::isNotEmpty).joinToString(" ").trim()
+                if (startsWord[i] && joined.isNotEmpty()) " $joined" else joined
             }
         } catch (t: Throwable) {
             syllables.map(KanaRomanizer::romanize)
+        }
+    }
+
+    private val RUBY = Regex("[(（]([\u3041-\u3096\u30a1-\u30fcー]+)[)）]")
+
+    /**
+     * Character index -> reading for kanji read by the kana in brackets after them: the kanji of
+     * the word right before the bracket and the brackets read nothing, the kana read themselves.
+     */
+    private fun rubyReadings(text: String, tokens: List<KToken>): Map<Int, String> = buildMap {
+        for (m in RUBY.findAll(text)) {
+            val word = tokens.lastOrNull { it.position + it.surface.length == m.range.first } ?: continue
+            val kanji = word.surface.takeLastWhile(::isKanji).length
+            if (kanji == 0) continue
+            for (i in m.range.first - kanji until m.range.first) put(i, "")
+            for (i in m.range) put(i, if (i in m.groups[1]!!.range) toKatakana(text[i]).toString() else "")
         }
     }
 
@@ -154,6 +192,14 @@ object JapaneseRomanizer : Romanizer {
         }
             // A long vowel split off from its mora (と|う read トー) reads as the kana it's written with.
             .mapIndexed { i, r -> if (r.startsWith('ー')) kata[prefix + i] + r.drop(1) else r }
+            .toMutableList()
+        // A っ is the end of the kanji before it, never the start of the next (発火 → ハッ|カ).
+        for (i in 1 until middle.size) {
+            while (middle[i].startsWith('ッ')) {
+                middle[i - 1] = middle[i - 1] + "ッ"
+                middle[i] = middle[i].drop(1)
+            }
+        }
         return kata.take(prefix).map(Char::toString) + middle + kata.takeLast(suffix).map(Char::toString)
     }
 
