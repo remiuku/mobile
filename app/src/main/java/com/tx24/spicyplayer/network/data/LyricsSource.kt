@@ -12,6 +12,7 @@ import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
 
+private val STAMPS = Regex("""\[[^\]]*]""")
 
 @Singleton
 class LyricsSource @Inject constructor(
@@ -43,6 +44,11 @@ class LyricsSource @Inject constructor(
             // An instrumental is a record with neither field filled in: no lyrics, not a broken answer.
             if (response.plainLyrics.isNullOrBlank() && response.syncedLyrics.isNullOrBlank()) {
                 ProviderResult.Miss
+            } else if (thin(response.plainLyrics, response.syncedLyrics, request.durationSeconds)) {
+                // Records can be overwritten by anyone (Never Gonna Give You Up's reads "probe"):
+                // a fuller copy of the same recording from the search beats a near-empty one.
+                val fuller = runCatching { searchFallback(request) }.getOrNull() as? ProviderResult.Hit
+                fuller ?: ProviderResult.Hit(RemoteLyricsPayload(plainLyrics = response.plainLyrics, syncedLyrics = response.syncedLyrics))
             } else ProviderResult.Hit(
                 RemoteLyricsPayload(
                     plainLyrics = response.plainLyrics,
@@ -109,6 +115,14 @@ class LyricsSource @Inject constructor(
         return ProviderResult.Hit(RemoteLyricsPayload(match.plainLyrics, match.syncedLyrics))
     }
 
+    /** Too little to be a song's lyrics: under three lines and eight words, for a song over a minute long. */
+    internal fun thin(plain: String?, synced: String?, durationSeconds: Int): Boolean {
+        if (durationSeconds in 1..60) return false
+        val lines = (synced?.takeIf(String::isNotBlank) ?: plain.orEmpty()).lines()
+            .map { it.replace(STAMPS, "").trim() }.filter(String::isNotEmpty)
+        return lines.size < 3 && lines.sumOf { it.split(Regex("""\s+""")).size } < 8
+    }
+
     internal fun chooseSearchResult(request: LyricsLookupRequest, candidates: List<LrclibSearchEntry>): LrclibSearchEntry? {
         val title = SpotifyTrackMatcher.normalize(request.title)
         val artist = SpotifyTrackMatcher.normalize(request.artist)
@@ -117,6 +131,7 @@ class LyricsSource @Inject constructor(
             .filter { SpotifyTrackMatcher.normalize(it.artistName.orEmpty()) == artist }
             .filter { it.duration != null && request.durationSeconds > 0 && kotlin.math.abs(it.duration - request.durationSeconds) <= 8 }
             .filter { !it.syncedLyrics.isNullOrBlank() || !it.plainLyrics.isNullOrBlank() }
+            .filterNot { thin(it.plainLyrics, it.syncedLyrics, request.durationSeconds) }
             .sortedWith(compareByDescending<LrclibSearchEntry> {
                 SpotifyTrackMatcher.normalize(it.albumName.orEmpty()) == SpotifyTrackMatcher.normalize(request.album)
             }.thenBy { kotlin.math.abs(requireNotNull(it.duration) - request.durationSeconds) })

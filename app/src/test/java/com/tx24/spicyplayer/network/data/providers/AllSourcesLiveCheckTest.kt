@@ -52,7 +52,12 @@ class AllSourcesLiveCheckTest {
             println("── $id")
             results.forEachIndexed { i, (result, ms) ->
                 val text = when (result) {
-                    is ProviderResult.Hit -> "HIT ${result.payload.measuredQuality()}" + (result.payload.attribution?.originName?.let { " from $it" } ?: "")
+                    is ProviderResult.Hit -> "HIT ${result.payload.measuredQuality()}" + (result.payload.attribution?.originName?.let { " from $it" } ?: "") +
+                        // The first sung line, to tell another song's lyrics from these.
+                        (com.tx24.spicyplayer.network.data.blend.BlendDocuments.from(result.payload)?.lines
+                            ?.map(com.tx24.spicyplayer.network.data.blend.BlendText::lineText)
+                            ?.firstOrNull { it.isNotBlank() && !com.tx24.spicyplayer.network.data.blend.BlendDonors.isCredit(it) }
+                            ?.let { " | ${it.take(40)}" } ?: "")
                     null -> "TIMEOUT"
                     is ProviderResult.Unavailable -> "UNAVAILABLE ${result.category} ${result.message.orEmpty().take(120)}"
                     else -> result.toString()

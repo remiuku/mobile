@@ -30,6 +30,19 @@ class LrclibFallbackSelectionTest {
         assertEquals(ProviderResult.Miss, instrumental.fetch(LyricsLookupRequest("Daft Punk", "Aerodynamic", "Discovery", 213)))
     }
 
+    @Test fun aNearEmptyRecordGivesWayToAFullerCopy() = kotlinx.coroutines.runBlocking {
+        val full = entry("Never Gonna Give You Up", "Rick Astley", "Whenever You Need Somebody", 213.0)
+        val vandalised = LyricsSource(object : LyricsService {
+            override suspend fun getSongLyrics(artistName: String, trackName: String, albumName: String?, durationSeconds: Int?) =
+                SongLyricsNetwork(1009665, "probe", "[00:00.00]probe")
+            override suspend fun searchSongLyrics(artistName: String, trackName: String) = listOf(full)
+        })
+        val hit = vandalised.fetch(LyricsLookupRequest("Rick Astley", "Never Gonna Give You Up", "Whenever You Need Somebody", 213)) as ProviderResult.Hit
+        assertEquals(full.plainLyrics, hit.payload.plainLyrics)
+        // A short song's few words are its lyrics.
+        assertEquals(false, source.thin("Hey", null, 45))
+    }
+
     private fun entry(title: String, artist: String, album: String, duration: Double) =
-        LrclibSearchEntry(title, artist, album, duration, "lyrics", null)
+        LrclibSearchEntry(title, artist, album, duration, "We're no strangers to love\nYou know the rules and so do I\nA full commitment's what I'm thinking of", null)
 }
