@@ -49,7 +49,8 @@ internal class NextLyricsBackend(context: Context, clientKey: String) {
     private val cooldowns = ProviderCooldownTracker()
     // Custom sources come and go, so these are rebuilt with them ([rebuild]).
     @Volatile private var providers: Set<RemoteLyricsProvider> = builtIn
-    @Volatile private var source = RemoteLyricsSource(providers, cooldowns)
+    private val nativeNames = NativeNames(client, gson)
+    @Volatile private var source = RemoteLyricsSource(providers, cooldowns, nativeNames = nativeNames::of)
     @Volatile var descriptors: List<LyricsSourceDescriptor> = emptyList()
         private set
 
@@ -315,7 +316,7 @@ internal class NextLyricsBackend(context: Context, clientKey: String) {
         private val ORIGIN = Regex("^[a-zA-Z][a-zA-Z0-9+.-]*://[^/?#]*")
 
         /** Bump when payload conversion changes, so stale conversions are refetched. */
-        private const val CACHE_VERSION = 31
+        private const val CACHE_VERSION = 32
         /** Outcomes that are no answer at all: a later lookup may get one. */
         private val UNANSWERED = setOf(
             ProviderAttemptOutcome.UNAVAILABLE,
@@ -546,7 +547,7 @@ internal class NextLyricsBackend(context: Context, clientKey: String) {
         val custom = customSources().mapIndexed { index, it -> CustomLyricsProvider(it, client, SharedSpotify.resolver, CUSTOM_PRIORITY + index, APP_USER_AGENT) }
         val all = builtIn + custom
         providers = all
-        source = RemoteLyricsSource(all, cooldowns)
+        source = RemoteLyricsSource(all, cooldowns, nativeNames = nativeNames::of)
         descriptors = all.map(RemoteLyricsProvider::descriptor)
             .sortedWith(compareBy<LyricsSourceDescriptor> { it.defaultPriority }.thenBy { it.id })
     }

@@ -32,9 +32,9 @@ class KugouLyricsProvider @Inject constructor(private val client: OkHttpClient, 
         val songs = search.getAsJsonObject("data")?.getAsJsonArray("info") ?: return ProviderResult.Miss
         for (song in songs.map { it.asJsonObject }) {
             val title = song.get("songname")?.asString.orEmpty(); val artist = song.get("singername")?.asString.orEmpty()
-            if (SpotifyTrackMatcher.normalize(title) != SpotifyTrackMatcher.normalize(request.title)) continue
-            if (!SpotifyTrackMatcher.normalize(artist).contains(SpotifyTrackMatcher.normalize(request.artist))) continue
+            if (!CatalogueTitles.sameTitle(title, request.title)) continue
             val duration = song.get("duration")?.asInt ?: request.durationSeconds
+            if (!CatalogueTitles.sameArtist(artist, request.artist, title, request.title, duration, request.durationSeconds)) continue
             if (!request.lengthMatches(duration)) continue
             val hash = song.get("hash")?.asString ?: continue
             val candidates = get("https://krcs.kugou.com/search".toHttpUrl().newBuilder()

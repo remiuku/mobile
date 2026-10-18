@@ -42,8 +42,8 @@ class NetEaseLyricsProvider @Inject constructor(private val client: OkHttpClient
             val name = item.get("name")?.asString.orEmpty()
             val artists = (item.getAsJsonArray("ar") ?: item.getAsJsonArray("artists"))?.joinToString(" ") { it.asJsonObject.get("name").asString }.orEmpty()
             val duration = (item.get("dt") ?: item.get("duration"))?.asLong?.div(1000) ?: 0
-            SpotifyTrackMatcher.normalize(name) == SpotifyTrackMatcher.normalize(request.title) &&
-                SpotifyTrackMatcher.normalize(artists).contains(SpotifyTrackMatcher.normalize(request.artist)) &&
+            CatalogueTitles.sameTitle(name, request.title) &&
+                CatalogueTitles.sameArtist(artists, request.artist, name, request.title, duration.toInt(), request.durationSeconds) &&
                 request.lengthMatches(duration.toInt())
         }.take(TRIES)
         if (songs.isEmpty()) return ProviderResult.Miss

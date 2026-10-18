@@ -32,7 +32,7 @@ class QqMusicLyricsProvider @Inject constructor(private val client:OkHttpClient,
   if(code!=null)return ProviderResult.Unavailable(ProviderFailureCategory.SERVER,"QQ search code $code",true)
   val songs=root.getAsJsonObject("req_1")?.getAsJsonObject("data")?.getAsJsonObject("body")?.getAsJsonObject("song")?.getAsJsonArray("list")?:return ProviderResult.Miss
   for(song in songs.map{it.asJsonObject}){val title=song.get("name")?.asString.orEmpty();val artists=song.getAsJsonArray("singer")?.joinToString(" "){it.asJsonObject.get("name").asString}.orEmpty();val dur=song.get("interval")?.asInt?:0
-   if(SpotifyTrackMatcher.normalize(title)!=SpotifyTrackMatcher.normalize(request.title)||!SpotifyTrackMatcher.normalize(artists).contains(SpotifyTrackMatcher.normalize(request.artist))||!request.lengthMatches(dur))continue
+   if(!CatalogueTitles.sameTitle(title,request.title)||!CatalogueTitles.sameArtist(artists,request.artist,title,request.title,dur,request.durationSeconds)||!request.lengthMatches(dur))continue
    val mid=song.get("mid")?.asString?:continue
    fetchQrc(mid)?.let { return ProviderResult.Hit(RemoteLyricsPayload(ttmlLyrics=it)) }
    val lyric="https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg".toHttpUrl().newBuilder().addQueryParameter("songmid",mid).addQueryParameter("format","json").addQueryParameter("nobase64","1").build()
@@ -62,7 +62,7 @@ class KuwoLyricsProvider @Inject constructor(private val client:OkHttpClient):Re
    .addQueryParameter("vipver","1").addQueryParameter("strategy","2012").addQueryParameter("mobi","1").addQueryParameter("issubtitle","1").addQueryParameter("show_copyright_off","1").build()
   var fallback:ProviderResult.Hit?=null
   val matched=kuwoSearchResults(getBytes(url).toString(Charsets.UTF_8)).filter{song->
-   SpotifyTrackMatcher.normalize(song.title)==SpotifyTrackMatcher.normalize(request.title)&&SpotifyTrackMatcher.normalize(song.artist).contains(SpotifyTrackMatcher.normalize(request.artist))&&
+   CatalogueTitles.sameTitle(song.title,request.title)&&CatalogueTitles.sameArtist(song.artist,request.artist,song.title,request.title,song.durationSeconds,request.durationSeconds)&&
     request.lengthMatches(song.durationSeconds)&&(!KuwoLyrics.CUT.containsMatchIn(song.title)||KuwoLyrics.CUT.containsMatchIn(request.title))
   }
   // Up to three copies: the first word-timed one, else the first that has lyrics at all.

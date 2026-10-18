@@ -642,6 +642,26 @@ class RemoteLyricsSourceTest {
         Unit
     }
 
+    @Test
+    fun `a Chinese catalogue that misses is asked again under the native names`() = runBlocking {
+        val asked = mutableListOf<String>()
+        fun catalogue(id: String) = object : RemoteLyricsProvider {
+            override val descriptor = descriptor(id, 10)
+            override suspend fun fetch(request: LyricsLookupRequest): ProviderResult {
+                asked += "$id:${request.title}"
+                return if (request.title == "新時代") ProviderResult.Hit(synced("新時代はこの未来だ")) else ProviderResult.Miss
+            }
+        }
+        val source = RemoteLyricsSource(
+            setOf(catalogue("kugou"), catalogue("lrclib")), ProviderCooldownTracker(),
+            nativeNames = { if (it.title == "New Genesis") "新時代" to "Ado" else null },
+        )
+        val result = source.resolveLyrics(LyricsLookupRequest("Ado", "New Genesis", "", 227)) as RemoteLyricsResolution.Found
+        assertEquals("kugou", result.selection.source.id)
+        // Only the catalogues that file songs under native names are asked twice.
+        assertEquals(listOf("kugou:New Genesis", "kugou:新時代", "lrclib:New Genesis"), asked.sorted())
+    }
+
     private fun source(vararg providers: RemoteLyricsProvider) = RemoteLyricsSource(
         providers.toSet(),
         ProviderCooldownTracker(),

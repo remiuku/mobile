@@ -86,6 +86,11 @@ class RemoteLyricsSource @Inject constructor(
     providers: Set<@JvmSuppressWildcards RemoteLyricsProvider>,
     private val cooldowns: ProviderCooldownTracker,
     private val diagnostics: LyricsDiagnostics = LyricsDiagnostics(),
+    /**
+     * The song's title and artist as its home storefront writes them, where the player's are
+     * translated or romanised; the Chinese catalogues are asked again under those after a miss.
+     */
+    private val nativeNames: (suspend (LyricsLookupRequest) -> Pair<String, String>?)? = null,
 ) {
     private val providers = providers.toList()
 
@@ -367,10 +372,20 @@ class RemoteLyricsSource @Inject constructor(
     private suspend fun fetch(provider: RemoteLyricsProvider, request: LyricsLookupRequest): ProviderResult = try {
         // A note saying the song has no words ("纯音乐，请欣赏") is no answer: other sources may have them.
         // Synced text without real timing is plain text, and ranks as such.
-        provider.fetch(request).let { result ->
+        val furnished = provider.descriptor.id in FURNISHED
+        var asked = request
+        var answer = provider.fetch(request)
+        // The Chinese catalogues file songs under their native names ("新時代", not "New Genesis").
+        if (furnished && answer == ProviderResult.Miss) {
+            nativeNames?.invoke(request)?.let { (title, artist) ->
+                asked = request.copy(title = title, artist = artist)
+                answer = provider.fetch(asked)
+            }
+        }
+        answer.let { result ->
             val hit = (result as? ProviderResult.Hit)?.let { it.copy(payload = it.payload.withoutFakeTiming()) }
                 // The Chinese catalogues write lines nobody sings into their lyrics: credits, headers, translations.
-                ?.let { if (provider.descriptor.id in FURNISHED) it.copy(payload = LyricsFurniture.clean(it.payload, request.title, request.artist)) else it }
+                ?.let { if (furnished) it.copy(payload = LyricsFurniture.clean(it.payload, asked.title, asked.artist)) else it }
                 ?: return@let result
             if (hit.payload.isEmpty() || hit.payload.isNoWordsNote()) ProviderResult.Miss else hit
         }
