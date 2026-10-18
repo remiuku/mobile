@@ -589,17 +589,17 @@ private fun PageSkeleton(page: SettingsPage) {
             SettingsSkeleton(rows = 1, cards = true)
             SettingsSkeleton(rows = 5)
         }
-        SettingsPage.Lyrics -> SettingsSkeleton(rows = 13)
-        SettingsPage.Translation -> SettingsSkeleton(rows = 11)
-        SettingsPage.ScrollSync -> SettingsSkeleton(rows = 7)
-        SettingsPage.Background -> SettingsSkeleton(rows = 5)
-        SettingsPage.NowPlaying -> SettingsSkeleton(rows = 11)
-        SettingsPage.Controls -> SettingsSkeleton(rows = 12)
+        SettingsPage.Lyrics -> SettingsSkeleton(rows = 9)
+        SettingsPage.Translation -> SettingsSkeleton(rows = 6)
+        SettingsPage.ScrollSync -> SettingsSkeleton(rows = 6)
+        SettingsPage.Background -> SettingsSkeleton(rows = 4)
+        SettingsPage.NowPlaying -> SettingsSkeleton(rows = 6)
+        SettingsPage.Controls -> SettingsSkeleton(rows = 6)
         SettingsPage.Theme -> SettingsSkeleton(rows = 4)
-        SettingsPage.Sources -> SettingsSkeleton(rows = 11, cards = true)
-        SettingsPage.Device -> SettingsSkeleton(rows = 9)
+        SettingsPage.Sources -> SettingsSkeleton(rows = 8, cards = true)
+        SettingsPage.Device -> SettingsSkeleton(rows = 6)
         SettingsPage.FloatingLyrics -> SettingsSkeleton(rows = 6)
-        SettingsPage.Advanced -> SettingsSkeleton(rows = 12)
+        SettingsPage.Advanced -> SettingsSkeleton(rows = 10)
     }
 }
 

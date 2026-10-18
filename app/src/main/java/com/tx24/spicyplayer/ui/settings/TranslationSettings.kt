@@ -32,11 +32,13 @@ import com.tx24.spicyplayer.ui.theme.SpicySpacing
 
 @Composable
 internal fun RomanizationTranslationContent(state: PlayerUiState, viewModel: ExternalPlaybackViewModel, settings: AppSettings) {
+    val preferences = state.translationPreferences
+    // Only languages the provider can translate into; any language can be left untranslated.
+    val targets = TranslationLanguages.targets(preferences.provider, preferences.targetLanguage)
+    val languages = TranslationLanguages.all(preferences.excludedLanguages)
+    var key by remember { mutableStateOf("") }
     // The page header names both, so each group gets its own title.
     SettingsSection("Romanization") {
-        ToggleRow("Romanize button", settings.romanizeButton, { settings.romanizeButton = it },
-            description = "Show the romanize button.", icon = SpicyGlyphs.EnableRomanization,
-            searchDescription = "Show the button that romanizes lyrics, on songs that have them.")
         SettingRow("Romanization", description = "Replace lyrics or show romanization below.", icon = Icons.Rounded.ViewAgenda,
             searchDescription = "Replace the synced lyric words or show romanization below each line.") {
             SpicySelect(settings.romanizationMode.name, RomanizationMode.entries.map { it.name },
@@ -47,57 +49,52 @@ internal fun RomanizationTranslationContent(state: PlayerUiState, viewModel: Ext
             searchDescription = "Use a romanization written by people on Genius, or on NetEase while it's on as a source, where it lines up with the lyrics, for readings no romanizer can guess. Asks Genius.")
     }
     SettingsSection("Translation") {
-        TranslationContent(state, viewModel, settings)
-    }
-}
-
-@Composable
-internal fun TranslationContent(state: PlayerUiState, viewModel: ExternalPlaybackViewModel, settings: AppSettings) {
-    val preferences = state.translationPreferences
-    // Only languages the provider can translate into; any language can be left untranslated.
-    val targets = TranslationLanguages.targets(preferences.provider, preferences.targetLanguage)
-    val languages = TranslationLanguages.all(preferences.excludedLanguages)
-    var key by remember { mutableStateOf("") }
-    SettingRow("Target language", description = "Translate lyrics into this language.", icon = Icons.Rounded.Language) {
-        SpicySelect(preferences.targetLanguage, targets.map { it.first }, viewModel::setTranslationTarget, labels = targets.map { it.second })
-    }
-    SettingRow("Display mode", description = "Show translations below or replace lyrics.", icon = Icons.Rounded.ViewAgenda,
-        searchDescription = "Show translations below the lyrics or in their place.") {
-        SpicySelect(settings.translationMode.name, TranslationMode.entries.map { it.name },
-            { settings.translationMode = TranslationMode.valueOf(it) }, labels = TranslationMode.entries.map { it.label })
-    }
-    ToggleRow("Translate automatically", preferences.automatic, viewModel::setTranslateAutomatically,
-        description = "Translate when lyrics arrive.", icon = Icons.Rounded.AutoAwesome,
-        searchDescription = "Translate songs in other languages as their lyrics arrive.")
-    SettingRow("Provider", description = "Choose who translates the lyric lines.", icon = Icons.Rounded.Public,
-        searchDescription = "Choose who translates the original lyric lines.") {
-        SpicySelect(preferences.provider.name, TranslationProvider.entries.map { it.name },
-            { viewModel.setTranslationProvider(TranslationProvider.valueOf(it)) }, labels = TranslationProvider.entries.map { it.label })
-    }
-    ToggleRow("Use human translations from Genius", preferences.humanTranslations, viewModel::setHumanTranslations,
-        description = "Prefer matching translations from Genius.", icon = Icons.Rounded.People,
-        searchDescription = "Use human translations where Genius's original lyrics confidently match, then fill gaps with the selected provider.")
-    if (preferences.provider == TranslationProvider.DeepL) {
-        SettingRow("DeepL API key", description = if (state.deepLKeyPresent) "Key saved. Paste a new one to replace it." else "Free keys end in :fx.", icon = Icons.Rounded.Key, stacked = true,
-            searchDescription = if (state.deepLKeyPresent) "A key is saved on this device. Paste a new key to replace it." else "Paste your DeepL API key. Free keys end in :fx.") {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(SpicySpacing.S2)) {
-                SpicyTextField(key, { key = it }, placeholder = "DeepL API key", password = true, modifier = Modifier.weight(1f))
-                SpicyButton("Use", onClick = {
-                    viewModel.useDeepLKey(key)
-                    if (DeepLKey.valid(key)) key = ""
-                }, enabled = key.isNotBlank())
-            }
+        SettingRow("Target language", description = "Translate lyrics into this language.", icon = Icons.Rounded.Language) {
+            SpicySelect(preferences.targetLanguage, targets.map { it.first }, viewModel::setTranslationTarget, labels = targets.map { it.second })
         }
-        if (state.deepLKeyPresent) {
-            SettingRow("Remove DeepL key", description = "Forget the key on this device.", icon = Icons.Rounded.KeyOff) {
-                SpicyButton("Remove", onClick = { viewModel.useDeepLKey("") })
-            }
+        ToggleRow("Translate automatically", preferences.automatic, viewModel::setTranslateAutomatically,
+            description = "Translate when lyrics arrive.", icon = Icons.Rounded.AutoAwesome,
+            searchDescription = "Translate songs in other languages as their lyrics arrive.")
+        SettingRow("Don't translate", description = "Keep these languages untranslated.", icon = Icons.Rounded.Block,
+            searchDescription = "Leave songs in languages you already read in their original form.") {
+            SpicyMultiSelect(preferences.excludedLanguages, languages.map { it.first }, viewModel::setTranslationExcluded,
+                labels = languages.map { it.second })
         }
     }
-    SettingRow("Don't translate", description = "Keep these languages untranslated.", icon = Icons.Rounded.Block,
-        searchDescription = "Leave songs in languages you already read in their original form.") {
-        SpicyMultiSelect(preferences.excludedLanguages, languages.map { it.first }, viewModel::setTranslationExcluded,
-            labels = languages.map { it.second })
+    MoreOptions("The romanize button, how translations show, the provider, Genius translations") {
+        ToggleRow("Romanize button", settings.romanizeButton, { settings.romanizeButton = it },
+            description = "Show the romanize button.", icon = SpicyGlyphs.EnableRomanization,
+            searchDescription = "Show the button that romanizes lyrics, on songs that have them.")
+        SettingRow("Display mode", description = "Show translations below or replace lyrics.", icon = Icons.Rounded.ViewAgenda,
+            searchDescription = "Show translations below the lyrics or in their place.") {
+            SpicySelect(settings.translationMode.name, TranslationMode.entries.map { it.name },
+                { settings.translationMode = TranslationMode.valueOf(it) }, labels = TranslationMode.entries.map { it.label })
+        }
+        SettingRow("Provider", description = "Choose who translates the lyric lines.", icon = Icons.Rounded.Public,
+            searchDescription = "Choose who translates the original lyric lines.") {
+            SpicySelect(preferences.provider.name, TranslationProvider.entries.map { it.name },
+                { viewModel.setTranslationProvider(TranslationProvider.valueOf(it)) }, labels = TranslationProvider.entries.map { it.label })
+        }
+        if (preferences.provider == TranslationProvider.DeepL) {
+            SettingRow("DeepL API key", description = if (state.deepLKeyPresent) "Key saved. Paste a new one to replace it." else "Free keys end in :fx.", icon = Icons.Rounded.Key, stacked = true,
+                searchDescription = if (state.deepLKeyPresent) "A key is saved on this device. Paste a new key to replace it." else "Paste your DeepL API key. Free keys end in :fx.") {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(SpicySpacing.S2)) {
+                    SpicyTextField(key, { key = it }, placeholder = "DeepL API key", password = true, modifier = Modifier.weight(1f))
+                    SpicyButton("Use", onClick = {
+                        viewModel.useDeepLKey(key)
+                        if (DeepLKey.valid(key)) key = ""
+                    }, enabled = key.isNotBlank())
+                }
+            }
+            if (state.deepLKeyPresent) {
+                SettingRow("Remove DeepL key", description = "Forget the key on this device.", icon = Icons.Rounded.KeyOff) {
+                    SpicyButton("Remove", onClick = { viewModel.useDeepLKey("") })
+                }
+            }
+        }
+        ToggleRow("Use human translations from Genius", preferences.humanTranslations, viewModel::setHumanTranslations,
+            description = "Prefer matching translations from Genius.", icon = Icons.Rounded.People,
+            searchDescription = "Use human translations where Genius's original lyrics confidently match, then fill gaps with the selected provider.")
     }
 }
 

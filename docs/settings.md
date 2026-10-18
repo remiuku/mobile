@@ -10,6 +10,8 @@ The settings screen lives in `ui/settings/`; its controls in `ui/components/Sett
    - A case in `PageContent` and a placeholder in `PageSkeleton`.
 
    Nest at most two levels below the first page. Search lists a nested page's rows under its full path ("Device › Floating lyrics"), and hides the card itself.
+
+   **Everyday rows first.** A page shows the rows people actually change, and folds the rest into one `MoreOptions("…")` at its end, whose summary names what's inside. Decide by the usage dashboard: a setting that around 5% or more of installs move off its default stays visible, and a new feature stays visible until there's data on it. Search shows folded rows unfolded, so a folded row needs nothing extra to be found. A page of about five rows or fewer needs no fold.
 2. **Store it where it's used.**
    - How the lyrics screen looks and behaves (word motion, refresh rate, update channel): a property in `ui/settings/AppSettings.kt` (the `ui` SharedPreferences), which reads as Compose state.
    - Lookup, sources or playback: a field in `PlayerUiState` plus a view-model function that saves it.
@@ -27,7 +29,7 @@ The settings screen lives in `ui/settings/`; its controls in `ui/components/Sett
 
 ## Romanization & Translation
 
-`RomanizationTranslationContent` in `ui/settings/TranslationSettings.kt` owns the combined page. Romanization comes first: Romanize button, Romanization (Replace the line / Under each line), Human romanizations. Translation follows: Target language, Display mode, Translate automatically, Provider, Use human translations from Genius, the conditional DeepL key rows, Don't translate. The per-song Lyrics language override stays in This song and quick settings.
+`RomanizationTranslationContent` in `ui/settings/TranslationSettings.kt` owns the combined page. Romanization comes first: Romanization (Replace the line / Under each line), Human romanizations. Translation follows: Target language, Translate automatically, Don't translate. More options holds the rest: Romanize button, Display mode, Provider with its conditional DeepL key rows, Use human translations from Genius. The per-song Lyrics language override stays in This song and quick settings.
 
 The languages come from `TranslationLanguages.common` in `translation/TranslationModels.kt`. Don't translate and Lyrics language offer every listed language. Target language offers only the ones the chosen provider can translate into (`TranslationLanguages.supports`). Every code, whether picked, stored or detected by a provider, goes through `languageCode`, which drops the region and maps old or alternative codes to the listed one (`fil` to `tl`, `iw` to `he`, `jw` to `jv`). New aliases go there.
 
