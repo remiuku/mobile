@@ -130,6 +130,9 @@ import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -580,7 +583,7 @@ private fun floatingActions(
 /**
  * All the controls over the landscape cover, the way the fullscreen now bar lays them over its
  * cover: the floating glass buttons across the top, the playback row, and the timeline along the
- * bottom. While they show, the cover darkens to 55% (`--ArtworkBrightness`) and they sit at 98.5%
+ * bottom (unless [timeline] is off: it sits under the cover then). While they show, the cover darkens to 55% (`--ArtworkBrightness`) and they sit at 98.5%
  * (`--ControlsOpacity`), both following [shown]. The glyphs and buttons scale with the cover so
  * everything fits in one row; touches between them reach the cover's own gestures.
  */
@@ -604,6 +607,7 @@ fun CoverControls(
     onEnterPip: (() -> Unit)? = null,
     showResync: Boolean = true,
     showExpand: Boolean = true,
+    timeline: Boolean = true,
 ) {
     val shuffle = controls.customActions.firstOrNull { it.kind == ActionKind.Shuffle }
     val repeat = controls.customActions.firstOrNull { it.kind == ActionKind.Repeat }
@@ -631,10 +635,23 @@ fun CoverControls(
                 floatingActions(controls, others, romanizeAvailable, romanized, onToggleRomanize, onOpenSettings, onOpenLyricsManager, onOpenQuickSettings, expanded, onToggleExpanded, onSwapSide, coverOnRight, showResync, showExpand, onOpenQueue = onOpenQueue, onOpenSource = onOpenSource, onEnterPip = onEnterPip),
                 side * 0.88f, minSize = COVER_BUTTON_MIN, maxSize = COVER_BUTTON_MAX, minGap = COVER_BUTTON_GAP, maxGap = SpicySpacing.S3,
             )
-            Spacer(Modifier.weight(1f))
-            PlaybackRow(controls, shuffle, repeat, Modifier, skipWidth = side * 0.15f, fillSlots = true)
-            Spacer(Modifier.weight(1f))
-            Timeline(controls, shown, Modifier)
+            if (timeline) {
+                Spacer(Modifier.weight(1f))
+                PlaybackRow(controls, shuffle, repeat, Modifier, skipWidth = coverSkipWidth(side, shuffle, repeat), fillSlots = true, dropEmptySides = true)
+                Spacer(Modifier.weight(1f))
+                Timeline(controls, shown, Modifier)
+            }
+        }
+        // With the timeline under the cover, the transport sits in the cover's middle.
+        if (!timeline) {
+            PlaybackRow(
+                controls, shuffle, repeat,
+                Modifier
+                    .align(Alignment.Center)
+                    .graphicsLayer { alpha = shown() * 0.985f }
+                    .padding(horizontal = side * 0.06f),
+                skipWidth = coverSkipWidth(side, shuffle, repeat), fillSlots = true, dropEmptySides = true,
+            )
         }
     }
 }
@@ -871,7 +888,10 @@ private fun PlaybackRow(
     skipWidth: Dp = SKIP_WIDTH,
     /** Each control gets an equal share of the row as its touch area, for rows too narrow for 48dp ones. */
     fillSlots: Boolean = false,
+    /** With neither shuffle nor repeat from the player, leave out their empty slots. */
+    dropEmptySides: Boolean = false,
 ) {
+    val sides = !dropEmptySides || shuffle?.icon != null || repeat?.icon != null
     val playWidth = skipWidth * (9.25f / 12f)
     val sideWidth = skipWidth * (7f / 12f)
     Row(
@@ -880,7 +900,7 @@ private fun PlaybackRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         val slot = if (fillSlots) Modifier.weight(1f).height(TOUCH_SIZE) else null
-        SideAction(shuffle, controls, sideWidth, slot)
+        if (sides) SideAction(shuffle, controls, sideWidth, slot)
         val animate = LocalUiAnimations.current
         val scope = rememberCoroutineScope()
         // The skips move on and play turns into pause, Apple Music's way, when animations are on.
@@ -917,7 +937,20 @@ private fun PlaybackRow(
             if (animate) nextGlyph else skip, skipWidth, SpicyIcons.TrackSkip.aspect, "Next", touch = slot,
             onClick = { if (animate) moveOn(next); controls.onNext() },
         )
-        SideAction(repeat, controls, sideWidth, slot)
+        if (sides) SideAction(repeat, controls, sideWidth, slot)
+    }
+}
+
+/**
+ * The skips' width over the cover: 15% of it with shuffle and repeat beside them, growing into the
+ * room the player leaves when it sends only one of them (17%), or neither (21%).
+ */
+private fun coverSkipWidth(side: Dp, shuffle: SessionCustomAction?, repeat: SessionCustomAction?): Dp {
+    val sideActions = listOfNotNull(shuffle?.icon, repeat?.icon).size
+    return side * when (sideActions) {
+        2 -> 0.15f
+        1 -> 0.17f
+        else -> 0.21f
     }
 }
 
@@ -1047,8 +1080,34 @@ private fun Timeline(controls: PlaybackControlsState, shown: () -> Float, modifi
 @Composable
 internal fun DockTimeline(controls: PlaybackControlsState, modifier: Modifier = Modifier) = TimelineRow(controls, { 1f }, modifier)
 
+/**
+ * The landscape panel's timeline under the cover, between the cover and the song (`.Header >
+ * .Timeline`), always showing: the times beside the bar rather than under it, everything sized
+ * against the cover ([coverSizePx]) and the page's height ([pageHeightPx]).
+ */
 @Composable
-private fun TimelineRow(controls: PlaybackControlsState, shown: () -> Float, modifier: Modifier) {
+fun PanelTimeline(controls: PlaybackControlsState, coverSizePx: Float, pageHeightPx: Float, timeSizeSp: Float, modifier: Modifier = Modifier) {
+    val density = LocalDensity.current
+    with(density) {
+        // `padding: 4.5cqw 1cqw 3cqw`, the bar `1.7cqh` (`2.3cqh` engaged) of the page.
+        TimelineRow(
+            controls, { 1f },
+            modifier.padding(start = (coverSizePx * 0.01f).toDp(), end = (coverSizePx * 0.01f).toDp(), top = (coverSizePx * 0.045f).toDp(), bottom = (coverSizePx * 0.03f).toDp()),
+            beside = PanelTimes(
+                style = TimeStyle.copy(fontSize = timeSizeSp.sp),
+                barMargin = (coverSizePx * 0.015f).toDp(),
+                barHeight = (pageHeightPx * 0.017f).toDp(),
+                barHeightDragging = (pageHeightPx * 0.023f).toDp(),
+            ),
+        )
+    }
+}
+
+/** How [PanelTimeline] lays out its times and bar. */
+private class PanelTimes(val style: TextStyle, val barMargin: Dp, val barHeight: Dp, val barHeightDragging: Dp)
+
+@Composable
+private fun TimelineRow(controls: PlaybackControlsState, shown: () -> Float, modifier: Modifier, beside: PanelTimes? = null) {
     val current by rememberUpdatedState(controls)
     val haptics by rememberUpdatedState(LocalHapticFeedback.current)
     var dragFraction by remember { mutableStateOf<Float?>(null) }
@@ -1067,20 +1126,22 @@ private fun TimelineRow(controls: PlaybackControlsState, shown: () -> Float, mod
     fun shownMs() = dragFraction?.let { (it * durationUpdated).toLong() } ?: positionMs
     val elapsedText by remember { derivedStateOf { formatClock(shownMs()) } }
 
-    val thickness = remember { Animatable(BAR_HEIGHT.value) }
-    LaunchedEffect(dragFraction != null) {
+    val barHeight = beside?.barHeight ?: BAR_HEIGHT
+    val barHeightDragging = beside?.barHeightDragging ?: BAR_HEIGHT_DRAGGING
+    val thickness = remember(barHeight) { Animatable(barHeight.value) }
+    LaunchedEffect(dragFraction != null, barHeight) {
         // `transition: height 0.28s cubic-bezier(0.34, 1.56, 0.64, 1)`.
         thickness.animateTo(
-            if (dragFraction != null) BAR_HEIGHT_DRAGGING.value else BAR_HEIGHT.value,
+            if (dragFraction != null) barHeightDragging.value else barHeight.value,
             tween(280, easing = SpicyMotion.Overshoot),
         )
     }
     val seekable = controls.canSeek && duration > 0L
 
-    Column(modifier.fillMaxWidth()) {
+    @Composable
+    fun Bar(barModifier: Modifier) {
         Canvas(
-            Modifier
-                .fillMaxWidth()
+            barModifier
                 .height(BAR_TOUCH_HEIGHT)
                 .pointerInput(seekable, duration) {
                     if (!seekable) return@pointerInput
@@ -1140,9 +1201,34 @@ private fun TimelineRow(controls: PlaybackControlsState, shown: () -> Float, mod
                 drawRect(Color.White, Offset(0f, top), Size(size.width * progress, barHeight))
             }
         }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(elapsedText, style = TimeStyle, maxLines = 1)
-            Text(formatClock(duration), style = TimeStyle, maxLines = 1)
+    }
+
+    if (beside == null) {
+        Column(modifier.fillMaxWidth()) {
+            Bar(Modifier.fillMaxWidth())
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(elapsedText, style = TimeStyle, maxLines = 1)
+                Text(formatClock(duration), style = TimeStyle, maxLines = 1)
+            }
+        }
+    } else {
+        // `.Time { min-width: 5ch }`, the elapsed time right-aligned against the bar.
+        val timeWidth = (beside.style.fontSize.value * 2.75f).dp
+        Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(elapsedText, style = beside.style.copy(textAlign = TextAlign.End), maxLines = 1, modifier = Modifier.widthIn(min = timeWidth))
+            Bar(
+                Modifier
+                    .weight(1f)
+                    .padding(horizontal = beside.barMargin)
+                    // Only the bar's own (engaged) height takes room; the touch band spills over
+                    // the padding around it.
+                    .layout { measurable, constraints ->
+                        val placeable = measurable.measure(constraints.copy(minHeight = 0, maxHeight = Constraints.Infinity))
+                        val height = beside.barHeightDragging.roundToPx()
+                        layout(placeable.width, height) { placeable.place(0, (height - placeable.height) / 2) }
+                    },
+            )
+            Text(formatClock(duration), style = beside.style, maxLines = 1, modifier = Modifier.widthIn(min = timeWidth))
         }
     }
 }

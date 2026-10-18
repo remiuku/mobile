@@ -149,6 +149,7 @@ import com.tx24.spicyplayer.ui.components.SpicyModalNotes
 import com.tx24.spicyplayer.ui.components.SpicyVersionRow
 import com.tx24.spicyplayer.ui.controls.ActionKind
 import com.tx24.spicyplayer.ui.controls.CoverControls
+import com.tx24.spicyplayer.ui.controls.PanelTimeline
 import com.tx24.spicyplayer.ui.controls.StageControls
 import com.tx24.spicyplayer.ui.settings.QuickScreen
 import com.tx24.spicyplayer.ui.settings.QuickSettingsModal
@@ -845,12 +846,14 @@ private fun LyricsApp(
                 val endInsetPx = with(LocalDensity.current) { belowTop.calculateEndPadding(layoutDirection).toPx() }
                 // Landscape: the page between the cutout's insets, which is where the header and
                 // lyrics are placed (`belowTop`).
-                val landscapeMetrics = remember(pageWidth, pageHeight, density, topInsetPx, startInsetPx, endInsetPx) {
+                val timelineOutside = settings.timelineOutsideCover
+                val landscapeMetrics = remember(pageWidth, pageHeight, density, topInsetPx, startInsetPx, endInsetPx, timelineOutside) {
                     LandscapeMetrics(
                         pageWidthPx = pageWidth - startInsetPx - endInsetPx,
                         pageHeightPx = pageHeight - topInsetPx,
                         density = density,
                         topPx = topInsetPx,
+                        timelineOutside = timelineOutside,
                     )
                 }
                 // The lyrics' box beside the panel (or across the page without one). Mid-swap they
@@ -1208,8 +1211,19 @@ private fun LyricsApp(
                                     }),
                                     coverOnRight = settings.panelSide == PanelSide.Right,
                                     shown = { controlsShown },
+                                    timeline = !timelineOutside,
                                 )
                             }
+                        }
+                    },
+                    belowCover = if (!timelineOutside || !controlsOnCover) null else {
+                        {
+                            PanelTimeline(
+                                controls = playbackControls,
+                                coverSizePx = landscapeMetrics.coverSizePx,
+                                pageHeightPx = landscapeMetrics.pageHeightPx,
+                                timeSizeSp = landscapeMetrics.baseFontSizeSp,
+                            )
                         }
                     },
                 )

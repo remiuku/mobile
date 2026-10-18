@@ -50,6 +50,7 @@ import androidx.compose.material.icons.rounded.Apps
 import androidx.compose.material.icons.automirrored.rounded.CallMerge
 
 import androidx.compose.material.icons.rounded.PauseCircle
+import androidx.compose.material.icons.rounded.LinearScale
 import androidx.compose.material.icons.rounded.Widgets
 import androidx.compose.material.icons.rounded.Sync
 import kotlinx.coroutines.withContext
@@ -782,6 +783,13 @@ internal fun ControlsContent(settings: AppSettings) {
         description = "Fade the controls while the song is paused too, not only while it plays.",
         icon = Icons.Rounded.PauseCircle,
         enabled = settings.autoHideControls,
+    )
+    ToggleRow(
+        label = "Timeline Outside Cover",
+        checked = settings.timelineOutsideCover,
+        onCheckedChange = { settings.timelineOutsideCover = it },
+        description = "In landscape, show the timeline under the cover, above the song, where it always stays.",
+        icon = Icons.Rounded.LinearScale,
     )
     SettingsSection("Floating Buttons") {
         ToggleRow(

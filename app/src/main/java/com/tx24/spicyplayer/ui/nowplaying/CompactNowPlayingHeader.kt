@@ -117,7 +117,8 @@ private val CoverEnterEasing = CubicBezierEasing(0.835f, -0.008f, 0.149f, 0.866f
  * In landscape, [panel] takes the compact bar's place: the cover beside the lyrics with the song
  * text centred under it, at [panelLeft] (it slides when the sides swap). Expanding then only
  * moves it to the centre. [coverOverlay] is drawn over the cover and moves with it; touches it
- * leaves alone reach the cover's gestures. While the cover stage shows ([stage], 0..1), the
+ * leaves alone reach the cover's gestures. [belowCover] (the timeline) sits between the panel's
+ * cover and its text, pushing the text down by its height. While the cover stage shows ([stage], 0..1), the
  * panel's cover and text dissolve into it, as the big cover and its text do into the portrait
  * Canvas ([immersive]).
  */
@@ -138,6 +139,7 @@ fun CompactNowPlayingHeader(
     panel: ExpandedHeader? = null,
     panelLeft: () -> Float = { panel?.artLeftPx ?: 0f },
     coverOverlay: (@Composable () -> Unit)? = null,
+    belowCover: (@Composable () -> Unit)? = null,
     stage: () -> Float = { 0f },
     /** Portrait, while the song's Canvas fills the screen (0..1): the big cover and its text give way to it. */
     immersive: () -> Float = { 0f },
@@ -164,6 +166,8 @@ fun CompactNowPlayingHeader(
     fun artTop() = lerp(panel?.artTopPx ?: metrics.barTopPx, expanded?.artTopPx ?: 0f, layoutP())
     val restingCorner = if (panel != null) CompactHeaderMetrics.NOWBAR_CORNER_FRACTION else CompactHeaderMetrics.ART_CORNER_FRACTION
     fun stageP() = if (panel != null) stage() else 0f
+    val below = belowCover.takeIf { panel != null }
+    var belowHeightPx by remember { mutableFloatStateOf(0f) }
     with(density) {
         Box(modifier.fillMaxSize().graphicsLayer { alpha = if (hidden) p() else 1f }) {
             HeaderArtwork(
@@ -206,6 +210,19 @@ fun CompactNowPlayingHeader(
                     .graphicsLayer { alpha = 1f - (p() / TEXT_SWAP).coerceIn(0f, 1f) }
                     .height(metrics.barHeightPx.toDp()),
             )
+            if (below != null) {
+                Box(
+                    Modifier
+                        .layout { measurable, _ ->
+                            val width = artSize().roundToInt().coerceAtLeast(1)
+                            val placeable = measurable.measure(Constraints(minWidth = width, maxWidth = width))
+                            layout(placeable.width, placeable.height) { placeable.place(0, 0) }
+                        }
+                        .onSizeChanged { belowHeightPx = it.height.toFloat() }
+                        .offset { IntOffset(artLeft().roundToInt(), (artTop() + artSize()).roundToInt()) }
+                        .graphicsLayer { alpha = 1f - stageP() },
+                ) { below() }
+            }
             if (expanded != null) {
                 HeaderMetadata(
                     title = info.title,
@@ -218,12 +235,13 @@ fun CompactNowPlayingHeader(
                     artistsWidthPx = expanded.artSizePx * 0.8f,
                     centered = true,
                     modifier = Modifier
-                        // Under the cover wherever it is, `margin-top: 5cqw` of it.
+                        // Under the cover wherever it is, `margin-top: 5cqw` of it; right under
+                        // the timeline where that sits there.
                         .offset {
                             val size = artSize()
                             IntOffset(
                                 (artLeft() + size / 2f - expanded.artSizePx / 2f).roundToInt(),
-                                (artTop() + size * 1.05f).roundToInt(),
+                                (artTop() + if (below != null) size + belowHeightPx else size * 1.05f).roundToInt(),
                             )
                         }
                         // The panel's text is always there; the compact bar's gives way to it.

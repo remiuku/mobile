@@ -17,12 +17,14 @@ import kotlin.math.min
  * @param pageWidthPx width of the page, inside the cutout's insets.
  * @param pageHeightPx height of the page.
  * @param topPx where the page starts from the top of the screen.
+ * @param timelineOutside the timeline sits under the cover, between it and the song text.
  */
 data class LandscapeMetrics(
     val pageWidthPx: Float,
     val pageHeightPx: Float,
     val density: Float,
     val topPx: Float = 0f,
+    val timelineOutside: Boolean = false,
 ) {
     /** `--NowBarWidth: calc(min(30cqw, 52cqh) * 1.1)`; the cover is as wide as the panel. */
     val coverSizePx = min(pageWidthPx * 0.30f, pageHeightPx * 0.52f) * 1.1f
@@ -36,8 +38,11 @@ data class LandscapeMetrics(
      */
     private val edgeSpacingPx = (pageWidthPx * 0.5f - coverSizePx - innerSpacingPx) * 0.7f
 
-    /** `.NowBar { padding-top: calc(50cqh - var(--NowBarWidth) * .6) }` (no timeline under the cover). */
-    val coverTopPx = topPx + pageHeightPx * 0.5f - coverSizePx * 0.6f
+    /**
+     * `.NowBar { padding-top: calc(50cqh - var(--NowBarWidth) * .625) }`, or `.6` with no timeline
+     * under the cover.
+     */
+    val coverTopPx = topPx + pageHeightPx * 0.5f - coverSizePx * if (timelineOutside) 0.625f else 0.6f
 
     /**
      * The lyrics' size: 56px against the 741px cover, as on the desktop page, but never under the
@@ -47,6 +52,9 @@ data class LandscapeMetrics(
 
     /** How much the floor lifted the lyrics; the song text grows with them to keep its size next to them. */
     private val textBoost = lyricFontSizeSp / (coverSizePx / density * (DESKTOP_LYRICS_PX / DESKTOP_COVER_PX))
+
+    /** `--default-font-size`, 3% of the cover (lifted with the lyrics): the timeline's times. */
+    val baseFontSizeSp = coverSizePx / density * 0.03f * textBoost
 
     /** The cover's left edge at [side] (0 = panel on the left .. 1 = on the right). */
     fun coverLeftPx(side: Float): Float {
@@ -67,7 +75,7 @@ data class LandscapeMetrics(
      * all of it lifted with the lyrics where their floor holds them up ([textBoost]).
      */
     private fun header(left: Float): ExpandedHeader {
-        val base = coverSizePx / density * 0.03f * textBoost
+        val base = baseFontSizeSp
         val titleSize = base * 2.25f
         val artistsSize = base * 1.275f
         return ExpandedHeader(

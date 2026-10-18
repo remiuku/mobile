@@ -592,7 +592,7 @@ private fun PageSkeleton(page: SettingsPage) {
         SettingsPage.ScrollSync -> SettingsSkeleton(rows = 7)
         SettingsPage.Background -> SettingsSkeleton(rows = 5)
         SettingsPage.NowPlaying -> SettingsSkeleton(rows = 11)
-        SettingsPage.Controls -> SettingsSkeleton(rows = 11)
+        SettingsPage.Controls -> SettingsSkeleton(rows = 12)
         SettingsPage.Theme -> SettingsSkeleton(rows = 4)
         SettingsPage.Sources -> SettingsSkeleton(rows = 11, cards = true)
         SettingsPage.Device -> SettingsSkeleton(rows = 9)

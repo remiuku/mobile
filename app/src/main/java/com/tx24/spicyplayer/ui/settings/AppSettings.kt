@@ -106,6 +106,8 @@ class AppSettings(private val prefs: SharedPreferences) {
     var staticBackground by boolean("staticBackground", false)
     var releaseYearPosition by enum("releaseYearPosition", ReleaseYearPosition.Off)
     var expandWithoutLyrics by boolean("expandWithoutLyrics", false)
+    /** Landscape: the timeline sits under the cover, above the song, rather than with the controls on it. */
+    var timelineOutsideCover by boolean("timelineOutsideCover", true)
     /** The record's looping Apple Music cover in place of the still one, where it has one. */
     var animatedCover by boolean("animatedCover", false)
     /**
