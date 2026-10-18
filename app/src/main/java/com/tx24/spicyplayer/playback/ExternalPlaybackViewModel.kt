@@ -1623,7 +1623,7 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
         if (!lyricsBackend.humanRomanizations || !RemoteLyricsAdapter.wantsHumanRomanization(lyrics)) return
         val backend = lyricsBackend
         humanJob = viewModelScope.launch {
-            val genius = runCatching { withContext(Dispatchers.IO) { backend.humanRomanization(request.title, request.artist) } }
+            val genius = runCatching { withContext(Dispatchers.IO) { backend.humanRomanization(request.title, request.artist, request.durationSeconds) } }
                 .onFailure { if (it is CancellationException) throw it }
                 .getOrNull() ?: return@launch
             val human = withContext(Dispatchers.Default) {
@@ -1632,7 +1632,7 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
             synchronized(humanCache) { humanCache[selection] = human }
             if (currentLyricsKey != identity || shownSelection != selection) return@launch
             val laid = human.lines.count { it !in lyrics.lines }
-            Log.d("LyricsProviders", "Genius romanization laid over $laid lines")
+            Log.d("LyricsProviders", "Human romanization laid over $laid lines")
             mutableState.value = mutableState.value.copy(lyrics = human, humanRomanizedLines = laid)
         }
     }

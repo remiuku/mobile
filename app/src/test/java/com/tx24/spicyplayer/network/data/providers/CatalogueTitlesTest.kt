@@ -42,6 +42,13 @@ class CatalogueTitlesTest {
     }
 
     @Test
+    fun `NetEase's mora-spaced romaji is cut where the reader's words end`() {
+        assertEquals("subarashiki sekai ni", NetEaseRomaji.rejoin("su ba ra shi ki se ka i ni", "subarashiki sekai ni"))
+        // Where the two read the line differently, NetEase's letters stand as they were.
+        assertEquals("u sse e wa", NetEaseRomaji.rejoin("u sse e wa", "kaibutsu"))
+    }
+
+    @Test
     fun `native names come from the song's home storefront`() = runBlocking {
         assumeTrue(System.getenv("RUN_ALL_SOURCES_TEST") == "1")
         val names = NativeNames(OkHttpClient(), Gson())

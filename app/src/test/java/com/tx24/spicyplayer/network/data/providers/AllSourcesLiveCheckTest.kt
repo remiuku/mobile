@@ -64,6 +64,15 @@ class AllSourcesLiveCheckTest {
         assertTrue("No hits at all from: $silent", silent.isEmpty())
     }
 
+    @Test
+    fun `NetEase has human romaji, lent by a sibling copy where needed`() = runBlocking {
+        assumeTrue(System.getenv("RUN_ALL_SOURCES_TEST") == "1")
+        val netease = NetEaseLyricsProvider(OkHttpClient(), Gson())
+        val lines = netease.romanization(LyricsLookupRequest("YOASOBI", "怪物", "", 205))
+        println("NetEase romaji for 怪物: ${lines?.size} lines, first: ${lines?.firstOrNull()}")
+        assertTrue("no romaji", !lines.isNullOrEmpty())
+    }
+
     private companion object {
         val SONGS = listOf(
             LyricsLookupRequest("Rick Astley", "Never Gonna Give You Up", "Whenever You Need Somebody", 213),

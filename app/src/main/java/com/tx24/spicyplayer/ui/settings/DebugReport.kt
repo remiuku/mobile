@@ -83,8 +83,8 @@ internal fun textLines(context: Context, state: PlayerUiState): List<Pair<String
         !settings.romanize -> "off"
         else -> settings.romanizationMode.label.lowercase() + ", from " + when {
             lyrics?.sourceRomanized == true -> "the lyrics themselves"
-            state.humanRomanizedLines > 0 -> "Genius on ${state.humanRomanizedLines} lines, on-device for the rest"
-            state.humanRomanizations -> "on-device (Genius had none that matched)"
+            state.humanRomanizedLines > 0 -> "human romanization on ${state.humanRomanizedLines} lines, on-device for the rest"
+            state.humanRomanizations -> "on-device (no human romanization matched)"
             else -> "on-device"
         }
     }

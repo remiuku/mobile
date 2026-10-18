@@ -43,8 +43,8 @@ internal fun RomanizationTranslationContent(state: PlayerUiState, viewModel: Ext
                 { settings.romanizationMode = RomanizationMode.valueOf(it) }, labels = RomanizationMode.entries.map { it.label })
         }
         ToggleRow("Human romanizations", state.humanRomanizations, viewModel::setHumanRomanizations,
-            description = "Use matching romanizations from Genius.", icon = Icons.Rounded.People,
-            searchDescription = "Use a romanization written by people on Genius where it lines up with the lyrics, for readings no romanizer can guess. Asks Genius.")
+            description = "Use matching romanizations from Genius, or NetEase while it's on.", icon = Icons.Rounded.People,
+            searchDescription = "Use a romanization written by people on Genius, or on NetEase while it's on as a source, where it lines up with the lyrics, for readings no romanizer can guess. Asks Genius.")
     }
     SettingsSection("Translation") {
         TranslationContent(state, viewModel, settings)

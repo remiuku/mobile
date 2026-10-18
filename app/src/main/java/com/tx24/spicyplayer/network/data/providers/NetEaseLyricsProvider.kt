@@ -1,6 +1,8 @@
 package com.tx24.spicyplayer.network.data.providers
 
 import com.google.gson.Gson
+import com.tx24.spicyplayer.network.data.blend.SequenceMatcher
+import com.tx24.spicyplayer.lyrics.spicy.romanization.JapaneseRomanizerProvider
 import com.google.gson.JsonObject
 import com.tx24.spicyplayer.network.data.*
 import com.tx24.spicyplayer.network.data.blend.BlendDonors
@@ -25,6 +27,25 @@ class NetEaseLyricsProvider @Inject constructor(private val client: OkHttpClient
         releaseChannel = SourceReleaseChannel.EXTENDED,
         defaultEnabled = false,
     )
+
+    /** The human-written romaji NetEase had for recent lookups, by title and artist ([romanization]). */
+    private val romaji = object : LinkedHashMap<String, List<String>>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<String>>) = size > 32
+    }
+
+    private fun romajiKey(title: String, artist: String) = SpotifyTrackMatcher.normalize(title) + "\u0000" + SpotifyTrackMatcher.normalize(artist)
+
+    /**
+     * NetEase's human-written romanization of [request]'s song as lyric lines (`romalrc`), or
+     * null where it has none. From the lookup that found the lyrics when there was one, else
+     * asked now.
+     */
+    suspend fun romanization(request: LyricsLookupRequest): List<String>? {
+        val key = romajiKey(request.title, request.artist)
+        synchronized(romaji) { romaji[key] }?.let { return it.ifEmpty { null } }
+        lookup(request)
+        return synchronized(romaji) { romaji[key] }?.ifEmpty { null }
+    }
 
     override suspend fun fetch(request: LyricsLookupRequest): ProviderResult = try {
         lookup(request)
@@ -51,6 +72,11 @@ class NetEaseLyricsProvider @Inject constructor(private val client: OkHttpClient
         // untimed or credits-only copy: take the first word-timed candidate, else the first with
         // timed lines.
         val lyrics = coroutineScope { songs.map { song -> async { lyrics(song.get("id").asString) } }.awaitAll() }
+        // The romaji of the copy the lyrics come from, or one a sibling copy lends: the word-timed
+        // pressing often ships none while another does.
+        val romanized = lyrics.indices.sortedBy { if (data(lyrics[it], "yrc") != null) 0 else 1 }
+            .firstNotNullOfOrNull { NetEaseRomaji.lines(data(lyrics[it], "romalrc"), data(lyrics[it], "lrc")) }
+        synchronized(romaji) { romaji[romajiKey(request.title, request.artist)] = romanized.orEmpty() }
         // A copy whose lyric is only "纯音乐，请欣赏" (instrumental) says nothing about the others.
         lyrics.firstNotNullOfOrNull { data ->
             data.getAsJsonObject("yrc")?.get("lyric")?.asString
@@ -73,6 +99,8 @@ class NetEaseLyricsProvider @Inject constructor(private val client: OkHttpClient
         .addQueryParameter("os", "pc").addQueryParameter("id", id)
         .addQueryParameter("lv", "-1").addQueryParameter("kv", "-1")
         .addQueryParameter("tv", "-1").addQueryParameter("yv", "-1").addQueryParameter("rv", "-1").build())
+
+    private fun data(lyric: JsonObject, part: String) = lyric.getAsJsonObject(part)?.get("lyric")?.takeIf { it.isJsonPrimitive }?.asString?.takeIf(String::isNotBlank)
 
     /** An LRC with a stamped line that is a lyric, not a credit ("作词 : ..."). */
     private fun hasTimedLyric(lrc: String): Boolean = lrc.lineSequence().any { line ->
@@ -136,4 +164,65 @@ internal object YrcToTtml {
     }
     private fun sec(ms: Long) = "${"%.3f".format(Locale.ROOT, ms / 1000.0)}s"
     private fun xml(s: String) = s.replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")
+}
+
+/**
+ * NetEase's human-written romaji (`romalrc`), as lines a reader can take in. It is written one
+ * mora at a time ("su ba ra shi ki"), accurate and nearly unreadable under a lyric, so it is cut
+ * into words the way the on-device reader cuts the same Japanese line: NetEase says what the
+ * sounds are, the segmenter where to break them, and only where the two agree outright.
+ */
+internal object NetEaseRomaji {
+    private val STAMP = Regex("""^\[(\d+):(\d+(?:[.:]\d+)?)]""")
+    private val ANY_STAMP = Regex("""\[[^\]]*]""")
+    /** Romaji is stamped to the lyric's own lines, a little either side of them. */
+    private const val PAIRED = 0.05
+    private const val ALIKE = 0.82
+
+    fun lines(romalrc: String?, lrc: String?): List<String>? {
+        val roman = rows(romalrc ?: return null).ifEmpty { return null }
+        val sung = rows(lrc.orEmpty())
+        // Stamped on its own clock (between half a second early and a fifth late), but row for row:
+        // pair by position where the counts agree and every stamp is within a second.
+        val byRow = sung.size == roman.size && roman.indices.all { kotlin.math.abs(roman[it].first - sung[it].first) <= 1.0 }
+        return roman.mapIndexed { i, (at, mora) ->
+            val line = if (byRow) sung[i].second else sung.firstOrNull { kotlin.math.abs(it.first - at) <= PAIRED }?.second
+            val worded = line?.takeIf(::japanese)?.let { runCatching { JapaneseRomanizerProvider.get().romanize(it) }.getOrNull() }
+            if (worded != null) rejoin(mora, worded) else mora
+        }
+    }
+
+    private fun rows(lrc: String): List<Pair<Double, String>> = lrc.lines().mapNotNull { raw ->
+        val m = STAMP.find(raw.trim()) ?: return@mapNotNull null
+        val at = m.groupValues[1].toInt() * 60 + (m.groupValues[2].replace(':', '.').toDoubleOrNull() ?: return@mapNotNull null)
+        val text = raw.trim().replace(ANY_STAMP, "").trim()
+        if (text.isEmpty() || BlendDonors.isCredit(text)) null else at to text
+    }
+
+    private fun japanese(s: String) = s.any { it in '\u3040'..'\u30ff' || it in '\u4e00'..'\u9fff' }
+
+    /** [mora] re-cut at the word ends of [worded], where the two spell the same letters. */
+    internal fun rejoin(mora: String, worded: String): String {
+        val flat = mora.replace(" ", "")
+        if (flat.isEmpty() || worded.isBlank()) return mora
+        val stops = HashSet<Int>()
+        var at = 0
+        for (w in worded.split(' ').filter(String::isNotEmpty)) { at += w.length; stops += at }
+        val sm = SequenceMatcher.of(flat.lowercase(), worded.replace(" ", "").lowercase())
+        if (sm.ratio() < ALIKE) return mora
+        val same = HashMap<Int, Int>()
+        for ((i, j, n) in sm.matchingBlocks()) for (k in 0 until n) same[i + k] = j + k
+        val out = mutableListOf<String>()
+        var cut = 0
+        for (i in flat.indices) {
+            val j = same[i] ?: continue
+            if (j + 1 !in stops) continue
+            val next = if (i + 1 < flat.length) flat[i + 1] else 'a'
+            if (!flat[i].isLetterOrDigit() || !next.isLetterOrDigit()) continue
+            out += flat.substring(cut, i + 1)
+            cut = i + 1
+        }
+        out += flat.substring(cut)
+        return out.filter(String::isNotEmpty).joinToString(" ").ifEmpty { mora }
+    }
 }

@@ -330,6 +330,7 @@ internal class NextLyricsBackend(context: Context, clientKey: String) {
          * lrc.red, BiniLyrics) are on; every other source asks first ([SourceDisclosures]).
          */
         internal const val SOURCE_DEFAULTS_VERSION = 2
+        private const val NETEASE_ID = "netease"
         private val APP_USER_AGENT = "Spicy Lyrics Mobile ${BuildConfig.VERSION_NAME} (${BuildConfig.APPLICATION_ID})"
         private const val CACHE_DAYS = 3
         /** Custom sources start after every built-in one. */
@@ -444,22 +445,25 @@ internal class NextLyricsBackend(context: Context, clientKey: String) {
         humanTranslationCache.find(title, artist, target) { geniusTranslation.find(title, artist, target) }
 
     /**
-     * Genius's romanization of the song as lyric lines, or null when it has none. Kept on disk a
-     * week when found and a day when not, so a replayed song asks once. A lookup that failed
-     * throws and isn't kept, so the next play asks again.
+     * A human-written romanization of the song as lyric lines: Genius's, else NetEase's while
+     * NetEase is on as a source; null when neither has one. Genius's answer is kept on disk a
+     * week when found and a day when not, so a replayed song asks once; NetEase's comes with its
+     * lyrics lookup. A lookup that failed throws and isn't kept, so the next play asks again.
      */
-    suspend fun humanRomanization(title: String, artist: String): List<String>? {
+    suspend fun humanRomanization(title: String, artist: String, durationSeconds: Int = 0): List<String>? {
         val file = File(romanCache, cacheKey(title, artist) + ".json")
-        runCatching { gson.fromJson(file.readText(), StoredRoman::class.java) }.getOrNull()
+        val stored = runCatching { gson.fromJson(file.readText(), StoredRoman::class.java) }.getOrNull()
             ?.takeIf { it.expiresAt > System.currentTimeMillis() }
-            ?.let { return it.lines }
-        val lines = geniusRomanization.find(title, artist)
-        val keep = TimeUnit.DAYS.toMillis(if (lines != null) 7 else 1)
-        runCatching {
-            romanCache.mkdirs()
-            file.writeText(gson.toJson(StoredRoman(System.currentTimeMillis() + keep, lines)))
+        val lines = if (stored != null) stored.lines else geniusRomanization.find(title, artist).also { found ->
+            val keep = TimeUnit.DAYS.toMillis(if (found != null) 7 else 1)
+            runCatching {
+                romanCache.mkdirs()
+                file.writeText(gson.toJson(StoredRoman(System.currentTimeMillis() + keep, found)))
+            }
         }
-        return lines
+        if (lines != null || !ranking().asked(NETEASE_ID)) return lines
+        return builtIn.filterIsInstance<NetEaseLyricsProvider>().firstOrNull()
+            ?.romanization(LyricsLookupRequest(artist, title, "", durationSeconds))
     }
 
     fun forgetRomanization(title: String, artist: String) {
