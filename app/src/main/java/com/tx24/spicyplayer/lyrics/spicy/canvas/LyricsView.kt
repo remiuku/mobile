@@ -95,6 +95,10 @@ fun LyricsView(
     activeLineTopPx: Float? = null,
     // Without activeLineTopPx, the active line's centre sits this far above the focus anchor.
     focusLiftPx: Float = 0f,
+    // Without activeLineTopPx: the first line rests with its top this far down the view (a
+    // fraction of its height) and the view never scrolls above that, so the opening lines sit
+    // high until centring one needs the view to move. Null rests it at the focus anchor.
+    restTopFraction: Float? = null,
     // Invoked with the raw frame-nanos at the top of this view's own animation frame, before
     // currentTimeMs() is read. Lets a caller (e.g. the playback clock smoothing in
     // SpicyLyricsPlayer) piggyback on this view's single withFrameNanos loop instead of running
@@ -194,6 +198,8 @@ fun LyricsView(
         val alignTop = activeLineTopPx != null
         // The frame loop and tap handler outlive a change of anchor (the header shown or hidden
         // mid-song), so they read the latest one; a change also wakes a resting loop to re-anchor.
+        val restTopY = if (alignTop || restTopFraction == null) 0f else minOf(0f, canvasHeight * restTopFraction - centerY)
+        SideEffect { scrollManager.topY = restTopY }
         val centerYUpdated by rememberUpdatedState(centerY)
         val alignTopUpdated by rememberUpdatedState(alignTop)
         val canvasHeightUpdated by rememberUpdatedState(canvasHeight)

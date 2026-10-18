@@ -39,6 +39,12 @@ internal class ScrollManager(
     var animScrollY by mutableFloatStateOf(0f)
         private set
 
+    /**
+     * The highest the view goes, 0 or below: under 0 the first lines rest above the anchor until
+     * centring a line needs the view to move, like a padded list that can't scroll past its top.
+     */
+    var topY = 0f
+
     /** A finger is on the lyrics. */
     var isUserScrolling by mutableStateOf(false)
         private set
@@ -114,9 +120,17 @@ internal class ScrollManager(
         targetVisiblePx: Float = Float.POSITIVE_INFINITY,
     ) {
         val now = monotonicNowMs()
-        val top = 0f
+        val top = topY
         val bottom = -totalContentHeight.coerceAtLeast(0f)
         var y = animScrollY
+
+        if (targetY == null && snapNext) {
+            // Nothing to follow yet (before the first line): start at the top, then glide from it.
+            y = top
+            snapNext = false
+            animScrollY = y
+            return
+        }
 
         if (targetY != null && (snap || snapNext)) {
             y = targetY.coerceIn(bottom, top)
@@ -191,7 +205,7 @@ internal class ScrollManager(
         lastDragTimeMs = now
         lastUserMoveMs = now
         val bottom = -totalContentHeight.coerceAtLeast(0f)
-        val outside = animScrollY > 0f || animScrollY < bottom
+        val outside = animScrollY > topY || animScrollY < bottom
         animScrollY += if (outside) dy * 0.5f else dy
     }
 

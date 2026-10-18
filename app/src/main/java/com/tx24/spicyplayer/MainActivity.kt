@@ -1917,6 +1917,8 @@ private fun LyricsPanelContent(
                 activeLineTopPx = activeLineTopPx,
                 focusAnchorFraction = 0.5f,
                 focusLiftPx = centredLiftPx,
+                // The list's `padding-top: 25cqh`.
+                restTopFraction = 0.25f,
                 lyricsType = lyrics.lyricsType,
                 config = config,
                 fontSizeScale = fontSizeScale,

@@ -32,6 +32,20 @@ class ScrollManagerTest {
         assertEquals(-300f, scroll.animScrollY, 0.01f)
     }
 
+    @Test fun aRaisedTopHoldsTheOpeningLinesHighUntilCentringNeedsAMove() {
+        scroll.topY = -500f
+        // Before the first line: straight to the top.
+        now += 16
+        scroll.updateScroll(1f / 60f, height, null, null)
+        assertEquals(-500f, scroll.animScrollY, 0.01f)
+        // A line centred above the top stays at the top...
+        frames(1f, 0, -100f)
+        assertEquals(-500f, scroll.animScrollY, 0.01f)
+        // ...and one further down is centred.
+        frames(2f, 3, -900f)
+        assertEquals(-900f, scroll.animScrollY, 0.01f)
+    }
+
     @Test fun aLineChangeGlidesFrontLoadedLikeDesktopChromium() {
         frames(0.1f, 0, 0f)
         // 400px: sqrt(400) = 20 frames. cubic-bezier(0.4, 0, 0, 1) covers ~86% of it by the
