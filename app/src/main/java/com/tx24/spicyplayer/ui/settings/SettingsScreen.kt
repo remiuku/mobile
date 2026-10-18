@@ -301,10 +301,12 @@ fun SettingsScreen(
     Box(
         Modifier
             .fillMaxSize()
-            .onGloballyPositioned { screenOrigin = it.positionInRoot() }
-            // Takes every touch, so nothing reaches the lyrics underneath, except while peeking.
-            .then(if (peekClear) Modifier else Modifier.pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent() } }),
+            .onGloballyPositioned { screenOrigin = it.positionInRoot() },
     ) {
+        // Takes every touch, so nothing reaches the lyrics underneath, except while peeking. A layer
+        // of its own under the pages: off the screen's own modifiers, dropping it as a peek starts
+        // doesn't cancel the press on the peek button that started it.
+        if (!peekClear) Box(Modifier.matchParentSize().pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent() } })
         // The pop-up dim and blur, over the whole screen.
         Box(
             Modifier

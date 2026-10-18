@@ -409,7 +409,12 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
         if (guessedDocument == document.hash) return
         guessedDocument = document.hash
         viewModelScope.launch {
-            val language = withContext(Dispatchers.Default) { languageGuesser.detect(document.context) }
+            // A song in two scripts is in two languages: unknown, so the button stays.
+            val (mixed, language) = withContext(Dispatchers.Default) {
+                val mixed = mixedScripts(document.lines.filterNot { it.boundary }.map { it.text })
+                mixed to if (mixed) null else languageGuesser.detect(document.context)
+            }
+            traceTranslation("guess: " + if (mixed) "two scripts, unknown" else language ?: "unknown")
             if (translationDocument()?.hash == document.hash) {
                 mutableState.value = mutableState.value.copy(guessedLanguage = languageCode(language))
             }

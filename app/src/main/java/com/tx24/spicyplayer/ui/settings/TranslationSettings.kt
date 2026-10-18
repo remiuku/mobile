@@ -38,7 +38,7 @@ internal fun RomanizationTranslationContent(state: PlayerUiState, viewModel: Ext
     val languages = TranslationLanguages.all(preferences.excludedLanguages)
     var key by remember { mutableStateOf("") }
     // The page header names both, so each group gets its own title.
-    SettingsSection("Romanization") {
+    SettingsSection("Romanization", divider = false) {
         SettingRow("Romanization", description = "Replace lyrics or show romanization below.", icon = Icons.Rounded.ViewAgenda,
             searchDescription = "Replace the synced lyric words or show romanization below each line.") {
             SpicySelect(settings.romanizationMode.name, RomanizationMode.entries.map { it.name },

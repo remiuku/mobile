@@ -102,6 +102,24 @@ fun skipTranslation(source: String?, target: String, excluded: Set<String>): Boo
 fun translateButtonHelps(translated: Boolean, language: String?, preferences: TranslationPreferences): Boolean =
     translated || !skipTranslation(language, preferences.targetLanguage, preferences.excludedLanguages)
 
+/**
+ * Whether a fair share of [lines] are in another script than the rest, like Japanese with English
+ * verses: two languages, so no one guess at the song's language speaks for all of it.
+ */
+fun mixedScripts(lines: List<String>): Boolean {
+    val worded = lines.filter { line -> line.any(Char::isLetter) }
+    if (worded.size < MIXED_MIN_LINES) return false
+    val other = worded.count { line -> line.any { it.isLetter() && !latinLetter(it) } }
+    return other.toDouble() / worded.size in MIXED_SHARE
+}
+
+/** Latin, accented Latin and Vietnamese's extra letters. */
+private fun latinLetter(c: Char) = c.code < 0x250 || c.code in 0x1E00..0x1EFF
+
+private const val MIXED_MIN_LINES = 4
+/** A line or two in another script is a loanword or a title, not a second language. */
+private val MIXED_SHARE = 0.15..0.85
+
 internal fun translationHash(parts: List<String>): String {
     val digest = MessageDigest.getInstance("SHA-256")
     parts.forEach {

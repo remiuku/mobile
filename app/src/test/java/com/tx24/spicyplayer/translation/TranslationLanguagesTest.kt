@@ -60,6 +60,16 @@ class TranslationLanguagesTest {
         assertTrue(translateButtonHelps(true, "en", prefs))
     }
 
+    @Test fun `a song in two scripts counts as mixed, a stray word doesn't`() {
+        val japanese = listOf("夢ならばどれほどよかったでしょう", "未だにあなたのことを夢にみる", "忘れた物を取りに帰るように", "古びた思い出の埃を払う")
+        val english = listOf("I'm in the stars tonight", "So watch me bring the fire", "Shoes on, get up in the morn", "Cup of milk, let's rock and roll")
+        assertTrue(mixedScripts(japanese + english))
+        assertFalse(mixedScripts(japanese))
+        assertFalse(mixedScripts(english + english + english + listOf("夢")))
+        // Vietnamese's extra letters are Latin.
+        assertFalse(mixedScripts(listOf("Em ơi Hà Nội phố", "Ta còn em mùi hoàng lan", "Ta còn em mùi hoa sữa", "Con đường vắng rì rào cơn mưa nhỏ")))
+    }
+
     @Test fun `a cached translation drops lines in a newly excluded language under any of its codes`() {
         val key = TranslationKey("hash", "en", TranslationProvider.Google, null)
         val result = TranslationResult(key, listOf("I love you", "hello", "thank you"), "tl", languages = listOf("fil", "ko", null))
