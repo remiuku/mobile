@@ -46,8 +46,8 @@ class SourceDefaultsTest {
         val providers = LyricsOrigins.forProviders(descriptors).associate { it.id to it.providerIds.filter { id -> LyricsBlends.byId(id) == null } }
         assertEquals(listOf("spicy_lyrics", "rmm_revival"), providers[LyricsOrigins.SPICY_COMMUNITY])
         assertEquals(listOf("amll_ttml_db"), providers[LyricsOrigins.AMLL])
-        assertEquals(listOf("spicy_lyrics", "rmm_revival", "lrc_red", "bini_lyrics"), providers[LyricsOrigins.APPLE_MUSIC])
-        assertEquals(listOf("lrc_red", "bini_lyrics"), providers[LyricsOrigins.LRC_RED_AI])
+        assertEquals(listOf("spicy_lyrics", "rmm_revival", "lrc_red"), providers[LyricsOrigins.APPLE_MUSIC])
+        assertEquals(listOf("lrc_red"), providers[LyricsOrigins.LRC_RED_AI])
         assertEquals(listOf("unison"), providers[LyricsOrigins.UNISON])
         assertEquals(listOf("spicy_lyrics", "rmm_revival"), providers[LyricsOrigins.SPOTIFY])
         assertEquals(listOf("kugou", "lrcmux"), providers[LyricsOrigins.KUGOU])
@@ -71,7 +71,7 @@ class SourceDefaultsTest {
         assertEquals(LyricsOrigins.APPLE_MUSIC, origin("spicy_lyrics", "Apple Music"))
         assertEquals(LyricsOrigins.SPOTIFY, origin("rmm_revival", "Spotify"))
         assertEquals(LyricsOrigins.APPLE_MUSIC, origin("lrc_red", "Apple Music"))
-        assertEquals(LyricsOrigins.LRC_RED_AI, origin("bini_lyrics", LyricsOrigins.LRC_RED_AI_NAME))
+        assertEquals(LyricsOrigins.LRC_RED_AI, origin("lrc_red", LyricsOrigins.LRC_RED_AI_NAME))
         assertEquals(LyricsOrigins.KUGOU, origin("lrcmux", "KuGou"))
         assertEquals(LyricsOrigins.LRCLIB, origin("lrcmux", "LRCLIB"))
         assertEquals(LyricsOrigins.GENIUS, origin("lrcmux", "Genius"))
@@ -120,6 +120,6 @@ class SourceDefaultsTest {
 
     private companion object {
         /** Spicy Lyrics, and the lyrics APIs that say any app may use them. */
-        val DEFAULT_ON = setOf(RemoteLyricsSource.SPICY_ID, "lrclib", "amll_ttml_db", "unison", "lrcmux", "lrc_red", "bini_lyrics")
+        val DEFAULT_ON = setOf(RemoteLyricsSource.SPICY_ID, "lrclib", "amll_ttml_db", "unison", "lrcmux", "lrc_red")
     }
 }

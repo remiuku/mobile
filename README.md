@@ -26,7 +26,7 @@ An Android lyrics screen for music playing in *another* app. It follows the acti
 | Feature | What you get |
 | --- | --- |
 | **Word-synced** | TTML timing is kept all the way to the screen, never flattened to line-synced LRC. |
-| **Many sources** | Spicy Lyrics, LRCLIB, AMLL TTML DB, Unison, LRCMux, lrc.red and BiniLyrics on by default; more are opt-in. |
+| **Many sources** | Spicy Lyrics, LRCLIB, AMLL TTML DB, Unison, LRCMux and lrc.red on by default; more are opt-in. |
 | **Native and light** | Kotlin and Jetpack Compose. Under 1% of a CPU core in the background. |
 | **Works with your player** | Spotify and any other player that exposes an Android MediaSession. |
 
@@ -81,7 +81,7 @@ Short version: lyric lookups send the song's title and artist (sometimes album o
 
 <br>
 
-Out of the box, Spicy Lyrics Mobile asks [Spicy Lyrics](https://spicylyrics.org) for lyrics, then the lyrics services whose public APIs say any app may use them: [LRCLIB](https://lrclib.net) (the song's title, artist, album and length), [AMLL TTML DB](https://github.com/amll-dev/amll-ttml-db) (title and artist), [Unison](https://unison.boidu.dev) (title and artist), [LRCMux](https://lrcmux.dev) (title, artist and length), [lrc.red](https://lrc.red) (title and artist) and [BiniLyrics](https://lyrics.binimum.org) (title, artist and length). To find a song on Spicy Lyrics, it first matches it to a Spotify track: it searches Spotify, without an account, for the song's title, artist, album and length. On Android 13 and newer, the moving background also asks Spotify for the track's beats (Settings → Background → Move with the Music turns that off).
+Out of the box, Spicy Lyrics Mobile asks [Spicy Lyrics](https://spicylyrics.org) for lyrics, then the lyrics services whose public APIs say any app may use them: [LRCLIB](https://lrclib.net) (the song's title, artist, album and length), [AMLL TTML DB](https://github.com/amll-dev/amll-ttml-db) (title and artist), [Unison](https://unison.boidu.dev) (title and artist), [LRCMux](https://lrcmux.dev) (title, artist and length) and [lrc.red](https://lrc.red) (title and artist). To find a song on Spicy Lyrics, it first matches it to a Spotify track: it searches Spotify, without an account, for the song's title, artist, album and length. On Android 13 and newer, the moving background also asks Spotify for the track's beats (Settings → Background → Move with the Music turns that off).
 
 Every other lyrics source (QQ Music, NetEase, Kugou, Kuwo, RMM Revival, Genius, YouTube transcripts) is off until you switch it on in Settings → Sources. Before one is switched on for the first time, the app says who it asks and what it sends: the song's title and artist, and for some, its album or length. The same goes for human romanizations, which ask Genius. No account or device details go to any of them. Release year and animated covers, which ask Spotify and Apple's iTunes search, are off by default too. So is Spotify Canvas on the cover stage, which says before it's turned on that it sends the track's Spotify ID to a third-party lookup service (spotify-canva.vercel.app).
 
@@ -149,4 +149,4 @@ A `v<versionName>` tag starts the prerelease workflow: it checks the Gradle vers
 
 ## License and attribution
 
-Licensed under the [GNU Affero General Public License, version 3](LICENSE). The lyrics renderer is adapted from [Spicy Lyrics](https://github.com/Spikerko/spicy-lyrics), source fetching and blends from [mild-lyrics](https://github.com/gcoolL/mild-lyrics), with more from other open-source projects. Lyrics come from Spicy Lyrics, [LRCLIB](https://lrclib.net), the [AMLL TTML DB](https://github.com/amll-dev/amll-ttml-db) (CC0), [Unison](https://unison.boidu.dev) (ODbL), [LRCMux](https://lrcmux.dev), [lrc.red](https://lrc.red) and [BiniLyrics](https://lyrics.binimum.org), plus any sources you switch on. [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) lists everything with licenses.
+Licensed under the [GNU Affero General Public License, version 3](LICENSE). The lyrics renderer is adapted from [Spicy Lyrics](https://github.com/Spikerko/spicy-lyrics), source fetching and blends from [mild-lyrics](https://github.com/gcoolL/mild-lyrics), with more from other open-source projects. Lyrics come from Spicy Lyrics, [LRCLIB](https://lrclib.net), the [AMLL TTML DB](https://github.com/amll-dev/amll-ttml-db) (CC0), [Unison](https://unison.boidu.dev) (ODbL), [LRCMux](https://lrcmux.dev) and [lrc.red](https://lrc.red), plus any sources you switch on. [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) lists everything with licenses.

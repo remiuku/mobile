@@ -75,27 +75,25 @@ class ProviderTextTest {
         assertEquals(listOf("ka", "sa"), line.words.map { it.romanizedText })
     }
 
-    @Test fun lrcRedTellsAppleMusicFromItsOwnSyncs() {
-        // Apple Music's TTML always carries leadingSilence (e.g. Anti-Hero, USUG12205736).
+    @Test fun lrcRedTellsAppleMusicFromItsModelSyncs() {
+        // Apple's own word sync with no leadingSilence (Bohemian Rhapsody, GBUM71029604): Apple Music's.
         val apple = """<tt xmlns="http://www.w3.org/ns/ttml" xmlns:lrc="http://lrc.red/lyric-ttml-internal" lrc:timing="Word">""" +
-            """<head><metadata><sourceMetadata xmlns="http://lrc.red/lyric-ttml-internal" leadingSilence="0.480"/></metadata></head>""" +
-            """<body><div><p begin="1.0" end="2.0" ttm:agent="v1"><span begin="1.0" end="2.0">Hi</span></p></div></body></tt>"""
-        // lrc.red's own syncs have no leadingSilence and no agents, and full timestamps (e.g. Music Baby, QM24S2507040).
-        val ai = """<tt xmlns="http://www.w3.org/ns/ttml" xmlns:lrc="http://lrc.red/lyric-ttml-internal" lrc:timing="Word">""" +
             """<head><metadata><sourceMetadata xmlns="http://lrc.red/lyric-ttml-internal"/></metadata></head>""" +
-            """<body><div><p begin="00:00:14.138" end="00:00:15.000"><span begin="00:00:14.138" end="00:00:15.000">Hi</span></p></div></body></tt>"""
-        assertEquals("Apple Music", LrcRedLyricsProvider.originOf(apple))
-        assertEquals(LyricsOrigins.LRC_RED_AI_NAME, LrcRedLyricsProvider.originOf(ai))
-        // Told apart on the TTML as served: the rename to Apple's names keeps the mark.
-        assertEquals("Apple Music", LrcRedLyricsProvider.originOf(LrcRedLyricsProvider.appleTtml(apple)))
+            """<body><div lrc:songPart="Verse"><p begin="1.0" end="2.0" ttm:agent="v1"><span begin="1.0" end="2.0">Mama</span></p></div></body></tt>"""
+        fun song(fields: String) = Gson().fromJson("""{"id":"GBUM71029604","level":"word",$fields}""", JsonObject::class.java)
+        fun source(ttml: String) = "\"source\":${Gson().toJson(ttml)}"
 
-        // BiniLyrics serves lrc.red's TTML: labelled the same way, with Apple's names put back.
-        val bini = lrcRedPayload(ProviderResult.Hit(RemoteLyricsPayload(ttmlLyrics = ai))) as ProviderResult.Hit
-        assertEquals(LyricsAttribution("BiniLyrics", originName = LyricsOrigins.LRC_RED_AI_NAME), bini.payload.attribution)
-        assertTrue(bini.payload.ttmlLyrics!!.contains("itunes:timing"))
-        val biniApple = lrcRedPayload(ProviderResult.Hit(RemoteLyricsPayload(ttmlLyrics = apple))) as ProviderResult.Hit
-        assertEquals("Apple Music", biniApple.payload.attribution?.originName)
-        assertEquals(ProviderResult.Miss, lrcRedPayload(ProviderResult.Miss))
+        val hand = LrcRedLyricsProvider.songPayload(song(source(apple)))!!
+        assertEquals(LyricsAttribution("lrc.red", originName = "Apple Music"), hand.attribution)
+        assertTrue(hand.ttmlLyrics!!.contains("""itunes:timing="Word""""))
+
+        // The model's sync is marked only in song.json (bloom, QZZ782503620).
+        val model = LrcRedLyricsProvider.songPayload(song("\"byModel\":true," + source(apple)))!!
+        assertEquals(LyricsOrigins.LRC_RED_AI_NAME, model.attribution?.originName)
+
+        // No TTML, no answer.
+        assertEquals(null, LrcRedLyricsProvider.songPayload(song("\"byModel\":false")))
+        assertEquals(null, LrcRedLyricsProvider.songPayload(song(source(""))))
     }
 
     @Test fun spicyLyricsApiErrorsSayWhy() {

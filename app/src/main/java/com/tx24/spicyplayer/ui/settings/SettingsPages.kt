@@ -1422,7 +1422,6 @@ private fun providerNote(origin: LyricsOrigin, provider: String): String? = when
     provider == "rmm_revival" -> "Relays Spicy Lyrics' API by Apple Music ID."
     provider == "spicy_lyrics" && origin.id != LyricsOrigins.SPICY_COMMUNITY -> "Passed on by Spicy Lyrics' API."
     provider == "lrc_red" && origin.id == LyricsOrigins.APPLE_MUSIC -> "Serves Apple Music's lyrics by ISRC."
-    provider == "bini_lyrics" -> "Serves lrc.red's lyrics."
     provider == "lrcmux" -> "Passes on what it finds at ${origin.displayName}."
     else -> null
 }

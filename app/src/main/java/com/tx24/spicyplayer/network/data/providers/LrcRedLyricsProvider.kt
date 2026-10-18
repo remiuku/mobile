@@ -1,6 +1,7 @@
 package com.tx24.spicyplayer.network.data.providers
 
 import com.google.gson.Gson
+import com.google.gson.JsonObject
 import com.tx24.spicyplayer.network.data.*
 import com.tx24.spicyplayer.network.data.spotify.LocalTrackMetadata
 import com.tx24.spicyplayer.network.data.spotify.SpotifyTrackCandidate
@@ -15,8 +16,9 @@ import okhttp3.OkHttpClient
  * lrc.red serves Apple Music's lyrics TTML by ISRC, word, line and unsynced alike, with Apple's
  * `itunes:` names renamed. Its site search (`search.json`) finds the ISRC from title and artist;
  * the hits go through the Spotify matcher, which already refuses other versions of a song.
- * Where Apple Music has no lyrics it serves a sync of its own making instead ([originOf]), so an
- * answer ranks as Apple Music's or as lrc.red's AI syncs.
+ * Some songs carry a word sync from lrc.red's in-house model instead of Apple's lyrics; only the
+ * song's `song.json` says so (`byModel`), so that is what's fetched, with the TTML as its `source`.
+ * An answer ranks as Apple Music's or as lrc.red's AI syncs ([originOf]).
  */
 @Singleton
 class LrcRedLyricsProvider @Inject constructor(private val client: OkHttpClient, private val gson: Gson) : RemoteLyricsProvider {
@@ -44,17 +46,12 @@ class LrcRedLyricsProvider @Inject constructor(private val client: OkHttpClient,
         val match = SpotifyTrackMatcher.resolve(local, candidates) as? SpotifyTrackResolution.Matched
             ?: return@guarded ProviderResult.Miss
         for (isrc in listOf(match.track, *match.alternates.toTypedArray()).map { it.candidate.id }) {
-            val ttml = try {
-                client.text("$BASE/s/$isrc.ttml")
+            val song = try {
+                client.json("$BASE/s/$isrc.song.json", gson)
             } catch (missing: HttpStatusException) {
                 if (missing.code == 404) continue else throw missing
             }
-            if (ttml.isBlank()) continue
-            return@guarded ProviderResult.Hit(RemoteLyricsPayload(
-                ttmlLyrics = appleTtml(ttml),
-                sourceId = descriptor.id,
-                attribution = LyricsAttribution("lrc.red", originName = originOf(ttml)),
-            ))
+            songPayload(song)?.let { return@guarded ProviderResult.Hit(it) }
         }
         ProviderResult.Miss
     }
@@ -64,12 +61,24 @@ class LrcRedLyricsProvider @Inject constructor(private val client: OkHttpClient,
         private val RENAMED_ATTRIBUTE = Regex("""(?<=\s)lrc:(?=[A-Za-z]+=)""")
 
         /**
-         * Whose lyrics lrc.red's [ttml] are: Apple Music's always carry `leadingSilence` on their
-         * metadata (and usually agents); the syncs lrc.red makes itself have neither. Read on the
-         * TTML as served, before [appleTtml] renames anything.
+         * Whose lyrics a song is, by its `byModel` flag. The TTML can't tell: Apple's own word syncs
+         * often lack `leadingSilence` (Bohemian Rhapsody, GBUM71029604) and the model's can lack
+         * part names like a line sync does.
          */
-        internal fun originOf(ttml: String): String =
-            if (ttml.contains("leadingSilence")) "Apple Music" else LyricsOrigins.LRC_RED_AI_NAME
+        internal fun originOf(byModel: Boolean): String =
+            if (byModel) LyricsOrigins.LRC_RED_AI_NAME else "Apple Music"
+
+        /** A `song.json` as lyrics: its TTML (`source`) with Apple's names, labelled by [originOf]. */
+        internal fun songPayload(song: JsonObject): RemoteLyricsPayload? {
+            val ttml = song.get("source")?.takeIf { it.isJsonPrimitive }?.asString
+            if (ttml.isNullOrBlank()) return null
+            val byModel = song.get("byModel")?.takeIf { it.isJsonPrimitive }?.asBoolean == true
+            return RemoteLyricsPayload(
+                ttmlLyrics = appleTtml(ttml),
+                sourceId = RemoteLyricsSource.LRC_RED_ID,
+                attribution = LyricsAttribution("lrc.red", originName = originOf(byModel)),
+            )
+        }
 
         /** Puts back Apple's names (`itunes:timing`, `itunes:key`, `iTunesMetadata`) the parser reads. */
         internal fun appleTtml(ttml: String): String = ttml

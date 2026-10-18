@@ -47,7 +47,7 @@ object LyricsOrigins {
     const val GENIUS = "genius"
     const val YOUTUBE = "youtube"
 
-    /** The origin name lrc.red and BiniLyrics give the syncs lrc.red makes itself. */
+    /** The origin name lrc.red gives the syncs its in-house model makes. */
     const val LRC_RED_AI_NAME = "lrc.red AI"
 
     // Any source may give unsynced lyrics now and then, so each can have them switched off.
@@ -57,7 +57,6 @@ object LyricsOrigins {
     private const val SPICY = RemoteLyricsSource.SPICY_ID
     private const val RMM = "rmm_revival"
     private const val LRC_RED = RemoteLyricsSource.LRC_RED_ID
-    private const val BINI = "bini_lyrics"
     private const val LRCMUX = RemoteLyricsSource.LRCMUX_ID
 
     /**
@@ -75,7 +74,7 @@ object LyricsOrigins {
         LyricsOrigin(SPICY_COMMUNITY, "Spicy Lyrics community", listOf(SPICY, RMM), ALL_TYPES,
             RemoteLyricsSource.SPICY_OWN_ORIGINS, credit = "Spicy Lyrics"),
         LyricsOrigin(AMLL, "AMLL TTML DB", listOf(AMLL), ALL_TYPES),
-        LyricsOrigin(APPLE_MUSIC, "Apple Music", listOf(SPICY, RMM, LRC_RED, BINI), ALL_TYPES, setOf("Apple Music")),
+        LyricsOrigin(APPLE_MUSIC, "Apple Music", listOf(SPICY, RMM, LRC_RED), ALL_TYPES, setOf("Apple Music")),
         LyricsOrigin(UNISON, "Unison", listOf(UNISON), ALL_TYPES),
         // Spotify's lyrics are Musixmatch's, and line synced at best.
         LyricsOrigin(SPOTIFY, "Spotify (Musixmatch)", listOf(SPICY, RMM), LINE_PLAIN, setOf("Spotify"), credit = "Musixmatch"),
@@ -84,7 +83,7 @@ object LyricsOrigins {
         LyricsOrigin(QQ_MUSIC, "QQ Music", blendsTimedBy(QQ_MUSIC) + QQ_MUSIC, ALL_TYPES),
         LyricsOrigin(KUWO, "Kuwo", listOf(KUWO), LINE_PLAIN),
         LyricsOrigin(LRCLIB, "LRCLIB", listOf(LRCLIB, LRCMUX), LINE_PLAIN, setOf("LRCLIB")),
-        LyricsOrigin(LRC_RED_AI, "lrc.red AI syncs", listOf(LRC_RED, BINI), ALL_TYPES, setOf(LRC_RED_AI_NAME), credit = "lrc.red (AI sync)"),
+        LyricsOrigin(LRC_RED_AI, "lrc.red AI syncs", listOf(LRC_RED), ALL_TYPES, setOf(LRC_RED_AI_NAME), credit = "lrc.red (AI sync)"),
         LyricsOrigin(GENIUS, "Genius", listOf(GENIUS, LRCMUX), listOf(RemoteLyricsQuality.PLAIN), setOf("Genius")),
         LyricsOrigin(YOUTUBE, "YouTube", listOf("youtube_transcript", LRCMUX), LINE_PLAIN, setOf("YouTube Music")),
     )

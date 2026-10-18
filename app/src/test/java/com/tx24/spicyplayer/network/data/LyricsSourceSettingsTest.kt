@@ -73,7 +73,7 @@ class LyricsSourceSettingsTest {
         // Opt-in providers stay off; the old defaults stay on.
         val ranking = SourceRanking(providers, policy)
         assertFalse(ranking.asked("kugou"))
-        assertTrue(ranking.asked("bini_lyrics"))
+        assertTrue(ranking.asked("lrc_red"))
     }
 
     @Test
