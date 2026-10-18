@@ -49,7 +49,9 @@ object LyricsBlends {
     /**
      * Builds [blend] from what the walk already holds. [above] is every
      * usable answer ranked above the blend, in rank order; the best of them by timing is the base,
-     * [fallbackBase] only where none of them has any lyrics.
+     * [fallbackBase] only where none of them has any lyrics. [modelBase] is lrc.red's model sync of
+     * the song, if it has one: where nothing above is Apple Music's own, it stands in as Apple's
+     * lines, first among equals, with only its line starts kept ([BlendDocuments.startsOnly]).
      */
     internal fun build(
         blend: LyricsBlendDefinition,
@@ -57,12 +59,19 @@ object LyricsBlends {
         above: List<Pair<LyricsSourceDescriptor, RemoteLyricsPayload>>,
         fallbackBase: Pair<LyricsSourceDescriptor, RemoteLyricsPayload>?,
         donors: Map<String, RemoteLyricsPayload?>,
+        modelBase: Pair<LyricsSourceDescriptor, RemoteLyricsPayload>? = null,
         nameOf: (String) -> String,
     ): ProviderResult {
-        val picks = above.mapNotNull { (source, payload) ->
+        val ranked = above.mapNotNull { (source, payload) ->
             BlendDocuments.from(payload)?.let { Base(source, payload, it) }
         }.filter { BlendText.quality(it.doc) != BlendQuality.NONE }
-            .sortedByDescending { BlendText.quality(it.doc).rank }
+        val model = modelBase?.takeIf { ranked.none { it.payload.attribution?.originName == APPLE_MUSIC } }
+            ?.let { (source, payload) ->
+                BlendDocuments.from(payload)?.let(BlendDocuments::startsOnly)?.let {
+                    Base(source, payload.copy(attribution = payload.attribution?.copy(originName = APPLE_MUSIC)), it)
+                }
+            }
+        val picks = (listOfNotNull(model) + ranked).sortedByDescending { BlendText.quality(it.doc).rank }
         val base = picks.firstOrNull()
             ?: fallbackBase?.let { (source, payload) -> BlendDocuments.from(payload)?.let { Base(source, payload, it) } }
             ?: return ProviderResult.Miss
@@ -93,4 +102,6 @@ object LyricsBlends {
     }
 
     private class Base(val source: LyricsSourceDescriptor, val payload: RemoteLyricsPayload, val doc: BlendDoc)
+
+    private const val APPLE_MUSIC = "Apple Music"
 }

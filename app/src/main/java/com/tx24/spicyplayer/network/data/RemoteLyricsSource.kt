@@ -181,10 +181,14 @@ class RemoteLyricsSource @Inject constructor(
                 val fallbackBase = fallback?.takeIf { usable.isEmpty() && counted(it) != RemoteLyricsQuality.NONE }
                     ?.let { id -> hits(id)?.let { descriptors.getValue(id) to it } }
                 val donors = blend.donorIds.associateWith(hits)
+                // lrc.red's model sync ranks below the blends, so it is never among the bases above.
+                val modelBase = LRC_RED_ID.takeIf { it in askedIds && it !in above }?.let(hits)
+                    ?.takeIf { it.attribution?.originName == LyricsOrigins.LRC_RED_AI_NAME }
+                    ?.let { descriptors.getValue(LRC_RED_ID) to it }
                 val names = descriptors.mapValues { it.value.displayName }
                 jobs[blend.id] = launch(Dispatchers.Default) {
                     val result = try {
-                        LyricsBlends.build(blend, request, bases, fallbackBase, donors) { id -> names[id] ?: id }
+                        LyricsBlends.build(blend, request, bases, fallbackBase, donors, modelBase) { id -> names[id] ?: id }
                     } catch (cancelled: CancellationException) {
                         throw cancelled
                     } catch (error: Exception) {

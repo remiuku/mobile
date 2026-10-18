@@ -76,6 +76,44 @@ class LyricsBlendsTest {
         assertEquals(ProviderAttemptOutcome.SKIPPED, result.attempts.first { it.sourceId == "blend_netease" }.outcome)
     }
 
+    /** lrc.red's model sync of the song: Apple's words, the model's word timing, ends running long. */
+    private val modelTtml = donorTtml.replace("Ill", "I'll").replace("waters", "water's")
+        .let { ttml -> Regex("""end="([\d.]+)s"""").replace(ttml) { m -> "end=\"${t(m.groupValues[1].toDouble() + 2.0)}\"" } }
+
+    @Test
+    fun `lrc dot red's model sync stands in as Apple's lines where nothing above is Apple's`() {
+        val model = RemoteLyricsPayload(ttmlLyrics = modelTtml, attribution = LyricsAttribution("lrc.red", originName = LyricsOrigins.LRC_RED_AI_NAME))
+        val lrcRed = LyricsSourceDescriptor(RemoteLyricsSource.LRC_RED_ID, "lrc.red", 45, setOf(LyricsCapability.WORD_SYNC))
+        val result = LyricsBlends.build(
+            LyricsBlends.byId("blend_netease")!!, request, above = emptyList(), fallbackBase = null,
+            donors = mapOf("netease" to RemoteLyricsPayload(ttmlLyrics = donorTtml)), modelBase = lrcRed to model,
+        ) { if (it == "netease") "NetEase" else it } as ProviderResult.Hit
+        assertEquals("Apple Music + NetEase", result.payload.attribution?.originName)
+        val leads = TtmlLyricsParser.parse(result.payload.ttmlLyrics!!.byteInputStream()).lines.filter { it.role == LineRole.LEAD }
+        assertEquals(lines.size, leads.size)
+        assertEquals("I'll carry you, I'll carry you home", leads[3].words.joinToString(" ") { it.text })
+
+        // An Apple Music answer above keeps its own lines: the model isn't asked to stand in.
+        val apple = RemoteLyricsPayload(syncedLyrics = baseLrc.replace("Somewhere the lanterns glow", "Somewhere a lantern glows"), attribution = LyricsAttribution("Spicy Lyrics", originName = "Apple Music"))
+        val spicy = LyricsSourceDescriptor("spicy", "Spicy", 1, setOf(LyricsCapability.LINE_SYNC))
+        val kept = LyricsBlends.build(
+            LyricsBlends.byId("blend_netease")!!, request, above = listOf(spicy to apple), fallbackBase = null,
+            donors = mapOf("netease" to RemoteLyricsPayload(ttmlLyrics = donorTtml)), modelBase = lrcRed to model,
+        ) { if (it == "netease") "NetEase" else it } as ProviderResult.Hit
+        val keptLines = TtmlLyricsParser.parse(kept.payload.ttmlLyrics!!.byteInputStream()).lines.map { l -> l.words.joinToString(" ") { it.text } }
+        assertTrue(keptLines.toString(), "Somewhere a lantern glows" in keptLines)
+    }
+
+    @Test
+    fun `a model sync as a base keeps its line starts and ends each at the next`() {
+        val doc = com.tx24.spicyplayer.network.data.blend.BlendDocuments.fromTtml(modelTtml)!!
+        val starts = com.tx24.spicyplayer.network.data.blend.BlendDocuments.startsOnly(doc)!!
+        assertEquals(lines, starts.lines.map { it.text })
+        assertTrue(starts.lines.all { it.lead == null })
+        assertEquals(15.12, starts.lines[0].end!!, 1e-9)
+        assertEquals(starts.lines.last().start!! + 6.0, starts.lines.last().end!!, 1e-9)
+    }
+
     /** The NetEase blend switched on in NetEase, below the base. */
     private val blendOn = RemoteLyricsPolicy(
         sourceOrder = listOf("spicy", LyricsOrigins.NETEASE, LyricsOrigins.LRCLIB),

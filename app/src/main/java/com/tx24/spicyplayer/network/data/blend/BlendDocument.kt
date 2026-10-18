@@ -55,6 +55,24 @@ internal object BlendDocuments {
         return payload.plainLyrics?.let(::fromPlain)
     }
 
+    /**
+     * lrc.red's model sync as Apple's lines and their starts, each ended at the next start (at most
+     * ten seconds on), the last six seconds on, as LRC lines are (`_starts_only`). The model's line
+     * starts and Apple's words are good; its word timing and line ends run well off.
+     */
+    fun startsOnly(doc: BlendDoc): BlendDoc? {
+        val rows = doc.lines.mapNotNull { line ->
+            val text = BlendText.lineText(line)
+            val start = BlendText.lineStart(line)
+            if (text.isEmpty() || start == null) null else start to text
+        }.sortedWith(compareBy<Pair<Double, String>> { it.first }.thenBy { it.second })
+        if (rows.isEmpty()) return null
+        return BlendDoc(rows.mapIndexed { i, (start, text) ->
+            val next = rows.getOrNull(i + 1)?.first
+            BlendLine(text, start, if (next != null) minOf(next, start + 10.0) else start + 6.0)
+        }, doc.songwriters)
+    }
+
     fun fromTtml(ttml: String): BlendDoc? {
         val parsed = TtmlLyricsParser.parse(ttml.byteInputStream())
         if (parsed.lines.isEmpty()) return null
