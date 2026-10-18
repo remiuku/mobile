@@ -1,5 +1,6 @@
 package com.tx24.spicyplayer.network.data
 
+import com.tx24.spicyplayer.network.data.blend.LyricsFurniture
 import com.tx24.spicyplayer.network.model.NetworkErrorException
 import com.tx24.spicyplayer.network.model.NotFoundException
 import java.time.Instant
@@ -367,7 +368,10 @@ class RemoteLyricsSource @Inject constructor(
         // A note saying the song has no words ("纯音乐，请欣赏") is no answer: other sources may have them.
         // Synced text without real timing is plain text, and ranks as such.
         provider.fetch(request).let { result ->
-            val hit = (result as? ProviderResult.Hit)?.let { it.copy(payload = it.payload.withoutFakeTiming()) } ?: return@let result
+            val hit = (result as? ProviderResult.Hit)?.let { it.copy(payload = it.payload.withoutFakeTiming()) }
+                // The Chinese catalogues write lines nobody sings into their lyrics: credits, headers, translations.
+                ?.let { if (provider.descriptor.id in FURNISHED) it.copy(payload = LyricsFurniture.clean(it.payload, request.title, request.artist)) else it }
+                ?: return@let result
             if (hit.payload.isEmpty() || hit.payload.isNoWordsNote()) ProviderResult.Miss else hit
         }
     } catch (cancelled: CancellationException) {
@@ -429,6 +433,8 @@ class RemoteLyricsSource @Inject constructor(
         const val RMM_ID = "rmm_revival"
         const val LRC_RED_ID = "lrc_red"
         const val LRCMUX_ID = "lrcmux"
+        /** Whose answers [LyricsFurniture] tidies. */
+        private val FURNISHED = setOf("qq_music", "kugou", "kuwo", "netease")
         /** Origin names (SpicyLyricsProvider.spicyOriginName) for Spicy Lyrics' own syncs. */
         val SPICY_OWN_ORIGINS = setOf("Spicy Lyrics", "Spicy Lyrics Community")
 

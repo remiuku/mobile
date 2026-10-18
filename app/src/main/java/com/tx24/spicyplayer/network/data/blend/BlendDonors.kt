@@ -9,7 +9,8 @@ import com.tx24.spicyplayer.network.data.blend.BlendText.lineText
  * "word timing" is only the line's span divided evenly put back to line level.
  */
 internal object BlendDonors {
-    private val PAIRS = mapOf('(' to ')', '[' to ']', '（' to '）', '「' to '」', '【' to '】')
+    // 「」 quote a word the lead sings; they don't mark a backing vocal.
+    private val PAIRS = mapOf('(' to ')', '[' to ']', '（' to '）', '【' to '】')
     private const val FAKE_EVEN = 0.006
     private const val FAKE_SHOW = 1.2
 
