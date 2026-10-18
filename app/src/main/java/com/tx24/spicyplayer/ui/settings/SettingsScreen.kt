@@ -115,6 +115,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalContext
@@ -458,9 +459,12 @@ private fun PeekButton() {
     val peek = LocalSettingsPeek.current ?: return
     var bounds by remember { mutableStateOf<Rect?>(null) }
     var downAt by remember { mutableLongStateOf(0L) }
+    val haptics by rememberUpdatedState(LocalHapticFeedback.current)
     GlassButton(
         onClick = {},
         contentDescription = "Peek at the lyrics",
+        // The peek starts on the press, so that's where it buzzes; a hold ticks again as it ends.
+        releaseHaptic = false,
         size = 40.dp,
         modifier = Modifier
             .onGloballyPositioned { bounds = it.boundsInRoot() }
@@ -470,12 +474,18 @@ private fun PeekButton() {
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
                     downAt = SystemClock.uptimeMillis()
+                    haptics.performHapticFeedback(HapticFeedbackType.VirtualKey)
                     peek.start(bounds, plate = false)
                     while (true) {
                         val change = awaitPointerEvent(PointerEventPass.Initial).changes.firstOrNull { it.id == down.id } ?: break
                         if (!change.pressed) break
                     }
-                    if (SystemClock.uptimeMillis() - downAt < PEEK_TAP_MS) peek.latched = true else peek.end()
+                    if (SystemClock.uptimeMillis() - downAt < PEEK_TAP_MS) {
+                        peek.latched = true
+                    } else {
+                        haptics.performHapticFeedback(HapticFeedbackType.GestureEnd)
+                        peek.end()
+                    }
                 }
             },
     ) {

@@ -98,6 +98,8 @@ fun GlassButton(
     size: Dp = 42.dp,
     /** Told when a finger goes down (true) and when it lifts or slides off (false), before [onClick]. */
     onPressChange: ((Boolean) -> Unit)? = null,
+    /** Off for a button that gives its own feedback, like one that acts as it's pressed. */
+    releaseHaptic: Boolean = true,
     content: @Composable () -> Unit,
 ) {
     val currentOnPressChange by rememberUpdatedState(onPressChange)
@@ -151,7 +153,7 @@ fun GlassButton(
                     scope.launch { scale.animateTo(1f, tween(280, easing = SpicyMotion.Overshoot)) }
                     if (up != null) {
                         up.consume()
-                        haptics.performHapticFeedback(HapticFeedbackType.VirtualKey)
+                        if (releaseHaptic) haptics.performHapticFeedback(HapticFeedbackType.VirtualKey)
                         currentOnClick()
                     }
                 }
