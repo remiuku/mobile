@@ -86,8 +86,9 @@ class LyricsBlendsTest {
     fun `each blend stands in the source its word timing comes from, the filling ones first`() {
         fun providers(id: String) = LyricsOrigins.BUILT_IN.single { it.id == id }.providerIds
         assertEquals(listOf("blend_kugou", "kugou", "lrcmux"), providers(LyricsOrigins.KUGOU))
-        assertEquals(listOf("blend_netease_kugou", "blend_netease_qq", "blend_netease", "netease"), providers(LyricsOrigins.NETEASE))
+        assertEquals(listOf("blend_netease_kugou", "blend_netease_qq", "blend_netease_kuwo", "blend_netease", "netease"), providers(LyricsOrigins.NETEASE))
         assertEquals(listOf("blend_qq", "qq_music"), providers(LyricsOrigins.QQ_MUSIC))
+        assertEquals(listOf("blend_kuwo", "kuwo"), providers(LyricsOrigins.KUWO))
     }
 
     @Test

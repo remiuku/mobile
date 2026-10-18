@@ -39,6 +39,9 @@ object LyricsBlends {
         LyricsBlendDefinition("blend_netease", "Blend: NetEase timing", "netease"),
         LyricsBlendDefinition("blend_netease_qq", "Blend: NetEase timing, QQ Music fill", "netease", "qq_music"),
         LyricsBlendDefinition("blend_netease_kugou", "Blend: NetEase timing, Kugou fill", "netease", "kugou"),
+        // Kuwo's word timing is mostly QQ Music's own numbers: more coverage, not a second opinion.
+        LyricsBlendDefinition("blend_kuwo", "Blend: Kuwo timing", "kuwo"),
+        LyricsBlendDefinition("blend_netease_kuwo", "Blend: NetEase timing, Kuwo fill", "netease", "kuwo"),
     )
 
     fun byId(id: String): LyricsBlendDefinition? = ALL.firstOrNull { it.id == id }

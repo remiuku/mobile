@@ -19,7 +19,8 @@ import org.junit.Test
 /**
  * Asks every source the app uses for a few well-known songs in different languages and prints
  * what each answered. Fails when a source answered none of them. Live network, so it skips
- * unless `RUN_ALL_SOURCES_TEST=1`; run it with `--info` to see the table.
+ * unless `RUN_ALL_SOURCES_TEST=1`; run it with `--info` to see the table. `ALL_SOURCES_ONLY` (ids,
+ * comma-separated) narrows it to some sources.
  */
 class AllSourcesLiveCheckTest {
     @Test
@@ -30,7 +31,9 @@ class AllSourcesLiveCheckTest {
             .readTimeout(12, TimeUnit.SECONDS)
             .build()
         val key = System.getenv("SPICY_LYRICS_CLIENT_KEY") ?: BuildConfig.SPICY_LYRICS_CLIENT_KEY
-        val providers = NextLyricsBackend.createProviders(client, Gson(), key)
+        // ALL_SOURCES_ONLY=kuwo,lrc_red asks just those.
+        val only = System.getenv("ALL_SOURCES_ONLY")?.split(',')?.map(String::trim)?.filter(String::isNotEmpty).orEmpty()
+        val providers = NextLyricsBackend.createProviders(client, Gson(), key).filter { only.isEmpty() || it.descriptor.id in only }
 
         val rows = providers.map { provider ->
             async {

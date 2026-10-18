@@ -67,7 +67,7 @@ object LyricsOrigins {
         .sortedBy { blend -> blend.spareSourceId?.let(FILLERS::indexOf) ?: FILLERS.size }
         .map { it.id }
 
-    private val FILLERS = listOf("kugou", "netease", "qq_music")
+    private val FILLERS = listOf("kugou", "netease", "qq_music", "kuwo")
 
     /** Every built-in source, in the order a fresh install has them. */
     val BUILT_IN: List<LyricsOrigin> = listOf(
@@ -81,7 +81,7 @@ object LyricsOrigins {
         LyricsOrigin(KUGOU, "KuGou", blendsTimedBy(KUGOU) + KUGOU + LRCMUX, ALL_TYPES, setOf("KuGou")),
         LyricsOrigin(NETEASE, "NetEase", blendsTimedBy(NETEASE) + NETEASE, ALL_TYPES),
         LyricsOrigin(QQ_MUSIC, "QQ Music", blendsTimedBy(QQ_MUSIC) + QQ_MUSIC, ALL_TYPES),
-        LyricsOrigin(KUWO, "Kuwo", listOf(KUWO), LINE_PLAIN),
+        LyricsOrigin(KUWO, "Kuwo", blendsTimedBy(KUWO) + KUWO, ALL_TYPES),
         LyricsOrigin(LRCLIB, "LRCLIB", listOf(LRCLIB, LRCMUX), LINE_PLAIN, setOf("LRCLIB")),
         LyricsOrigin(LRC_RED_AI, "lrc.red AI syncs", listOf(LRC_RED), ALL_TYPES, setOf(LRC_RED_AI_NAME), credit = "lrc.red (AI sync)"),
         LyricsOrigin(GENIUS, "Genius", listOf(GENIUS, LRCMUX), listOf(RemoteLyricsQuality.PLAIN), setOf("Genius")),

@@ -55,19 +55,26 @@ class QqMusicLyricsProvider @Inject constructor(private val client:OkHttpClient,
 
 @Singleton
 class KuwoLyricsProvider @Inject constructor(private val client:OkHttpClient):RemoteLyricsProvider{
- override val descriptor=LyricsSourceDescriptor("kuwo","Kuwo",130,setOf(LyricsCapability.LINE_SYNC),releaseChannel=SourceReleaseChannel.EXTENDED,defaultEnabled=false)
+ override val descriptor=LyricsSourceDescriptor("kuwo","Kuwo",130,setOf(LyricsCapability.WORD_SYNC,LyricsCapability.LINE_SYNC),releaseChannel=SourceReleaseChannel.EXTENDED,defaultEnabled=false)
  override suspend fun fetch(request:LyricsLookupRequest):ProviderResult { return try{
   val url="https://search.kuwo.cn/r.s".toHttpUrl().newBuilder().addQueryParameter("all","${request.artist} ${request.title}").addQueryParameter("ft","music").addQueryParameter("client","kt").addQueryParameter("cluster","0").addQueryParameter("pn","0").addQueryParameter("rn","8").addQueryParameter("rformat","json").addQueryParameter("encoding","utf8")
    // Without these the search leaves out licensed originals and returns only covers and remixes.
    .addQueryParameter("vipver","1").addQueryParameter("strategy","2012").addQueryParameter("mobi","1").addQueryParameter("issubtitle","1").addQueryParameter("show_copyright_off","1").build()
-  for(song in kuwoSearchResults(getBytes(url).toString(Charsets.UTF_8))){
-   if(SpotifyTrackMatcher.normalize(song.title)!=SpotifyTrackMatcher.normalize(request.title)||!SpotifyTrackMatcher.normalize(song.artist).contains(SpotifyTrackMatcher.normalize(request.artist)))continue
-   if(!request.lengthMatches(song.durationSeconds))continue
-   val query=Base64.getEncoder().encodeToString("user=12345,web,web,web&requester=localhost&req=1&rid=${song.rid}".toByteArray().mapIndexed{i,b->(b.toInt() xor "yeelion".encodeToByteArray()[i%7].toInt()).toByte()}.toByteArray())
+  var fallback:ProviderResult.Hit?=null
+  val matched=kuwoSearchResults(getBytes(url).toString(Charsets.UTF_8)).filter{song->
+   SpotifyTrackMatcher.normalize(song.title)==SpotifyTrackMatcher.normalize(request.title)&&SpotifyTrackMatcher.normalize(song.artist).contains(SpotifyTrackMatcher.normalize(request.artist))&&
+    request.lengthMatches(song.durationSeconds)&&(!KuwoLyrics.CUT.containsMatchIn(song.title)||KuwoLyrics.CUT.containsMatchIn(request.title))
+  }
+  // Up to three copies: the first word-timed one, else the first that has lyrics at all.
+  for(song in matched.take(KuwoLyrics.TRIES)){
+   val query=Base64.getEncoder().encodeToString(KuwoLyrics.xor("user=12345,web,web,web&requester=localhost&req=1&rid=${song.rid}&lrcx=1".toByteArray()))
    val bytes=getBytes("https://newlyric.kuwo.cn/newlyric.lrc?$query".toHttpUrl());val split=bytes.indexOfSequence("\r\n\r\n".toByteArray());if(split<0)continue
-   val lrc=decodeKuwoLrc(InflaterInputStream(ByteArrayInputStream(bytes.copyOfRange(split+4,bytes.size))).readBytes())
-   if(lrc.isNotBlank())return ProviderResult.Hit(RemoteLyricsPayload(syncedLyrics=lrc))
-  };ProviderResult.Miss
+   if(!bytes.copyOfRange(0,split).toString(Charsets.US_ASCII).startsWith("tp=content"))continue
+   val text=KuwoLyrics.text(InflaterInputStream(ByteArrayInputStream(bytes.copyOfRange(split+4,bytes.size))).readBytes())
+   KuwoLyrics.krc(text)?.let(KrcCodec::toTtml)?.let{return ProviderResult.Hit(RemoteLyricsPayload(ttmlLyrics=it))}
+   val lrc=KuwoLyrics.lrc(text)
+   if(lrc.isNotBlank()&&fallback==null)fallback=ProviderResult.Hit(RemoteLyricsPayload(syncedLyrics=lrc))
+  };fallback?:ProviderResult.Miss
  }catch(c:CancellationException){throw c}catch(e:ProviderHttpException){e.unavailable()}catch(e:IOException){ProviderResult.Unavailable(ProviderFailureCategory.NETWORK,e.message,true)}catch(e:Exception){ProviderResult.Unavailable(ProviderFailureCategory.MALFORMED_RESPONSE,e.message)} }
  private suspend fun getBytes(url:okhttp3.HttpUrl):ByteArray=client.newCall(Request.Builder().url(url).header("Referer","https://www.kuwo.cn/").get().build()).awaitResponse().use{r->if(!r.isSuccessful)throw ProviderHttpException("Kuwo",r.code);r.body?.bytes() ?: byteArrayOf()}
  private fun ByteArray.indexOfSequence(needle:ByteArray):Int{outer@for(i in 0..size-needle.size){for(j in needle.indices)if(this[i+j]!=needle[j])continue@outer;return i};return -1}
@@ -96,10 +103,60 @@ internal fun kuwoSearchResults(raw: String): List<KuwoSong> {
     }.orEmpty()
 }
 
-/** Kuwo's LRC is GB18030 (with its byte-order mark), not UTF-8; its own tag lines are dropped. */
-internal fun decodeKuwoLrc(bytes: ByteArray): String = String(bytes, charset("GB18030"))
-    .removePrefix("\uFEFF")
-    .lineSequence()
-    .map { it.trimEnd('\r') }
-    .filterNot { it.startsWith("[kuwo:") || it.startsWith("[ml:") }
-    .joinToString("\n")
+/**
+ * Kuwo's lyrics as asked for with `lrcx=1`: word-timed LRCX where it has it. The inflated body is
+ * the text itself, or base64 of it XORed with the request key; either way GB18030.
+ */
+internal object KuwoLyrics {
+    const val TRIES = 3
+    /** Kuwo's own version markers (backing track, excerpt, live, cover, ringtone, DJ edit, preview). */
+    val CUT = Regex("伴奏|片段|现场|翻唱|铃声|DJ版|试听")
+    private val KEY = "yeelion".encodeToByteArray()
+    private val TOKEN = Regex("<(-?\\d+),(-?\\d+)>([^<]*)")
+    private val LINE = Regex("^\\[(\\d+):(\\d+)(?:\\.(\\d+))?]")
+    /** "Translation by …" notes that open some machine-translated lyrics. */
+    private val NOTE = Regex("歌词翻译由.{0,24}提供")
+
+    fun xor(raw: ByteArray): ByteArray = ByteArray(raw.size) { i -> (raw[i].toInt() xor KEY[i % KEY.size].toInt()).toByte() }
+
+    fun text(inflated: ByteArray): String {
+        val plain = if (inflated.dropWhile { it.toInt().toChar().isWhitespace() }.firstOrNull() == '['.code.toByte()) inflated
+        else xor(Base64.getDecoder().decode(String(inflated, Charsets.US_ASCII).trim()))
+        return String(plain, charset("GB18030")).removePrefix("\uFEFF")
+    }
+
+    /**
+     * LRCX rewritten as KRC (`[start,length]<offset,length,0>word`), or null without word timing.
+     * With k the `[kuwo:]` value read as octal, a word starts |a+b| / 2(k / 10) ms into its line
+     * and lasts |a−b| / 2(k % 10) ms. Lines whose words are all `<0,0>` are translations.
+     */
+    fun krc(text: String): String? {
+        if (!TOKEN.containsMatchIn(text)) return null
+        val k = Regex("\\[kuwo:(\\d+)]").find(text)?.groupValues?.get(1)?.toIntOrNull(8) ?: return null
+        val k1 = k / 10
+        val k2 = k % 10
+        if (k1 == 0 || k2 == 0) return null
+        val out = text.lineSequence().mapNotNull { raw ->
+            val m = LINE.find(raw.trimEnd('\r')) ?: return@mapNotNull null
+            val tokens = TOKEN.findAll(raw.substring(m.range.last + 1)).map { it.groupValues }.toList()
+            if (tokens.isEmpty() || tokens.all { it[1] == "0" && it[2] == "0" }) return@mapNotNull null
+            val at = (m.groupValues[1].toLong() * 60 + m.groupValues[2].toLong()) * 1000 + m.groupValues[3].padEnd(3, '0').take(3).toLong()
+            val syls = tokens.map { (_, a, b, w) ->
+                val x = a.toLong()
+                val y = b.toLong()
+                Triple(Math.floorDiv(kotlin.math.abs(x + y), 2L * k1), Math.floorDiv(kotlin.math.abs(x - y), 2L * k2), w)
+            }
+            "[$at,${syls.maxOf { it.first + it.second }}]" + syls.joinToString("") { (o, d, w) -> "<$o,$d,0>$w" }
+        }.toList()
+        return out.joinToString("\n").takeIf { out.isNotEmpty() }
+    }
+
+    /** The text as plain LRC: Kuwo's own tag lines and translation notes dropped. */
+    fun lrc(text: String): String = text.lineSequence()
+        .map { it.trimEnd('\r') }
+        .filterNot { it.startsWith("[kuwo:") || it.startsWith("[ml:") || NOTE.containsMatchIn(it) }
+        .joinToString("\n")
+}
+
+/** Kuwo's plain LRC (asked without `lrcx`): GB18030 with a byte-order mark, its own tag lines dropped. */
+internal fun decodeKuwoLrc(bytes: ByteArray): String = KuwoLyrics.lrc(String(bytes, charset("GB18030")).removePrefix("\uFEFF"))
