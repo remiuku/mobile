@@ -165,7 +165,7 @@ internal fun measureFooterRows(
             line.kind == FooterLine.Kind.NOTE -> Triple(0.35f, 0.65f, 0.3f)
             else -> Triple(0.34f, 1f, 0.2f)
         }
-        val fontSp = creditBaseSp * size * CREDIT_SCALE * (if (refined) 1.35f else 1f)
+        val fontSp = creditBaseSp * size * CREDIT_SCALE * (if (refined) 1.17f else 1f)
         if (refined && line.kind == FooterLine.Kind.COMMUNITY) {
             return@mapIndexed measureFlowRow(
                 line, textMeasurer, fontSp, density, maxWidthPx,
