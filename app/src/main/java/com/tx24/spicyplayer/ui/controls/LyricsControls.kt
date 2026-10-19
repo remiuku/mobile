@@ -137,6 +137,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.tx24.spicyplayer.ui.nowplaying.CreditMarquee
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.text.style.TextOverflow
 import com.tx24.spicyplayer.lyrics.spicy.canvas.LyricsLayoutCalculator
@@ -643,7 +644,7 @@ fun CoverControls(
                 Spacer(Modifier.weight(1f))
                 PlaybackRow(controls, shuffle, repeat, Modifier, skipWidth = coverSkipWidth(side, shuffle, repeat), fillSlots = true, dropEmptySides = true)
                 Spacer(Modifier.weight(1f))
-                Timeline(controls, shown, Modifier)
+                Timeline(controls, shown, Modifier, showCredit = false)
             }
         }
         // With the timeline under the cover, the transport sits in the cover's middle.
@@ -744,7 +745,7 @@ fun StageControls(
                 ) {
                     metadata()
                     // No spacer: the bar's touch height already stands it 11dp clear of the artists.
-                    Timeline(controls, { 1f }, Modifier)
+                    Timeline(controls, { 1f }, Modifier, showCredit = false)
                 }
                 Spacer(Modifier.height(side * STAGE_GAP))
                 Box {
@@ -1078,11 +1079,12 @@ private val TimeStyle = TextStyle(
  * seeking along the drag would make the lyrics jump about. Elapsed and total time sit underneath.
  */
 @Composable
-private fun Timeline(controls: PlaybackControlsState, shown: () -> Float, modifier: Modifier) = TimelineRow(controls, shown, modifier)
+private fun Timeline(controls: PlaybackControlsState, shown: () -> Float, modifier: Modifier, showCredit: Boolean = true) =
+    TimelineRow(controls, shown, modifier, showCredit = showCredit)
 
 /** The controls' timeline on its own, for a dock that shows it while the controls are hidden. */
 @Composable
-internal fun DockTimeline(controls: PlaybackControlsState, modifier: Modifier = Modifier) = TimelineRow(controls, { 1f }, modifier, showCredit = false)
+internal fun DockTimeline(controls: PlaybackControlsState, modifier: Modifier = Modifier) = TimelineRow(controls, { 1f }, modifier)
 
 /**
  * The landscape panel's timeline under the cover, between the cover and the song (`.Header >
@@ -1210,18 +1212,18 @@ private fun TimelineRow(controls: PlaybackControlsState, shown: () -> Float, mod
     if (beside == null) {
         Column(modifier.fillMaxWidth()) {
             Bar(Modifier.fillMaxWidth())
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Text(elapsedText, style = TimeStyle, maxLines = 1)
+                // The source sits between the two times, on their line.
+                controls.credit?.takeIf { showCredit }?.let { credit ->
+                    CreditMarquee(
+                        credit,
+                        TimeStyle.copy(fontSize = 11.sp),
+                        SpicyPalette.Neutral.TextSecondary.copy(alpha = 0.8f),
+                        Modifier.weight(1f).padding(horizontal = 10.dp),
+                    )
+                }
                 Text(formatClock(duration), style = TimeStyle, maxLines = 1)
-            }
-            controls.credit?.takeIf { showCredit }?.let { credit ->
-                Text(
-                    credit,
-                    style = TimeStyle.copy(fontSize = 11.sp, textAlign = TextAlign.Center),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.fillMaxWidth().padding(top = 2.dp).alpha(0.8f),
-                )
             }
         }
     } else {

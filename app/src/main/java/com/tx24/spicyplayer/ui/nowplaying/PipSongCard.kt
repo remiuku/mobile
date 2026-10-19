@@ -166,19 +166,13 @@ internal fun PipDock(
                 drawRoundRect(Color.White.copy(alpha = 0.25f), cornerRadius = radius)
                 drawRoundRect(Color.White.copy(alpha = 0.9f), size = size.copy(width = size.width * progress), cornerRadius = radius)
             }
-            Row(Modifier.fillMaxWidth().padding(top = 3.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+            Row(Modifier.fillMaxWidth().padding(top = 3.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 val timeStyle = SpicyType.Caption.copy(fontSize = (sp * 0.6f).sp, color = SpicyColors.TextSecondary, fontWeight = FontWeight.Medium)
                 Text(clock(now), style = timeStyle)
+                credit?.let {
+                    CreditMarquee(it, timeStyle, SpicyColors.TextSecondary, Modifier.weight(1f).padding(horizontal = 6.dp))
+                }
                 if (durationMs > 0) Text(clock(durationMs), style = timeStyle)
-            }
-            credit?.let {
-                Text(
-                    it,
-                    style = SpicyType.Caption.copy(fontSize = (sp * 0.6f).sp, color = SpicyColors.TextSecondary, textAlign = TextAlign.Center),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
-                )
             }
         }
     }

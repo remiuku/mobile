@@ -549,6 +549,14 @@ internal fun MarqueeLine(
     }
 }
 
+/** A short credit line that sits centred when it fits and scrolls like the header's names when it doesn't. */
+@Composable
+internal fun CreditMarquee(text: String, style: TextStyle, color: Color, modifier: Modifier = Modifier) {
+    BoxWithConstraints(modifier, contentAlignment = Alignment.Center) {
+        MarqueeLine(text, style, color, constraints.maxWidth.toFloat(), padStart = 0f, padEndPx = 0f)
+    }
+}
+
 /**
  * The cover, with its change animation: the new cover slides in from the right casting a
  * shadow to its left, while the old one gets a masked 12px blur; after 1.1 s the new cover

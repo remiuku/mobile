@@ -204,6 +204,8 @@ fun LyricsView(
         val centerYUpdated by rememberUpdatedState(centerY)
         val alignTopUpdated by rememberUpdatedState(alignTop)
         val canvasHeightUpdated by rememberUpdatedState(canvasHeight)
+        // The lyrics fade out over the last 64dp; credits brought into view stay clear of it.
+        val bottomFadeUpdated by rememberUpdatedState(canvasHeight * (1f - lyricsMaskStops(canvasHeight, density.density * maskScale).innerBottom))
         LaunchedEffect(centerY, alignTop) { wake.trySend(Unit) }
         val footerMetrics = remember(canvasWidth, density.density, fontSizeScale, lyricsType) {
             LyricsLayoutMetrics(canvasWidth, density.density, lyricsType, fontSizeScale)
@@ -291,6 +293,8 @@ fun LyricsView(
         if (lineLayouts.isEmpty()) return@BoxWithConstraints
 
         var animStates by remember { mutableStateOf<List<LineAnimState>>(emptyList()) }
+        // Where the credits start: under the last line as it stands, a folded background line taking no room.
+        var footerStart by remember { mutableStateOf(Float.NaN) }
         // Refined Credits stay dim until the last line has been sung.
         var footerDim by remember { mutableStateOf(1f) }
         var dynamicYOffsets by remember { mutableStateOf(FloatArray(0)) }
@@ -435,6 +439,11 @@ fun LyricsView(
                         if (!newDynamicYOffsets.contentEquals(dynamicYOffsets)) {
                             dynamicYOffsets = newDynamicYOffsets.copyOf()
                         }
+                        currentLayouts.lastOrNull()?.let { last ->
+                            val start = if (last.isBackground) last.yOffset + last.height + accumulatedY
+                                else newDynamicYOffsets[currentLayouts.lastIndex] + last.height
+                            if (start != footerStart) footerStart = start
+                        }
 
                         // 2. Resolve the lead/background overlap policy, then anchor
                         // that one line: its centre at the focus point, or its top (compact mode).
@@ -466,7 +475,7 @@ fun LyricsView(
                         if (!isStatic && aimed != null && lastLine != null && footerHeightUpdated > 0f &&
                             currentTime >= (currentLines.maxOfOrNull { it.endMs } ?: Long.MAX_VALUE)) {
                             val contentBottom = lastLine.yOffset + lastLine.height + accumulatedY + footerHeightUpdated
-                            val reachable = canvasHeightUpdated - maskBottomUpdated() - lineGapUpdated / 2f - centerYUpdated - contentBottom
+                            val reachable = canvasHeightUpdated - maskBottomUpdated() - bottomFadeUpdated - centerYUpdated - contentBottom
                             if (aimed > reachable) targetY = maxOf(reachable, aimed - canvasHeightUpdated * 0.4f)
                         }
                         val targetVisiblePx = targetIndex?.let { index ->
@@ -557,7 +566,8 @@ fun LyricsView(
         fun footerRowTops(): List<Float> = footerRowTops(
             footerLayouts,
             lineLayouts.lastOrNull()?.let { layout ->
-                dynamicYOffsets.getOrElse(lineLayouts.lastIndex) { layout.yOffset } + layout.height
+                footerStart.takeIf { !it.isNaN() }
+                    ?: (dynamicYOffsets.getOrElse(lineLayouts.lastIndex) { layout.yOffset } + layout.height)
             } ?: 0f,
         )
 
