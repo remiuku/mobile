@@ -304,6 +304,7 @@ fun LyricsView(
             var stillFrames = 0
             var lastLayouts: List<LineLayout>? = null
             var sweepGeometries: Array<LineSweepGeometry?> = arrayOfNulls(0)
+            var sweepMeasured = BooleanArray(0)
             // The first frame of a document, and the first after a rest, carry no real gap.
             var resumed = true
             var frameIntervalS = nominalFrameIntervalS(hostView.display?.refreshRate)
@@ -335,11 +336,18 @@ fun LyricsView(
 
                     if (currentLayouts.size == currentLines.size && currentLines.isNotEmpty()) {
                         // 1. Step the animator for visual properties (scale, opacity, glow).
-                        if (relaid || sweepGeometries.size != currentLayouts.size) sweepGeometries = arrayOfNulls(currentLayouts.size)
+                        if (relaid || sweepGeometries.size != currentLayouts.size) {
+                            sweepGeometries = arrayOfNulls(currentLayouts.size)
+                            sweepMeasured = BooleanArray(currentLayouts.size)
+                        }
                         val sweeps = sweepGeometries
+                        val measured = sweepMeasured
                         animStates = animator.animate(currentLines, currentTime, deltaTime, scrollManager.hideLineBlur, lyricsType, romanizationLinesUpdated,
                             lineGeometry = if (!refreshedUpdated) null else { index ->
-                                sweeps.getOrNull(index) ?: currentLayouts.getOrNull(index)?.let(::sweepGeometry)?.also { sweeps[index] = it }
+                                if (index !in sweeps.indices) null else {
+                                    if (!measured[index]) { sweeps[index] = currentLayouts.getOrNull(index)?.let(::sweepGeometry); measured[index] = true }
+                                    sweeps[index]
+                                }
                             })
 
                         // 1.5 Calculate dynamic Y offsets based on interlude scales.

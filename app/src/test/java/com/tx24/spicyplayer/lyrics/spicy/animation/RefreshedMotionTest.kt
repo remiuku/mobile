@@ -147,4 +147,47 @@ class RefreshedMotionTest {
         assertEquals(active, animator().animate(lines, 2500, 0.016f).single().wordStates.single())
     }
 
+
+    private val sweepConfig = RenderConfig(true, false, refreshedSimple = true)
+
+    private fun sweepWords(glued: Boolean, geometry: LineSweepGeometry?, time: Long): List<WordAnimState> {
+        val line = Line(listOf(Word("ab", 0, 1000), Word("cd", 1000, 2000, isPartOfWord = glued)), 0, 2000)
+        val anim = LyricsAnimator(CoroutineScope(Job().apply { cancel() }), sweepConfig)
+        return anim.animate(listOf(line), time, 0.016f, lineGeometry = geometry?.let { g -> { _: Int -> g } })
+            .single().wordStates
+    }
+
+    private fun geometry(widths: FloatArray = floatArrayOf(100f, 100f), letters: Array<FloatArray?> = arrayOfNulls(2)) =
+        LineSweepGeometry(widths, 20f, letters, 40f)
+
+    @Test fun theFadeSpillsIntoTheNextWordAsTheFirstOneEnds() {
+        val words = sweepWords(false, geometry(), 999)
+        assertEquals(100f, words[0].gradientPosition, 0.5f)
+        assertTrue(words[1].gradientPosition > -50f && words[1].gradientPosition < 100f)
+    }
+
+    @Test fun gluedPartsHaveNoSpaceBetweenThemForTheEdgeToCross() {
+        val spaced = sweepWords(false, geometry(), 500)[0].gradientPosition
+        val glued = sweepWords(true, geometry(), 500)[0].gradientPosition
+        // The spaced word's box is wider, so the same time carries the edge further along a longer strip.
+        assertTrue(glued > -50f && glued < spaced && spaced < 100f)
+    }
+
+    @Test fun lettersOfAHeldWordFillInOrderAlongTheEdge() {
+        val line = LetterSynthesizer.apply(listOf(Line(listOf(Word("love", 0, 2000)), 0, 2000)), sweepConfig, false)
+        val word = line.single().words.single()
+        val anim = LyricsAnimator(CoroutineScope(Job().apply { cancel() }), sweepConfig)
+        val g = LineSweepGeometry(floatArrayOf(100f), 20f, arrayOf(floatArrayOf(25f, 25f, 25f, 25f)), 40f)
+        val states = anim.animate(line, 1000, 0.016f, lineGeometry = { g }).single().wordStates.single().letterStates
+        assertEquals(word.letters.size, states.size)
+        val positions = states.map { it.gradientPosition }
+        assertTrue(positions.zipWithNext().all { (a, b) -> a >= b })
+        assertTrue(positions.first() > positions.last())
+    }
+
+    @Test fun aGeometryThatDoesNotFitFallsBackToFillingWordByWord() {
+        val words = sweepWords(false, geometry(widths = floatArrayOf(100f)), 500)
+        assertEquals(25f, words[0].gradientPosition, 10f)
+        assertEquals(-50f, words[1].gradientPosition, 0f)
+    }
 }

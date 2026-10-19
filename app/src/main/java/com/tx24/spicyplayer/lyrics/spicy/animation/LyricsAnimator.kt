@@ -838,7 +838,9 @@ class LyricsAnimator(
         val fade = if (fits) geometry!!.fontPx * RefreshedMotion.EDGE_EM else 0f
         if (fits) {
             // The words laid end to end, each box holding the space after it.
-            val box = FloatArray(words.size) { geometry!!.wordWidths[it] + if (it < words.lastIndex) geometry.gap else 0f }
+            val box = FloatArray(words.size) {
+                geometry!!.wordWidths[it] + if (it < words.lastIndex && !words[it + 1].isPartOfWord) geometry.gap else 0f
+            }
             x = FloatArray(words.size)
             var run = 0f
             for (i in words.indices) { x[i] = run; run += box[i] }

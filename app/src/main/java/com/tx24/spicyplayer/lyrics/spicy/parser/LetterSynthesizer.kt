@@ -95,11 +95,11 @@ object LetterSynthesizer {
         if (run.dropLast(1).any { it.text.isNotEmpty() && it.text.last() in DASHES }) return false
         for (i in 1 until run.size) if (run[i].startMs - run[i - 1].endMs > MAX_JOIN_GAP_MS) return false
         val total = (run.maxOf { it.endMs } - run.first().startMs).toDouble()
-        val chars = run.sumOf { it.text.length }
+        val chars = run.sumOf { it.text.trimEnd().length }
         if (total <= 0 || chars == 0) return false
         return run.all { part ->
             val timeShare = part.duration / total
-            val charShare = part.text.length.toDouble() / chars
+            val charShare = part.text.trimEnd().length.toDouble() / chars
             timeShare >= charShare / MAX_PACE_RATIO && timeShare <= charShare * MAX_PACE_RATIO
         }
     }
@@ -131,7 +131,7 @@ object LetterSynthesizer {
             )
         }
         return config.lettersEnabled &&
-            word.duration >= config.letterDurationThresholdMs &&
+            word.duration >= (if (config.isRefreshedSimple) 1000L else config.letterDurationThresholdMs) &&
             GraphemeSegmenter.segment(display).size in (if (config.isRefreshedSimple) 2..minOf(7, config.letterMaxLength) else 1..config.letterMaxLength) &&
             !RtlDetector.isRtl(display)
     }
