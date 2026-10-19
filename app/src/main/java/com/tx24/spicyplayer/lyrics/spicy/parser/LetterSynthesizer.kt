@@ -47,7 +47,7 @@ object LetterSynthesizer {
             }
         }
         return runs.flatMap { run ->
-            if (run.size == 1 || !joinsEvenly(run)) return@flatMap run
+            if (run.size == 1 || config.syllableMerge == SyllableMerge.Steady && !joinsEvenly(run)) return@flatMap run
             val first = run.first()
             val merged = first.copy(
                 text = run.joinToString("") { it.text },

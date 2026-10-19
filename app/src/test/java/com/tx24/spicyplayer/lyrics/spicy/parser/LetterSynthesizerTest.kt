@@ -88,7 +88,7 @@ class LetterSynthesizerTest {
     }
 
     private fun mergeRun(vararg parts: Word) = LetterSynthesizer.mergeSyllables(
-        parts.toList(), RenderConfig.FULL.copy(syllableMerge = SyllableMerge.Full), false,
+        parts.toList(), RenderConfig.FULL.copy(syllableMerge = SyllableMerge.Steady), false,
     ).map { it.text }
 
     @Test
@@ -107,5 +107,14 @@ class LetterSynthesizerTest {
     fun `a space inside a part keeps the word split`() {
         assertEquals(listOf("a b", "c"), mergeRun(Word("a b", 0, 300), Word("c", 300, 600, isPartOfWord = true)))
         assertEquals(listOf("ab", "c"), mergeRun(Word("ab", 0, 300, romanizedText = "a b"), Word("c", 300, 600, isPartOfWord = true)))
+    }
+
+    @Test
+    fun `full still merges across a gap`() {
+        val merged = LetterSynthesizer.mergeSyllables(
+            listOf(Word("sun", 0, 300), Word("set", 450, 750, isPartOfWord = true)),
+            RenderConfig.FULL.copy(syllableMerge = SyllableMerge.Full), false,
+        )
+        assertEquals(listOf("sunset"), merged.map { it.text })
     }
 }

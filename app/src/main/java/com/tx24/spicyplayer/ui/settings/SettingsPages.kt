@@ -366,7 +366,7 @@ internal fun LyricsContent(state: PlayerUiState, viewModel: ExternalPlaybackView
     MoreOptions("Merge syllables, duet padding, credits, blur and glow") {
         SettingRow(
             label = "Merge syllables",
-            description = "Draw a word split into syllables as one word when its parts are sung steadily. Held words only merges the words that are then long enough for the held-word letter effect.",
+            description = "Draw a word split into syllables as one word. Steadily sung words only merges the words whose parts have no gap and keep an even pace. Held words only merges the words that are then long enough for the held-word letter effect.",
             icon = Icons.Rounded.CallMerge,
         ) {
             SpicySelect(

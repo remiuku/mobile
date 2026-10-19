@@ -3,8 +3,10 @@ package com.tx24.spicyplayer.lyrics.spicy
 /** Whether a word's syllables are drawn as one word, filling evenly from its first syllable to its last. */
 enum class SyllableMerge(val label: String) {
     Off("Off"),
-    /** Every split word that is sung steadily, with no gap or space between its parts. */
+    /** Every split word. */
     Full("Full"),
+    /** Every split word whose parts are sung steadily: no gap or space between them, none much faster or slower. */
+    Steady("Steadily sung words"),
     /** Only words long enough, merged, for the held-word letter emphasis. */
     Held("Held words only"),
 }
