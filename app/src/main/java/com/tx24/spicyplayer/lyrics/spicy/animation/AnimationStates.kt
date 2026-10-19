@@ -59,3 +59,14 @@ data class LineAnimState(
  * Possible states for a lyric element (word, line, or dot).
  */
 enum class ElementState { NotSung, Active, Sung }
+
+/**
+ * A line's measured sizes in px, for Refreshed Simple's single fill edge: each word's text width,
+ * the [gap] after every word but the last, each held word's letters, and the text's font size.
+ */
+class LineSweepGeometry(
+    val wordWidths: FloatArray,
+    val gap: Float,
+    val letterWidths: Array<FloatArray?>,
+    val fontPx: Float,
+)

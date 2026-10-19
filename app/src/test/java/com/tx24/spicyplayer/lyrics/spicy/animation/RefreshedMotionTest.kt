@@ -10,50 +10,84 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class RefreshedMotionTest {
-    @Test fun curveRisesInSequenceAndSettlesBehindThePeak() {
-        assertEquals(0f, RefreshedMotion.curve(-150.0, 4000, 0, 7).rise, 0f)
-        val half = RefreshedMotion.curve(350.0, 4000, 0, 7)
-        assertEquals(0.5f, half.rise, 1e-6f)
-        assertEquals(0f, RefreshedMotion.curve(350.0, 4000, 2, 7).rise, 0f)
-        val peak = RefreshedMotion.curve(850.0, 4000, 0, 7)
-        assertEquals(1f, peak.lift, 1e-6f)
-        assertEquals(1f, peak.scale, 1e-6f)
-        val settled = RefreshedMotion.curve(4000.0, 4000, 0, 7)
-        assertEquals(0.780027f, settled.lift, 1e-5f)
-        assertEquals(0.400074f, settled.scale, 1e-5f)
-        // Short words use the 600ms minimum rise; long words use the 1000ms maximum.
-        assertEquals(0.5f, RefreshedMotion.curve(150.0, 1050, 0, 4).rise, 1e-6f)
+    @Test fun emphasisRisesAndFallsBackToRest() {
+        assertEquals(0f, RefreshedMotion.emphasis(0.0), 0f)
+        assertEquals(1f, RefreshedMotion.emphasis(0.5), 1e-4f)
+        assertEquals(0f, RefreshedMotion.emphasis(1.0), 0f)
+        assertTrue(RefreshedMotion.emphasis(0.25) in 0.1f..0.99f)
     }
 
-    @Test fun releaseHoldsOvershootsAndEndsExactly() {
-        assertEquals(0f, RefreshedMotion.release(100.0), 0f)
-        assertTrue(RefreshedMotion.release(900.0) > 1f)
-        assertEquals(1f, RefreshedMotion.release(1600.0), 0f)
-        assertEquals(1f, RefreshedMotion.release(10000.0), 0f)
+    @Test fun lettersSetOffInSequenceAndSpreadFromTheMiddle() {
+        val strength = RefreshedMotion.waveStrength(2000, false)
+        // Letter 0 is under way before letter 4 has started.
+        val t = 400.0
+        val first = RefreshedMotion.letter(t, 0, 0, 5, strength, false, 1f)
+        val last = RefreshedMotion.letter(t, 0, 4, 5, strength, false, 1f)
+        assertTrue(first.scale > last.scale)
+        // At the peak the left letters move left and the right ones right.
+        val peak = strength.duration / 2
+        val left = RefreshedMotion.letter(peak, 0, 0, 5, strength, false, 1f)
+        val right = RefreshedMotion.letter(peak + strength.duration * 0.4 * 4 / 5, 0, 4, 5, strength, false, 1f)
+        assertTrue(left.x < 0f && right.x > 0f)
+        assertTrue(left.y < 0f)
     }
 
-    @Test fun flameHasAHeadSustainAndSharedFade() {
-        val starts = listOf(0L, 1000L, 2000L, 3000L)
-        val ends = listOf(1000L, 2000L, 3000L, 4000L)
-        val flame = RefreshedMotion.flame(2500.0, starts, ends)
-        assertEquals(2.5, flame.head, 0.0)
-        assertEquals(1f, RefreshedMotion.glow(flame, 2), 0f)
-        assertEquals(0.6f, RefreshedMotion.glow(flame, 0), 1e-5f)
-        assertTrue(RefreshedMotion.glow(flame, 3) < 0.3f)
-        assertEquals(0.185f, RefreshedMotion.glowRadius(1f), 1e-6f)
-        assertEquals(0.1f, RefreshedMotion.glowRadius(0f), 0f)
-        assertEquals(0.5, RefreshedMotion.flame(4350.0, starts, ends).heat, 1e-6)
-        assertEquals(0.0, RefreshedMotion.flame(4700.0, starts, ends).heat, 0.0)
-        assertEquals(0.75, RefreshedMotion.flame(400.0, starts, ends).heat, 0.0)
+    @Test fun letterGlowDimsWithTheFill() {
+        val strength = RefreshedMotion.waveStrength(3000, false)
+        val lit = RefreshedMotion.letter(1500.0, 0, 0, 4, strength, false, 1f).glow
+        val dim = RefreshedMotion.letter(1500.0, 0, 0, 4, strength, false, 0f).glow
+        assertEquals(0.4f, dim / lit, 1e-4f)
+    }
+
+    @Test fun backgroundFloatIsTwiceTheHeight() {
+        val strength = RefreshedMotion.waveStrength(1000, false)
+        // Before the swell starts only the float is moving the letter.
+        val lead = RefreshedMotion.letter(-200.0, 0, 0, 4, strength, false, 0f)
+        val bg = RefreshedMotion.letter(-200.0, 0, 0, 4, strength, true, 0f)
+        assertEquals(lead.y * 2f, bg.y, 1e-6f)
     }
 
     @Test fun durationStrengthAndLastWordBoost() {
-        assertEquals(0.92f, RefreshedMotion.waveStrength(1000, false).motion, 0f)
-        assertEquals(0.5f, RefreshedMotion.waveStrength(1000, false).glow, 0f)
-        assertEquals(0.96f, RefreshedMotion.waveStrength(2000, false).motion, 1e-6f)
-        assertEquals(0.75f, RefreshedMotion.waveStrength(2250, false).glow, 1e-6f)
-        assertEquals(1.25f, RefreshedMotion.waveStrength(3500, true).glow, 0f)
-        assertEquals(1.25f, RefreshedMotion.waveStrength(3500, true).motion, 0f)
+        val short = RefreshedMotion.waveStrength(500, false)
+        assertEquals(1000.0, short.duration, 0.0)
+        assertEquals(0.075f, short.amount, 1e-6f)
+        assertEquals(0.5f * (1f / 27f), short.blur, 1e-6f)
+        val last = RefreshedMotion.waveStrength(500, true)
+        assertEquals(short.amount * 1.6f, last.amount, 1e-6f)
+        assertEquals(1200.0, last.duration, 0.0)
+        assertEquals(1.2f, RefreshedMotion.waveStrength(60000, false).amount, 0f)
+        assertEquals(0.8f, RefreshedMotion.waveStrength(60000, false).blur, 0f)
+    }
+
+    @Test fun wordsFloatOnAnEasedTrackAtLeastASecondLong() {
+        assertEquals(0f, RefreshedMotion.wordFloat(0.0, 0, 300), 0f)
+        assertEquals(0.75f, RefreshedMotion.wordFloat(500.0, 0, 300), 1e-6f)
+        assertEquals(1f, RefreshedMotion.wordFloat(1000.0, 0, 300), 0f)
+        assertEquals(0.75f, RefreshedMotion.wordFloat(1000.0, 0, 2000), 1e-6f)
+        assertEquals(0.01f, RefreshedMotion.wordOffset(0f), 0f)
+        assertEquals(-0.033f, RefreshedMotion.wordOffset(1f), 1e-6f)
+    }
+
+    @Test fun oneEdgeRunsAlongTheLineWithoutStoppingBetweenWords() {
+        val x = floatArrayOf(0f, 100f)
+        val box = floatArrayOf(100f, 100f)
+        val starts = longArrayOf(0, 1000)
+        val ends = longArrayOf(1000, 2000)
+        fun edges(t: Double) = RefreshedMotion.sweepEdges(x, box, starts, ends, 20f, t)
+        // Before the line: both fully dim. The first word brings the fade in from before it.
+        assertEquals(-50f, RefreshedMotion.sweepPosition(edges(-1.0)[0], 0f, 90f, 20f), 0f)
+        assertEquals(-10.0, edges(0.001)[0], 0.1)
+        // Midway through the first word the second is still dim; at its end the first is lit
+        // and the edge carries on into the second.
+        assertEquals(-50f, RefreshedMotion.sweepPosition(edges(500.0)[1], 100f, 90f, 20f), 0f)
+        assertEquals(100f, RefreshedMotion.sweepPosition(edges(1000.0)[0], 0f, 90f, 20f), 0f)
+        assertEquals(100.0, edges(1000.0)[0], 0.0)
+        // The last word takes the fade out past the end, so everything finishes fully lit.
+        assertEquals(210.0, edges(2000.0)[1], 0.0)
+        assertEquals(100f, RefreshedMotion.sweepPosition(edges(5000.0)[1], 100f, 90f, 20f), 0f)
+        // A word sung early never lights one still to come; one sung before follows the light.
+        val early = RefreshedMotion.sweepEdges(x, box, longArrayOf(1000, 0), longArrayOf(2000, 500), 20f, 700.0)
+        assertEquals(Double.NEGATIVE_INFINITY, early[0], 0.0)
     }
 
     @Test fun dotsFillInOrderAndBreatheWholeCyclesWithoutBounce() {
@@ -81,17 +115,19 @@ class RefreshedMotionTest {
         val word = split("forever", refreshed)
         assertEquals(21L, word.startMs)
         assertEquals(2040L, word.endMs)
-        assertEquals(1f, RefreshedMotion.release(1600.0), 0f)
     }
 
-    @Test fun wordLiftIsCriticallyDampedAndIndependentOfFrameHistory() {
-        assertEquals(0.01f, RefreshedMotion.wordOffset(0.0, 0, 2000), 0f)
-        val samples = (0..80).map { RefreshedMotion.wordOffset(it * 100.0, 0, 2000) }
-        assertTrue(samples.zipWithNext().all { (a, b) -> a >= b - 1e-6f })
-        assertEquals(-0.033f, samples.last(), 1e-6f)
-        assertEquals(samples[10], RefreshedMotion.wordOffset(1000.0, 0, 2000), 0f)
+    @Test fun refreshedSplitsOnlyWordsOfTwoToSevenLettersHeldASecond() {
+        fun split(text: String, ms: Long) = LetterSynthesizer.apply(
+            listOf(Line(listOf(Word(text, 0, ms)), 0, ms)), RenderConfig(true, false, refreshedSimple = true), false,
+        ).single().words.single().isLetterGroup
+        assertFalse(split("I", 3000))
+        assertTrue(split("oh", 3000))
+        assertTrue(split("love", 1000))
+        assertFalse(split("love", 999))
     }
-    @Test fun animatorKeepsReleaseTailAndReturnsToRestAfterSeekingBack() {
+
+    @Test fun animatorKeepsTheSwellTailAndReturnsToRestAfterSeekingBack() {
         val config = RenderConfig(true, false, refreshedSimple = true)
         val lines = LetterSynthesizer.apply(listOf(Line(listOf(Word("love", 1000, 3000)), 1000, 3000)), config, false)
         fun animator() = LyricsAnimator(CoroutineScope(Job().apply { cancel() }), config)
@@ -101,7 +137,7 @@ class RefreshedMotionTest {
         assertTrue(before.letterStates.all { it.scale == 1f && it.yOffset == 0f && it.glow == 0f })
         val active = word(2500)
         assertTrue(active.letterStates.any { it.scale > 1f && it.glow > 0f })
-        val tail = word(3200)
+        val tail = word(3100)
         assertEquals(ElementState.Sung, tail.state)
         assertTrue(tail.letterStates.any { it.scale > 1f && it.glow > 0f })
         val done = word(5000)

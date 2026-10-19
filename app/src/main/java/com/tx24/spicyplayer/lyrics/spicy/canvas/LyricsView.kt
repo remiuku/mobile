@@ -50,6 +50,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import com.tx24.spicyplayer.lyrics.spicy.RenderConfig
 import com.tx24.spicyplayer.lyrics.spicy.ScrollConfig
 import com.tx24.spicyplayer.lyrics.spicy.animation.LineAnimState
+import com.tx24.spicyplayer.lyrics.spicy.animation.LineSweepGeometry
 import com.tx24.spicyplayer.lyrics.spicy.animation.LyricsAnimator
 import com.tx24.spicyplayer.lyrics.spicy.animation.AppleMusicMotion
 import com.tx24.spicyplayer.lyrics.spicy.models.Line
@@ -302,6 +303,7 @@ fun LyricsView(
             var rippleHeights = FloatArray(0)
             var stillFrames = 0
             var lastLayouts: List<LineLayout>? = null
+            var sweepGeometries: Array<LineSweepGeometry?> = arrayOfNulls(0)
             // The first frame of a document, and the first after a rest, carry no real gap.
             var resumed = true
             var frameIntervalS = nominalFrameIntervalS(hostView.display?.refreshRate)
@@ -333,7 +335,12 @@ fun LyricsView(
 
                     if (currentLayouts.size == currentLines.size && currentLines.isNotEmpty()) {
                         // 1. Step the animator for visual properties (scale, opacity, glow).
-                        animStates = animator.animate(currentLines, currentTime, deltaTime, scrollManager.hideLineBlur, lyricsType, romanizationLinesUpdated)
+                        if (relaid || sweepGeometries.size != currentLayouts.size) sweepGeometries = arrayOfNulls(currentLayouts.size)
+                        val sweeps = sweepGeometries
+                        animStates = animator.animate(currentLines, currentTime, deltaTime, scrollManager.hideLineBlur, lyricsType, romanizationLinesUpdated,
+                            lineGeometry = if (!refreshedUpdated) null else { index ->
+                                sweeps.getOrNull(index) ?: currentLayouts.getOrNull(index)?.let(::sweepGeometry)?.also { sweeps[index] = it }
+                            })
 
                         // 1.5 Calculate dynamic Y offsets based on interlude scales.
                         var accumulatedY = 0f

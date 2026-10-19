@@ -245,6 +245,8 @@ class LyricsAnimator(
         lyricsType: LyricsType = LyricsType.Syllable,
         /** Original word timings for romanization below a whole-line translation replacement. */
         romanizationLines: List<Line>? = null,
+        /** Refreshed Simple: the measured widths of a line's words and letters, for the fill's edge. */
+        lineGeometry: ((Int) -> LineSweepGeometry?)? = null,
     ): List<LineAnimState> {
         if (lines.isEmpty()) return emptyList()
 
@@ -342,17 +344,19 @@ class LyricsAnimator(
                 }
                 cachedLineGradient[lineIdx] = lineGradient
                 cachedLineGlow[lineIdx] = lineGlow
-                wordStates = if (isActive && romanization != null) romanization.words.mapIndexed { wordIdx, word ->
-                    if (config.isRefreshedSimple) refreshedWord(word, processedPosition, wordIdx == romanization.words.lastIndex)
-                    else animateWord(word, processedPosition, deltaTime, lineIdx, wordIdx)
+                wordStates = if (isActive && romanization != null) {
+                    if (config.isRefreshedSimple) refreshedLine(romanization.words, processedPosition, line.isBackground, null)
+                    else romanization.words.mapIndexed { wordIdx, word ->
+                        animateWord(word, processedPosition, deltaTime, lineIdx, wordIdx)
+                    }
                 } else emptyList()
             } else {
                 wordStates = when {
                     config.isRefreshedSimple && !line.isSongwriter -> {
                         if (line.isInterlude) animateInterludeDots(line, processedPosition, deltaTime, lineIdx, finalize = false)
-                        else line.words.mapIndexed { index, word -> refreshedWord(word,
+                        else refreshedLine(line.words,
                             if (lineState == ElementState.NotSung) Double.NEGATIVE_INFINITY else processedPosition,
-                            index == line.words.lastIndex) }
+                            line.isBackground, lineGeometry?.invoke(lineIdx))
                     }
                     line.isSongwriter -> cachedWordStates.getOrPut(lineIdx) {
                         line.words.map { songwriterWordState(it) }
@@ -819,32 +823,55 @@ class LyricsAnimator(
         )
     }
 
-    /** Held letters share a flame and return to their word on a time-based envelope. */
-    private fun refreshedWord(word: Word, t: Double, lastWord: Boolean): WordAnimState {
-        val state = elementState(t, word.startMs, word.endMs)
-        val pct = progress(t, word.startMs, word.endMs)
-        val group = word.isLetterGroup && word.letters.isNotEmpty()
-        val offset = if (state == ElementState.NotSung) 0f else RefreshedMotion.wordOffset(t, word.startMs, word.endMs)
-        val letters = if (!group) emptyList() else {
-            val strength = RefreshedMotion.waveStrength(word.duration, lastWord)
-            val flame = RefreshedMotion.flame(t, word.letters.map { it.startMs }, word.letters.map { it.endMs })
-            val held = 1f - RefreshedMotion.release(t - word.endMs)
-            val wordLift = 0.043f * pct
-            word.letters.mapIndexed { index, letter ->
-                val curve = RefreshedMotion.curve(t - word.startMs, word.duration, index, word.letters.size)
-                val glow = (strength.glow * RefreshedMotion.glow(flame, index)).coerceAtMost(1f)
-                LetterAnimState(
-                    gradientPosition = -50f + 150f * easeSinOut(progress(t, letter.startMs, letter.endMs)),
-                    scale = 1f + RefreshedMotion.SCALE * strength.motion * curve.scale * held,
-                    yOffset = -(RefreshedMotion.LIFT * strength.motion * curve.lift - wordLift) * held / 2f,
-                    glow = glow,
-                    glowRadius = RefreshedMotion.glowRadius(glow),
-                )
-            }
+    /**
+     * A line in Refreshed Simple, computed from time alone. One soft edge runs along the whole
+     * line, so the fill never stops at the end of a word; held words' letters swell, spread,
+     * lift and glow one after another, and no word floats higher than the one before it.
+     */
+    private fun refreshedLine(words: List<Word>, t: Double, background: Boolean, geometry: LineSweepGeometry?): List<WordAnimState> {
+        val fits = geometry != null && geometry.wordWidths.size == words.size && geometry.fontPx > 0f
+        var x = FloatArray(0)
+        var edges = DoubleArray(0)
+        val fade = if (fits) geometry!!.fontPx * RefreshedMotion.EDGE_EM else 0f
+        if (fits) {
+            // The words laid end to end, each box holding the space after it.
+            val box = FloatArray(words.size) { geometry!!.wordWidths[it] + if (it < words.lastIndex) geometry.gap else 0f }
+            x = FloatArray(words.size)
+            var run = 0f
+            for (i in words.indices) { x[i] = run; run += box[i] }
+            edges = RefreshedMotion.sweepEdges(
+                x, box, LongArray(words.size) { words[it].startMs },
+                LongArray(words.size) { words[it].endMs }, fade, t,
+            )
         }
-        return WordAnimState(scale = 1f, yOffset = offset, glow = 0f,
-            gradientPosition = -50f + 150f * pct, state = state,
-            isLetterGroup = group, letterStates = letters)
+        var floatCap = 1f
+        return words.mapIndexed { index, word ->
+            val state = elementState(t, word.startMs, word.endMs)
+            floatCap = minOf(floatCap, RefreshedMotion.wordFloat(t, word.startMs, word.endMs))
+            val width = if (fits) geometry!!.wordWidths[index] else 0f
+            val swept = fits && width > 0f
+            val wordPos = if (swept) RefreshedMotion.sweepPosition(edges[index], x[index], width, fade)
+                else -50f + 150f * progress(t, word.startMs, word.endMs)
+            val group = word.isLetterGroup && word.letters.isNotEmpty()
+            val letters = if (!group) emptyList() else {
+                val strength = RefreshedMotion.waveStrength(word.duration, index == words.lastIndex)
+                val letterWidths = geometry?.letterWidths?.getOrNull(index)?.takeIf { swept && it.size == word.letters.size }
+                var lx = 0f
+                word.letters.mapIndexed { li, letter ->
+                    val position = if (letterWidths != null) {
+                        RefreshedMotion.sweepPosition(edges[index], x[index] + lx, letterWidths[li], fade).also { lx += letterWidths[li] }
+                    } else -50f + 150f * progress(t, letter.startMs, letter.endMs)
+                    val pose = RefreshedMotion.letter(t, word.letters.first().startMs, li, word.letters.size,
+                        strength, background, ((position + 50f) / 150f).coerceIn(0f, 1f))
+                    LetterAnimState(
+                        gradientPosition = position, scale = pose.scale, yOffset = pose.y, xOffset = pose.x,
+                        glow = pose.glow, glowRadius = pose.radius,
+                    )
+                }
+            }
+            WordAnimState(scale = 1f, yOffset = RefreshedMotion.wordOffset(floatCap), glow = 0f,
+                gradientPosition = wordPos, state = state, isLetterGroup = group, letterStates = letters)
+        }
     }
 
     private fun animateLetters(

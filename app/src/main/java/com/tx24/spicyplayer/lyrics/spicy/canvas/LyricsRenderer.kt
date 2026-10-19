@@ -411,7 +411,10 @@ private fun DrawScope.drawSyllabicLetterFragment(
     // Offsets are in lyric font sizes (--DefaultLyricsSize); a letter's is applied ×2.
     val lyricSize = lyricSizePx(wLayout.textLayoutResult, lineAnim.isBackground)
     val boost = if (config.isRefreshedSimple) 1f else config.wordMotionBoost
-    val lYShift = boostedLift(lState.yOffset, boost) * lyricSize * 2f
+    // Refreshed Simple poses are in em of the text itself; the others in lyric sizes, a letter's doubled.
+    val emPx = textSizePx(wLayout.textLayoutResult)
+    val lYShift = if (config.isRefreshedSimple) lState.yOffset * emPx else boostedLift(lState.yOffset, boost) * lyricSize * 2f
+    val lXShift = if (config.isRefreshedSimple) lState.xOffset * emPx else 0f
     val containerYShift = boostedLift(wordAnim.yOffset, boost) * lyricSize
     val wordScale = boostedScale(wordAnim.scale, boost)
     val letterScale = boostedScale(lState.scale, boost)
@@ -444,7 +447,7 @@ private fun DrawScope.drawSyllabicLetterFragment(
         scale(wordScale, wordScale, Offset(wordPivotX, sPivotY))
         translate(top = containerYShift)
         scale(letterScale, letterScale, Offset(sPivotX, sPivotY))
-        translate(top = lYShift)
+        translate(left = lXShift, top = lYShift)
     }) {
         if (paintPlan is LyricPaintPlan.InactiveShadow) drawGlowThenText(
             wLayout.textLayoutResult, Offset(xPos, yPos + scrollOffset), if (config.isRefreshedSimple) lShadow else null,
