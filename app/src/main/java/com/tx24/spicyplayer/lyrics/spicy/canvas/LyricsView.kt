@@ -410,7 +410,7 @@ fun LyricsView(
                                 // Folded background vocals (Apple Music style) give up their room.
                                 // As far as they've got, not where they're headed: the scroll then
                                 // follows the fold as it happens instead of jumping ahead of it.
-                                if (layout.isBackground) settledY -= slotOf(i) * (1f - (state?.presence ?: 1f))
+                                if (layout.isBackground) settledY -= slotOf(i) * (1f - ((if (config.backgroundPop) state?.presenceGoal else state?.presence) ?: 1f))
                             }
 
                             if (layout.isInterlude) {
@@ -581,7 +581,8 @@ fun LyricsView(
                 // Tapping a credit leaves the controls as they are.
                 .keepsControlsHidden(tapsOnly = true) { position ->
                     footerProfileAt(footerLayouts, footerRowTops(), position.y - (centerYUpdated + scrollManager.animScrollY) -
-                        (if (refreshedUpdated) ripple.offset(lineLayouts.size) else 0f)) != null
+                        (if (refreshedUpdated) ripple.offset(lineLayouts.size) else 0f),
+                        position.x, footerSlot.startPx, footerSlot.startPx + footerSlot.widthPx, footerAlignEnd) != null
                 }
                 .pointerInput(isStatic, footerLayouts, shown, ripple) {
                     detectTapGestures { tapOffset ->
@@ -590,7 +591,8 @@ fun LyricsView(
 
                         // A credit with a profile asks the screen to open it.
                         footerProfileAt(footerLayouts, footerRowTops(), adjustedTapY -
-                            (if (refreshedUpdated) ripple.offset(lineLayouts.size) else 0f))?.let { line ->
+                            (if (refreshedUpdated) ripple.offset(lineLayouts.size) else 0f),
+                            tapOffset.x, footerSlot.startPx, footerSlot.startPx + footerSlot.widthPx, footerAlignEnd)?.let { line ->
                             viewState?.requestProfile(line)
                             return@detectTapGestures
                         }

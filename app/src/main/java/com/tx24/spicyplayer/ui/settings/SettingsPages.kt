@@ -49,6 +49,7 @@ import kotlin.math.abs
 import com.tx24.spicyplayer.ui.background.LEGACY_BLUR_DP
 import com.tx24.spicyplayer.ui.components.ChromeTheme
 import androidx.compose.material.icons.rounded.Apps
+import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.Notes
 import androidx.compose.material.icons.rounded.UnfoldMore
 import androidx.compose.material.icons.automirrored.rounded.CallMerge
@@ -391,6 +392,13 @@ internal fun LyricsContent(state: PlayerUiState, viewModel: ExternalPlaybackView
             onCheckedChange = { settings.creditsFollowLastLine = it },
             description = "When a song ends on a duet line sung from the right, move the credits under it to the right too.",
             icon = Icons.Rounded.FormatAlignRight,
+        )
+        ToggleRow(
+            label = "Keep Overlapping Lines",
+            checked = settings.keepOverlappingLines,
+            onCheckedChange = { settings.keepOverlappingLines = it },
+            description = "In Minimal Lyrics Mode, keep a line that ends while one above it is still sung on screen, dimmed, instead of fading it out early.",
+            icon = Icons.Rounded.Layers,
         )
         ToggleRow(
             label = "Background Vocal Pop-Out",

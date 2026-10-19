@@ -65,6 +65,7 @@ class AppSettings(private val prefs: SharedPreferences) {
     var creditsFollowLastLine by boolean("creditsFollowLastLine", false)
     var refinedCredits by boolean("refinedCredits", true)
     var backgroundPop by boolean("backgroundPop", false)
+    var keepOverlappingLines by boolean("keepOverlappingLines", true)
     var syllableMerge by enum("syllableMerge", SyllableMerge.Off)
 
     var scrollLeadEnabled by boolean("scrollLeadEnabled", false)

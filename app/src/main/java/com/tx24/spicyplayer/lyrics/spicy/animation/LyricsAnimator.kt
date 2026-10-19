@@ -310,13 +310,15 @@ class LyricsAnimator(
                 (shouldFinalize(lines, lineIdx, processedPosition) || !isSettled(cachedWordStates[lineIdx]))
             // A sung line that ends while one above it is still being sung (overlapping lines,
             // background vocals) stays on screen, dimmed, instead of fading out early.
-            val afterActive = lineState == ElementState.Sung && !line.isInterlude && firstActive in 0 until lineIdx
+            val keptAfterActive = config.keepOverlappingLines && lineState == ElementState.Sung && !line.isInterlude &&
+                firstActive in 0 until lineIdx
+            val afterActive = keptAfterActive || !config.keepOverlappingLines && states.getOrNull(lineIdx - 1) == ElementState.Active
             val opacity = animateLineOpacity(lineIdx, line, lineState, isActive, lyricsType, minimalLook, allSung, afterActive)
             val lineScale = when {
                 line.isInterlude -> animateInterludeScale(lineIdx, line, processedPosition, isActive)
                 // Mixed.css `.Fullscreen.MinimalLyricsMode .line:not(.musical-line)`.
                 config.isMinimal && !line.isSongwriter -> animateTweenScale(lineIdx, when {
-                    lineState == ElementState.Active || allSung || !minimalLook || afterActive -> 1f
+                    lineState == ElementState.Active || allSung || !minimalLook || keptAfterActive -> 1f
                     lineState == ElementState.Sung -> MINIMAL_SUNG_SCALE
                     else -> MINIMAL_NOT_SUNG_SCALE
                 })
@@ -402,16 +404,17 @@ class LyricsAnimator(
                 }
             }
 
-            val blur = if (!config.distanceBlurEnabled || suppressBlur || isActive || minimalLook && afterActive) 0f
+            val blur = if (!config.distanceBlurEnabled || suppressBlur || isActive || minimalLook && keptAfterActive) 0f
                 else blurAmounts.getOrElse(lineIdx) { 0f }
 
-            val presence = popPresence(lines, states, lineIdx, lyricsType)
+            val (presence, presenceGoal) = popPresence(lines, states, lineIdx, lyricsType)
             val folded = AppleMusicMotion.BACKGROUND_FOLDED_SCALE
             LineAnimState(
                 opacity = if (presence == 1f) opacity else opacity * AppleMusicMotion.backgroundAlpha(presence),
                 blur = blur,
                 scale = if (presence == 1f) lineScale else lineScale * (folded + (1f - folded) * presence),
                 presence = presence,
+                presenceGoal = presenceGoal,
                 groupScale = if (config.isRefreshedSimple && line.isInterlude)
                     RefreshedMotion.dotBreath(processedPosition - line.startMs, line.duration) else 1f,
                 isActive = isActive,
@@ -428,6 +431,8 @@ class LyricsAnimator(
 
     // ── Background Vocal Pop-Out ────────────────────────────────────────────────────
 
+    private val POP_EASING = CubicBezierEasing(0.22f, 1f, 0.36f, 1f)
+
     /** Each background line's lead (same group), or -1; null until worked out for these lines. */
     private var popLeads: IntArray? = null
 
@@ -436,9 +441,9 @@ class LyricsAnimator(
      * until it or its lead is sung, then sliding out, and tucking back in once both are done.
      * 1 for every other line, and whenever the option is off.
      */
-    private fun popPresence(lines: List<Line>, states: List<ElementState>, lineIdx: Int, lyricsType: LyricsType): Float {
+    private fun popPresence(lines: List<Line>, states: List<ElementState>, lineIdx: Int, lyricsType: LyricsType): Pair<Float, Float> {
         val line = lines[lineIdx]
-        if (!config.backgroundPop || !line.isBackground || line.isInterlude || lyricsType == LyricsType.Static) return 1f
+        if (!config.backgroundPop || !line.isBackground || line.isInterlude || lyricsType == LyricsType.Static) return 1f to 1f
         val leads = popLeads ?: IntArray(lines.size) { i ->
             val other = lines[i]
             if (!other.isBackground || other.groupId == null) -1
@@ -450,11 +455,11 @@ class LyricsAnimator(
         val target = if (states[lineIdx] == ElementState.Active || lead >= 0 && states[lead] == ElementState.Active) 1f else 0f
         val anim = presenceAnims.getOrPut(lineIdx) { Animatable(target) }
         if (anim.targetValue != target) {
-            coroutineScope.launch {
-                anim.animateTo(target, spring(dampingRatio = 1f, stiffness = AppleMusicMotion.BACKGROUND_SPRING_STIFFNESS))
-            }
+            // Quick ease-out glides: the scroll aims at the settled layout, so the room opening
+            // up must not lag behind it.
+            coroutineScope.launch { anim.animateTo(target, tween(if (target == 1f) 500 else 300, easing = POP_EASING)) }
         }
-        return anim.value
+        return anim.value to target
     }
 
     // ── The Apple Music style ───────────────────────────────────────────────────────

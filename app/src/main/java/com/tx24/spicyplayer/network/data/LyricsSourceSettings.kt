@@ -117,6 +117,7 @@ object LyricsSourceSettings {
     private val LEGACY_PLACES = mapOf(
         LyricsOrigins.SPICY_COMMUNITY to listOf(RemoteLyricsSource.SPICY_ID),
         LyricsOrigins.APPLE_MUSIC to listOf(LyricsOrigins.APPLE_MUSIC, "bini_lyrics"),
+        LyricsOrigins.UNISON to listOf(LyricsOrigins.UNISON),
         LyricsOrigins.SPOTIFY to listOf(LyricsOrigins.SPOTIFY),
         LyricsOrigins.KUGOU to listOf("kugou"),
         LyricsOrigins.NETEASE to listOf("netease"),

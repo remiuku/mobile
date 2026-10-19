@@ -59,8 +59,10 @@ data class FooterLine(
     /** For [Kind.CONTRIBUTOR]: drawn as "label " then a bold, underlined "@name". */
     val label: String? = null,
     val name: String? = null,
+    /** For [Kind.COMMUNITY]: the people credited, drawn after [text] on one flowing line. */
+    val parts: List<FooterLine> = emptyList(),
 ) {
-    enum class Kind { WRITERS, PROVIDER, NOTE, CONTRIBUTOR }
+    enum class Kind { WRITERS, PROVIDER, NOTE, CONTRIBUTOR, COMMUNITY }
 }
 
 data class LyricsProvenance(

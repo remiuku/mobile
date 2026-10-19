@@ -49,6 +49,8 @@ data class LineAnimState(
     val state: ElementState = ElementState.NotSung,
     /** The Apple Music style's background vocals: how far open (0 folded away and taking no room, 1 open). */
     val presence: Float = 1f,
+    /** Where [presence] is headed; the scroll aims at the layout that leaves. */
+    val presenceGoal: Float = presence,
     /** The Apple Music style: how lit an ended line still is, 1 just ended → 0 back to the unsung colour. */
     val lit: Float = 0f,
     /** Interlude dots: the whole group's breathing, about its middle, on top of [scale]. */

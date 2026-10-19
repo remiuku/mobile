@@ -48,7 +48,7 @@ class SourceDefaultsTest {
         assertEquals(listOf("amll_ttml_db"), providers[LyricsOrigins.AMLL])
         assertEquals(listOf("spicy_lyrics", "rmm_revival", "lrc_red"), providers[LyricsOrigins.APPLE_MUSIC])
         assertEquals(listOf("lrc_red"), providers[LyricsOrigins.LRC_RED_AI])
-        assertEquals(listOf("unison"), providers[LyricsOrigins.UNISON])
+        assertEquals(listOf("unison", "spicy_lyrics", "rmm_revival"), providers[LyricsOrigins.UNISON])
         assertEquals(listOf("spicy_lyrics", "rmm_revival"), providers[LyricsOrigins.SPOTIFY])
         assertEquals(listOf("kugou", "lrcmux"), providers[LyricsOrigins.KUGOU])
         assertEquals(listOf("netease"), providers[LyricsOrigins.NETEASE])

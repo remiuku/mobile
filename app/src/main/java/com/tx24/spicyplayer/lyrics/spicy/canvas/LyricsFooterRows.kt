@@ -116,7 +116,23 @@ internal class FooterRow(
     val height: Float,
     val avatarSize: Float,
     val avatarGap: Float,
+    /** A row of credits and people flowing on one line, in the Refined look; [text] is unused then. */
+    val flow: FooterFlow? = null,
 )
+
+/** The pieces of a [FooterRow.flow], placed from the row's left edge. */
+internal class FooterFlow(val pieces: List<FlowPiece>, val taps: List<FlowTap>, val width: Float)
+
+internal class FlowPiece(
+    val text: TextLayoutResult?,
+    val x: Float,
+    val y: Float,
+    val avatarUrl: String? = null,
+    val avatarSize: Float = 0f,
+)
+
+/** Where a person in a flow can be tapped, relative to the row. */
+internal class FlowTap(val line: FooterLine, val left: Float, val top: Float, val right: Float, val bottom: Float)
 
 /** The synced lyric size L the credits are sized from, whatever the lyrics type. */
 internal fun creditBaseSp(canvasWidth: Float, density: Float, fontSizeScale: Float): Float =
@@ -150,6 +166,13 @@ internal fun measureFooterRows(
             else -> Triple(0.34f, 1f, 0.2f)
         }
         val fontSp = creditBaseSp * size * CREDIT_SCALE
+        if (refined && line.kind == FooterLine.Kind.COMMUNITY) {
+            return@mapIndexed measureFlowRow(
+                line, textMeasurer, fontSp, density, maxWidthPx,
+                marginTop = if (index > 0) lyricPx * margin else if (firstMarginTop) lyricPx * 0.3f else 0f,
+                alignEnd = alignEnd,
+            )
+        }
         val text = if (refined) refinedText(line) else if (line.kind == FooterLine.Kind.CONTRIBUTOR && line.label != null && line.name != null) {
             // "Made by " dimmer, then the bold, underlined "@name" (.song-info-profile-section).
             buildAnnotatedString {
@@ -195,9 +218,22 @@ internal fun measureFooterRows(
  * "Provided by" row goes, and that note reads "Community lyrics".
  */
 internal fun refinedFooterLines(lines: List<FooterLine>): List<FooterLine> {
+    val people = lines.filter { it.kind == FooterLine.Kind.CONTRIBUTOR }
+    if (people.isEmpty()) return lines
     val community = lines.any { it.kind == FooterLine.Kind.NOTE }
-    return lines.filterNot { community && it.kind == FooterLine.Kind.PROVIDER && it.text.startsWith("Provided by") }
-        .map { if (it.kind == FooterLine.Kind.NOTE) it.copy(text = "Community lyrics") else it }
+    val provider = lines.firstOrNull { it.kind == FooterLine.Kind.PROVIDER && it.text.startsWith("Provided by") }
+    val lead = if (community) "Community lyrics" else provider?.text?.replace(": ", " ").orEmpty()
+    val flow = FooterLine(lead, FooterLine.Kind.COMMUNITY, parts = people)
+    var placed = false
+    return buildList {
+        for (line in lines) when {
+            line.kind == FooterLine.Kind.WRITERS -> add(line)
+            line.kind == FooterLine.Kind.NOTE || line.kind == FooterLine.Kind.CONTRIBUTOR || line === provider -> {
+                if (!placed) { add(flow); placed = true }
+            }
+            else -> add(line)
+        }
+    }
 }
 
 /** A credit's text with its label muted and its value (or linked name) a step brighter. */
@@ -224,6 +260,86 @@ private fun refinedText(line: FooterLine): AnnotatedString {
     }
 }
 
+/** "Community lyrics · Made by (avatar) @name · Uploaded by (avatar) @name", wrapping between people. */
+private fun measureFlowRow(
+    line: FooterLine,
+    textMeasurer: TextMeasurer,
+    fontSp: Float,
+    density: Float,
+    maxWidthPx: Float,
+    marginTop: Float,
+    alignEnd: Boolean,
+): FooterRow {
+    val style = TextStyle(
+        fontFamily = LyricsLayoutCalculator.spicyFontFamily,
+        fontSize = fontSp.sp,
+        fontWeight = FontWeight.Medium,
+        textAlign = if (alignEnd) TextAlign.End else TextAlign.Start,
+    )
+    val muted = Color.White.copy(alpha = 0.55f)
+    val bright = Color.White.copy(alpha = 0.7f)
+    fun measure(text: String, color: Color, underline: Boolean = false) = textMeasurer.measure(
+        AnnotatedString(text, SpanStyle(color = color, textDecoration = if (underline) TextDecoration.Underline else null)),
+        style,
+    )
+    val lineHeight = measure("Ag", muted).size.height.toFloat()
+    val avatar = fontSp * density * 1.15f
+    val gap = fontSp * density * 0.3f
+    val dotGap = fontSp * density * 0.45f
+    val dot = measure("·", muted)
+    val pieces = mutableListOf<FlowPiece>()
+    val taps = mutableListOf<FlowTap>()
+    var x = 0f
+    var y = 0f
+    var widest = 0f
+    var first = true
+
+    /** Places one unit whole on the current row, or on the next if it doesn't fit. */
+    fun place(width: (withDot: Boolean) -> Float, add: (x: Float, y: Float, withDot: Boolean) -> Unit) {
+        var withDot = !first
+        if (x > 0f && x + width(withDot) > maxWidthPx) {
+            x = 0f
+            y += lineHeight
+            withDot = false
+        }
+        val before = x
+        add(x, y, withDot)
+        x = before + width(withDot)
+        widest = maxOf(widest, x)
+        first = false
+    }
+    fun dotPiece(at: Float, y: Float) = FlowPiece(dot, at + dotGap, y + (lineHeight - dot.size.height) / 2f)
+    val dotWidth = dot.size.width + dotGap * 2f
+
+    if (line.text.isNotEmpty()) {
+        val lead = measure(line.text, muted)
+        place({ lead.size.width.toFloat() }) { px, py, _ -> pieces += FlowPiece(lead, px, py) }
+    }
+    for (person in line.parts) {
+        val role = measure(person.label.orEmpty(), muted)
+        val name = measure("@${person.name.orEmpty()}", bright, underline = true)
+        val hasAvatar = person.avatarUrl != null
+        fun body() = role.size.width + gap + (if (hasAvatar) avatar + gap else 0f) + name.size.width
+        place({ withDot -> (if (withDot) dotWidth else 0f) + body() }) { px, py, withDot ->
+            var cx = px
+            if (withDot) { pieces += dotPiece(cx, py); cx += dotWidth }
+            val left = cx
+            pieces += FlowPiece(role, cx, py)
+            cx += role.size.width + gap
+            if (hasAvatar) {
+                pieces += FlowPiece(null, cx, py + (lineHeight - avatar) / 2f, person.avatarUrl, avatar)
+                cx += avatar + gap
+            }
+            pieces += FlowPiece(name, cx, py)
+            if (person.profileUrl != null) taps += FlowTap(person, left, py, cx + name.size.width, py + lineHeight)
+        }
+    }
+    return FooterRow(
+        line, measure("", muted), 1f, marginTop, y + lineHeight, 0f, 0f,
+        flow = FooterFlow(pieces, taps, widest),
+    )
+}
+
 /** Where each row starts, the first one [startY] down. */
 internal fun footerRowTops(rows: List<FooterRow>, startY: Float): List<Float> {
     var y = startY
@@ -244,6 +360,26 @@ internal fun DrawScope.drawFooterRows(
     dim: Float = 1f,
 ) {
     rows.zip(tops).forEach { (row, y) ->
+        val flow = row.flow
+        if (flow != null) {
+            val left = if (alignEnd) endX - flow.width else startX
+            for (piece in flow.pieces) {
+                piece.text?.let { drawText(it, color = Color.White, alpha = dim, topLeft = Offset(left + piece.x, y + piece.y)) }
+                piece.avatarUrl?.let { avatars[it] }?.let { avatar ->
+                    val ax = left + piece.x
+                    val ay = y + piece.y
+                    clipPath(Path().apply { addOval(Rect(ax, ay, ax + piece.avatarSize, ay + piece.avatarSize)) }) {
+                        drawImage(
+                            avatar,
+                            alpha = dim,
+                            dstOffset = IntOffset(ax.roundToInt(), ay.roundToInt()),
+                            dstSize = IntSize(piece.avatarSize.roundToInt(), piece.avatarSize.roundToInt()),
+                        )
+                    }
+                }
+            }
+            return@forEach
+        }
         val avatarWidth = if (row.line.avatarUrl != null) row.avatarGap + row.avatarSize else 0f
         val x = if (alignEnd) endX - row.text.size.width - avatarWidth else startX
         val textHeight = row.text.size.height.toFloat()
@@ -270,9 +406,29 @@ internal fun DrawScope.drawFooterRows(
 }
 
 /** The row at [y] with a profile to open, if any. */
-internal fun footerProfileAt(rows: List<FooterRow>, tops: List<Float>, y: Float): FooterLine? =
-    rows.zip(tops).firstOrNull { (row, top) -> row.line.profileUrl != null && y in top..(top + row.height) }
-        ?.first?.line
+internal fun footerProfileAt(
+    rows: List<FooterRow>,
+    tops: List<Float>,
+    y: Float,
+    x: Float = Float.NaN,
+    startX: Float = 0f,
+    endX: Float = 0f,
+    alignEnd: Boolean = false,
+): FooterLine? {
+    for ((row, top) in rows.zip(tops)) {
+        if (y !in top..(top + row.height)) continue
+        val flow = row.flow
+        if (flow == null) {
+            if (row.line.profileUrl != null) return row.line
+            continue
+        }
+        if (x.isNaN()) continue
+        val left = if (alignEnd) endX - flow.width else startX
+        flow.taps.firstOrNull { x in (left + it.left - 8f)..(left + it.right + 8f) && y in (top + it.top)..(top + it.bottom) }
+            ?.let { return it.line }
+    }
+    return null
+}
 
 @Composable
 internal fun rememberFooterAvatars(lines: List<FooterLine>): Map<String, ImageBitmap> {
@@ -324,9 +480,13 @@ fun PinnedLyricsFooter(
                 .height(with(LocalDensity.current) { height.toDp() })
                 .then(
                     if (!tappable) Modifier else Modifier
-                        .keepsControlsHidden(tapsOnly = true) { footerProfileAt(rows, tops, it.y) != null }
+                        .keepsControlsHidden(tapsOnly = true) {
+                            footerProfileAt(rows, tops, it.y, it.x, slot.startPx, slot.startPx + slot.widthPx, alignEnd) != null
+                        }
                         .pointerInput(rows) {
-                            detectTapGestures { tap -> footerProfileAt(rows, tops, tap.y)?.let(state::requestProfile) }
+                            detectTapGestures { tap ->
+                                footerProfileAt(rows, tops, tap.y, tap.x, slot.startPx, slot.startPx + slot.widthPx, alignEnd)?.let(state::requestProfile)
+                            }
                         },
                 ),
         ) {

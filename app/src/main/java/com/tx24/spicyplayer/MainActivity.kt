@@ -691,6 +691,7 @@ private fun LyricsApp(
         creditsFollowLastLine = settings.creditsFollowLastLine,
         refinedCredits = settings.refinedCredits,
         backgroundPop = settings.backgroundPop && !appleMusicStyle,
+        keepOverlappingLines = settings.keepOverlappingLines,
         syllableMerge = settings.syllableMerge,
         distanceBlurEnabled = settings.distanceBlur && !lowPerformance,
         glowEnabled = settings.glow && !lowPerformance,

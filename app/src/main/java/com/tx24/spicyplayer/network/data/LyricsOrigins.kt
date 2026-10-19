@@ -75,7 +75,7 @@ object LyricsOrigins {
             RemoteLyricsSource.SPICY_OWN_ORIGINS, credit = "Spicy Lyrics"),
         LyricsOrigin(AMLL, "AMLL TTML DB", listOf(AMLL), ALL_TYPES),
         LyricsOrigin(APPLE_MUSIC, "Apple Music", listOf(SPICY, RMM, LRC_RED), ALL_TYPES, setOf("Apple Music")),
-        LyricsOrigin(UNISON, "Unison", listOf(UNISON), ALL_TYPES),
+        LyricsOrigin(UNISON, "Unison", listOf(UNISON, SPICY, RMM), ALL_TYPES, setOf("Unison")),
         // Spotify's lyrics are Musixmatch's, and line synced at best.
         LyricsOrigin(SPOTIFY, "Spotify (Musixmatch)", listOf(SPICY, RMM), LINE_PLAIN, setOf("Spotify"), credit = "Musixmatch"),
         LyricsOrigin(KUGOU, "KuGou", blendsTimedBy(KUGOU) + KUGOU + LRCMUX, ALL_TYPES, setOf("KuGou")),
