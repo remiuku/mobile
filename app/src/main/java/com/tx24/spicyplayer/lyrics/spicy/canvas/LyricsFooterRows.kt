@@ -433,7 +433,7 @@ internal fun footerProfileAt(
 @Composable
 internal fun rememberFooterAvatars(lines: List<FooterLine>): Map<String, ImageBitmap> {
     val context = LocalContext.current
-    val urls = remember(lines) { lines.mapNotNull(FooterLine::avatarUrl).distinct() }
+    val urls = remember(lines) { lines.flatMap { it.parts + it }.mapNotNull(FooterLine::avatarUrl).distinct() }
     val avatars by produceState(emptyMap<String, ImageBitmap>(), urls) {
         value = urls.mapNotNull { url -> loadAvatar(context, url)?.let { url to it } }.toMap()
     }
