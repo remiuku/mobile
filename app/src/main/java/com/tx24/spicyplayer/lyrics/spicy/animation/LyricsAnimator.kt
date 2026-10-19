@@ -226,6 +226,8 @@ class LyricsAnimator(
         cachedLineGradient.clear()
         cachedLineGlow.clear()
         appleFinalStates.clear()
+        presenceAnims.clear()
+        popLeads = null
         appleOrdinalsFor = null
         blurringLastLine = -1
         blurAmounts = FloatArray(0)
@@ -269,6 +271,8 @@ class LyricsAnimator(
             wordSpringsMap.clear()
             letterSpringsMap.clear()
             dotSpringsMap.clear()
+            presenceAnims.clear()
+            popLeads = null
         }
 
         val processedPosition = currentTimeMs.toDouble() -
@@ -401,10 +405,13 @@ class LyricsAnimator(
             val blur = if (!config.distanceBlurEnabled || suppressBlur || isActive || minimalLook && afterActive) 0f
                 else blurAmounts.getOrElse(lineIdx) { 0f }
 
+            val presence = popPresence(lines, states, lineIdx, lyricsType)
+            val folded = AppleMusicMotion.BACKGROUND_FOLDED_SCALE
             LineAnimState(
-                opacity = opacity,
+                opacity = if (presence == 1f) opacity else opacity * AppleMusicMotion.backgroundAlpha(presence),
                 blur = blur,
-                scale = lineScale,
+                scale = if (presence == 1f) lineScale else lineScale * (folded + (1f - folded) * presence),
+                presence = presence,
                 groupScale = if (config.isRefreshedSimple && line.isInterlude)
                     RefreshedMotion.dotBreath(processedPosition - line.startMs, line.duration) else 1f,
                 isActive = isActive,
@@ -417,6 +424,37 @@ class LyricsAnimator(
                 state = lineState,
             )
         }
+    }
+
+    // ── Background Vocal Pop-Out ────────────────────────────────────────────────────
+
+    /** Each background line's lead (same group), or -1; null until worked out for these lines. */
+    private var popLeads: IntArray? = null
+
+    /**
+     * How far open a background line is under Background Vocal Pop-Out: closed (taking no room)
+     * until it or its lead is sung, then sliding out, and tucking back in once both are done.
+     * 1 for every other line, and whenever the option is off.
+     */
+    private fun popPresence(lines: List<Line>, states: List<ElementState>, lineIdx: Int, lyricsType: LyricsType): Float {
+        val line = lines[lineIdx]
+        if (!config.backgroundPop || !line.isBackground || line.isInterlude || lyricsType == LyricsType.Static) return 1f
+        val leads = popLeads ?: IntArray(lines.size) { i ->
+            val other = lines[i]
+            if (!other.isBackground || other.groupId == null) -1
+            else lines.indices.firstOrNull { j ->
+                lines[j].groupId == other.groupId && !lines[j].isBackground && !lines[j].isInterlude
+            } ?: -1
+        }.also { popLeads = it }
+        val lead = leads[lineIdx]
+        val target = if (states[lineIdx] == ElementState.Active || lead >= 0 && states[lead] == ElementState.Active) 1f else 0f
+        val anim = presenceAnims.getOrPut(lineIdx) { Animatable(target) }
+        if (anim.targetValue != target) {
+            coroutineScope.launch {
+                anim.animateTo(target, spring(dampingRatio = 1f, stiffness = AppleMusicMotion.BACKGROUND_SPRING_STIFFNESS))
+            }
+        }
+        return anim.value
     }
 
     // ── The Apple Music style ───────────────────────────────────────────────────────

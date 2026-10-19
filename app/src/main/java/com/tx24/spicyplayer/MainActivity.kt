@@ -690,6 +690,7 @@ private fun LyricsApp(
         wideDuetPadding = settings.duetLinePadding,
         creditsFollowLastLine = settings.creditsFollowLastLine,
         refinedCredits = settings.refinedCredits,
+        backgroundPop = settings.backgroundPop && !appleMusicStyle,
         syllableMerge = settings.syllableMerge,
         distanceBlurEnabled = settings.distanceBlur && !lowPerformance,
         glowEnabled = settings.glow && !lowPerformance,

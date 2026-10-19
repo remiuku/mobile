@@ -50,6 +50,7 @@ import com.tx24.spicyplayer.ui.background.LEGACY_BLUR_DP
 import com.tx24.spicyplayer.ui.components.ChromeTheme
 import androidx.compose.material.icons.rounded.Apps
 import androidx.compose.material.icons.rounded.Notes
+import androidx.compose.material.icons.rounded.UnfoldMore
 import androidx.compose.material.icons.automirrored.rounded.CallMerge
 
 import androidx.compose.material.icons.rounded.PauseCircle
@@ -390,6 +391,13 @@ internal fun LyricsContent(state: PlayerUiState, viewModel: ExternalPlaybackView
             onCheckedChange = { settings.creditsFollowLastLine = it },
             description = "When a song ends on a duet line sung from the right, move the credits under it to the right too.",
             icon = Icons.Rounded.FormatAlignRight,
+        )
+        ToggleRow(
+            label = "Background Vocal Pop-Out",
+            checked = settings.backgroundPop,
+            onCheckedChange = { settings.backgroundPop = it },
+            description = "Keep background vocal lines tucked under their line until it is sung, then slide them out.",
+            icon = Icons.Rounded.UnfoldMore,
         )
         ToggleRow(
             label = "Refined Credits",
