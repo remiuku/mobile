@@ -55,7 +55,7 @@ data class RenderConfig(
     val glowEnabled: Boolean = true,
     /** Minimal is a line-visibility layer and does not disable word/letter motion. */
     val lettersEnabled: Boolean = true,
-    val letterDurationThresholdMs: Long = if (simpleLyricsMode) 1050L else 1000L,
+    val letterDurationThresholdMs: Long = if (simpleLyricsMode && !refreshedSimple) 1050L else 1000L,
     val letterMaxLength: Int = when {
         // The Apple Music style picks its held words itself (AppleMusicMotion.emphasizes).
         appleMusic -> Int.MAX_VALUE

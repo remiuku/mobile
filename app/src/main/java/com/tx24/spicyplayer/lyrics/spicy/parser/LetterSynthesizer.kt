@@ -47,7 +47,7 @@ object LetterSynthesizer {
             }
         }
         return runs.flatMap { run ->
-            if (run.size == 1) return@flatMap run
+            if (run.size == 1 || !joinsEvenly(run)) return@flatMap run
             val first = run.first()
             val merged = first.copy(
                 text = run.joinToString("") { it.text },
@@ -75,6 +75,37 @@ object LetterSynthesizer {
         return last in WORD_JOINERS || first in WORD_JOINERS || isUnspaced(last) || isUnspaced(first)
     }
 
+    /** Silence between two parts of a word beyond which one fill would run through it. */
+    private const val MAX_JOIN_GAP_MS = 100L
+    /** A part sung this many times faster or slower per character than the word as a whole stays split. */
+    private const val MAX_PACE_RATIO = 3.0
+
+    /**
+     * Whether a run of glued syllables reads as one word sung steadily: no gap between its
+     * parts, no space inside one, no trailing dash on any but the last, and no part sung much
+     * faster or slower per character than the whole.
+     */
+    private fun joinsEvenly(run: List<Word>): Boolean {
+        // The space that ends the word belongs to its last part; one anywhere else splits it.
+        if (run.any { part ->
+                val last = part === run.last()
+                fun spaced(text: String?) = text != null && (if (last) text.trimEnd() else text).any(Char::isWhitespace)
+                spaced(part.text) || spaced(part.romanizedText)
+            }) return false
+        if (run.dropLast(1).any { it.text.isNotEmpty() && it.text.last() in DASHES }) return false
+        for (i in 1 until run.size) if (run[i].startMs - run[i - 1].endMs > MAX_JOIN_GAP_MS) return false
+        val total = (run.maxOf { it.endMs } - run.first().startMs).toDouble()
+        val chars = run.sumOf { it.text.length }
+        if (total <= 0 || chars == 0) return false
+        return run.all { part ->
+            val timeShare = part.duration / total
+            val charShare = part.text.length.toDouble() / chars
+            timeShare >= charShare / MAX_PACE_RATIO && timeShare <= charShare * MAX_PACE_RATIO
+        }
+    }
+
+    private val DASHES = "-‐‑‒–—―".toSet()
+
     private val WORD_JOINERS = "-‐‑‒–—―/".map(Char::code).toSet()
 
     // Chinese and Japanese (Han, kana, "ー"), Thai, Lao, Myanmar and Khmer, by code point
@@ -101,7 +132,7 @@ object LetterSynthesizer {
         }
         return config.lettersEnabled &&
             word.duration >= config.letterDurationThresholdMs &&
-            GraphemeSegmenter.segment(display).size in 1..(if (config.isRefreshedSimple) minOf(7, config.letterMaxLength) else config.letterMaxLength) &&
+            GraphemeSegmenter.segment(display).size in (if (config.isRefreshedSimple) 2..minOf(7, config.letterMaxLength) else 1..config.letterMaxLength) &&
             !RtlDetector.isRtl(display)
     }
 

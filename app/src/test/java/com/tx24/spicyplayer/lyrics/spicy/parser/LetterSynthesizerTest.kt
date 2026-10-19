@@ -12,9 +12,9 @@ class LetterSynthesizerTest {
     private val words = listOf(
         Word("to", 0, 200),
         Word("night ", 200, 600, isPartOfWord = true),
-        Word("for", 1000, 1200),
-        Word("ev", 1200, 1400, isPartOfWord = true, romanizedText = "EV"),
-        Word("er", 1400, 2500, isPartOfWord = true),
+        Word("for", 1000, 1500),
+        Word("ev", 1500, 1800, isPartOfWord = true, romanizedText = "EV"),
+        Word("er", 1800, 2500, isPartOfWord = true),
     )
 
     private fun merge(mode: SyllableMerge, romanized: Boolean = false) =
@@ -85,5 +85,27 @@ class LetterSynthesizerTest {
         val forever = LetterSynthesizer.apply(listOf(line), config, romanized = false).single().words.last()
         assertEquals(true, forever.isLetterGroup)
         assertEquals("forever", forever.letters.joinToString("") { it.char })
+    }
+
+    private fun mergeRun(vararg parts: Word) = LetterSynthesizer.mergeSyllables(
+        parts.toList(), RenderConfig.FULL.copy(syllableMerge = SyllableMerge.Full), false,
+    ).map { it.text }
+
+    @Test
+    fun `a gap inside the word keeps it split`() {
+        assertEquals(listOf("sun", "set"), mergeRun(Word("sun", 0, 300), Word("set", 450, 750, isPartOfWord = true)))
+        assertEquals(listOf("sunset"), mergeRun(Word("sun", 0, 300), Word("set", 380, 680, isPartOfWord = true)))
+    }
+
+    @Test
+    fun `a part sung far faster than the rest keeps the word split`() {
+        // "a" holds 60% of the time for 1 of 8 characters.
+        assertEquals(listOf("a", "bcdefgh"), mergeRun(Word("a", 0, 600), Word("bcdefgh", 600, 1000, isPartOfWord = true)))
+    }
+
+    @Test
+    fun `a space inside a part keeps the word split`() {
+        assertEquals(listOf("a b", "c"), mergeRun(Word("a b", 0, 300), Word("c", 300, 600, isPartOfWord = true)))
+        assertEquals(listOf("ab", "c"), mergeRun(Word("ab", 0, 300, romanizedText = "a b"), Word("c", 300, 600, isPartOfWord = true)))
     }
 }
