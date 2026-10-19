@@ -137,6 +137,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.text.style.TextOverflow
 import com.tx24.spicyplayer.lyrics.spicy.canvas.LyricsLayoutCalculator
 import com.tx24.spicyplayer.ui.components.GlassButton
 import com.tx24.spicyplayer.ui.components.LocalBackdrop
@@ -181,6 +183,8 @@ class PlaybackControlsState(
     /** Turns the screen to landscape, or back once [rotated]; null hides the button. */
     val onRotate: (() -> Unit)? = null,
     val rotated: Boolean = false,
+    /** Where the lyrics come from, as one short line under the timeline; null shows none. */
+    val credit: String? = null,
 )
 
 /**
@@ -1078,7 +1082,7 @@ private fun Timeline(controls: PlaybackControlsState, shown: () -> Float, modifi
 
 /** The controls' timeline on its own, for a dock that shows it while the controls are hidden. */
 @Composable
-internal fun DockTimeline(controls: PlaybackControlsState, modifier: Modifier = Modifier) = TimelineRow(controls, { 1f }, modifier)
+internal fun DockTimeline(controls: PlaybackControlsState, modifier: Modifier = Modifier) = TimelineRow(controls, { 1f }, modifier, showCredit = false)
 
 /**
  * The landscape panel's timeline under the cover, between the cover and the song (`.Header >
@@ -1107,7 +1111,7 @@ fun PanelTimeline(controls: PlaybackControlsState, coverSizePx: Float, pageHeigh
 private class PanelTimes(val style: TextStyle, val barMargin: Dp, val barHeight: Dp, val barHeightDragging: Dp)
 
 @Composable
-private fun TimelineRow(controls: PlaybackControlsState, shown: () -> Float, modifier: Modifier, beside: PanelTimes? = null) {
+private fun TimelineRow(controls: PlaybackControlsState, shown: () -> Float, modifier: Modifier, beside: PanelTimes? = null, showCredit: Boolean = true) {
     val current by rememberUpdatedState(controls)
     val haptics by rememberUpdatedState(LocalHapticFeedback.current)
     var dragFraction by remember { mutableStateOf<Float?>(null) }
@@ -1209,6 +1213,15 @@ private fun TimelineRow(controls: PlaybackControlsState, shown: () -> Float, mod
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(elapsedText, style = TimeStyle, maxLines = 1)
                 Text(formatClock(duration), style = TimeStyle, maxLines = 1)
+            }
+            controls.credit?.takeIf { showCredit }?.let { credit ->
+                Text(
+                    credit,
+                    style = TimeStyle.copy(fontSize = 11.sp, textAlign = TextAlign.Center),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.fillMaxWidth().padding(top = 2.dp).alpha(0.8f),
+                )
             }
         }
     } else {

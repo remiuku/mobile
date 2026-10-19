@@ -119,6 +119,8 @@ internal fun PipDock(
     artwork: Bitmap? = null,
     artworkUri: String? = null,
     hasSession: Boolean = true,
+    /** Where the lyrics come from, as one short line under the times; null shows none. */
+    credit: String? = null,
 ) {
     val coverArt = if (cover) rememberSessionArtwork(artwork, artworkUri, maxDimension = PIP_DOCK_ARTWORK_PX, hasSession = hasSession) else null
     // Ticks while playing; paused, the timeline holds still.
@@ -168,6 +170,15 @@ internal fun PipDock(
                 val timeStyle = SpicyType.Caption.copy(fontSize = (sp * 0.6f).sp, color = SpicyColors.TextSecondary, fontWeight = FontWeight.Medium)
                 Text(clock(now), style = timeStyle)
                 if (durationMs > 0) Text(clock(durationMs), style = timeStyle)
+            }
+            credit?.let {
+                Text(
+                    it,
+                    style = SpicyType.Caption.copy(fontSize = (sp * 0.6f).sp, color = SpicyColors.TextSecondary, textAlign = TextAlign.Center),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+                )
             }
         }
     }

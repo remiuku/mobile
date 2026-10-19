@@ -459,6 +459,16 @@ fun LyricsView(
                             }
                             -(settledYScratch[index] + half)
                         }
+                        // Once the song's last line has been sung, the credits scroll up far enough to be whole
+                        // on screen, above whatever the pinned credits and controls cover.
+                        val lastLine = currentLayouts.lastOrNull()
+                        val aimed = targetY
+                        if (!isStatic && aimed != null && lastLine != null && footerHeightUpdated > 0f &&
+                            currentTime >= (currentLines.maxOfOrNull { it.endMs } ?: Long.MAX_VALUE)) {
+                            val contentBottom = lastLine.yOffset + lastLine.height + accumulatedY + footerHeightUpdated
+                            val reachable = canvasHeightUpdated - maskBottomUpdated() - lineGapUpdated / 2f - centerYUpdated - contentBottom
+                            if (aimed > reachable) targetY = maxOf(reachable, aimed - canvasHeightUpdated * 0.4f)
+                        }
                         val targetVisiblePx = targetIndex?.let { index ->
                             val top = centerYUpdated + scrollManager.animScrollY + newDynamicYOffsets[index]
                             val bottom = top + currentLayouts[index].height

@@ -933,6 +933,7 @@ private fun LyricsApp(
                 // glass button would otherwise re-blur the whole page every frame, unseen.
                 val controlsGone by remember { derivedStateOf { controlsShown == 0f } }
                 val playbackControls = PlaybackControlsState(
+                    credit = lyricsViewState.shownFooter?.miniCredit()?.takeIf { pinnedFooter != PinnedFooterMode.Off },
                     hideSettings = settingsPeeking,
                     // Hidden on a screen that's landscape on its own: there's nothing to turn.
                     onRotate = { rotated = !rotated }.takeIf { settings.rotateButton && (rotated || !landscape) },
@@ -1560,6 +1561,7 @@ private fun PipLyrics(
                 state.title, state.artist, viewModel::currentPositionMs, state.durationMs, state.isPlaying,
                 cover = settings.pipDockCover, artwork = state.artwork, artworkUri = state.artworkUri,
                 hasSession = state.sourcePackage != null,
+                credit = viewState.shownFooter?.miniCredit()?.takeIf { settings.pinnedFooter != PinnedFooterMode.Off },
             )
         }
         }

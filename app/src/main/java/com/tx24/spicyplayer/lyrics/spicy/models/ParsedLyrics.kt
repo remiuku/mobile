@@ -10,6 +10,19 @@ data class LyricsFooter(
     val translationCredit: String? = null,
 ) {
     /**
+     * One short line for where the lyrics come from, for the controls and the floating window:
+     * "Community lyrics · Made by @name", or "Provided by Apple Music". Null with no provenance.
+     */
+    fun miniCredit(): String? {
+        val p = provenance ?: return null
+        val person = maker ?: uploader
+        if (p.provider == "Spicy Lyrics" && person != null) return "Community lyrics · Made by @${person.name}"
+        val origin = p.contributor?.takeIf(String::isNotBlank)
+            ?.let { if (it == "Spicy Lyrics Community") "Spicy Lyrics" else it } ?: p.provider
+        return "Provided by $origin"
+    }
+
+    /**
      * The lines shown after the lyrics: writers, then the Spicy Lyrics community block, or for other sources
      * the lyric source followed by its own credits.
      */
