@@ -282,6 +282,7 @@ class LyricsAnimator(
         val minimalLook = config.isMinimal && !suppressBlur
         // `.LyricsContent:not(:has(.line.Active)):not(:has(.line.NotSung))`: the song is over.
         val allSung = states.none { it != ElementState.Sung }
+        val firstActive = states.indexOf(ElementState.Active)
 
         return lines.mapIndexed { lineIdx, line ->
             val romanization = if (line.translationReplaces && lyricsType == LyricsType.Syllable) romanizationLines?.getOrNull(lineIdx) else null
@@ -303,13 +304,15 @@ class LyricsAnimator(
             // Sung/NotSung, so line opacity can go back to tracking lineState alone.
             val stillFinalizing = lineState == ElementState.Sung &&
                 (shouldFinalize(lines, lineIdx, processedPosition) || !isSettled(cachedWordStates[lineIdx]))
-            val afterActive = states.getOrNull(lineIdx - 1) == ElementState.Active
+            // A sung line that ends while one above it is still being sung (overlapping lines,
+            // background vocals) stays on screen, dimmed, instead of fading out early.
+            val afterActive = lineState == ElementState.Sung && !line.isInterlude && firstActive in 0 until lineIdx
             val opacity = animateLineOpacity(lineIdx, line, lineState, isActive, lyricsType, minimalLook, allSung, afterActive)
             val lineScale = when {
                 line.isInterlude -> animateInterludeScale(lineIdx, line, processedPosition, isActive)
                 // Mixed.css `.Fullscreen.MinimalLyricsMode .line:not(.musical-line)`.
                 config.isMinimal && !line.isSongwriter -> animateTweenScale(lineIdx, when {
-                    lineState == ElementState.Active || allSung || !minimalLook -> 1f
+                    lineState == ElementState.Active || allSung || !minimalLook || afterActive -> 1f
                     lineState == ElementState.Sung -> MINIMAL_SUNG_SCALE
                     else -> MINIMAL_NOT_SUNG_SCALE
                 })
@@ -395,7 +398,7 @@ class LyricsAnimator(
                 }
             }
 
-            val blur = if (!config.distanceBlurEnabled || suppressBlur || isActive) 0f
+            val blur = if (!config.distanceBlurEnabled || suppressBlur || isActive || minimalLook && afterActive) 0f
                 else blurAmounts.getOrElse(lineIdx) { 0f }
 
             LineAnimState(
@@ -665,7 +668,7 @@ class LyricsAnimator(
             minimalLook -> when (lineState) {
                 ElementState.Active -> config.opacityActive
                 ElementState.NotSung -> MINIMAL_NOT_SUNG_OPACITY
-                // `.line.Active + .line.Sung`: a finished line right under the active one stays faint.
+                // A finished line below an active one stays faint.
                 ElementState.Sung -> if (afterActive) MINIMAL_AFTER_ACTIVE_OPACITY else 0f
             }
             else -> when (lineState) {
