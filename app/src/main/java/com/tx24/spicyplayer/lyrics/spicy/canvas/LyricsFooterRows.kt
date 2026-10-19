@@ -169,7 +169,7 @@ internal fun measureFooterRows(
         if (refined && line.kind == FooterLine.Kind.COMMUNITY) {
             return@mapIndexed measureFlowRow(
                 line, textMeasurer, fontSp, density, maxWidthPx,
-                marginTop = if (index > 0) lyricPx * margin else if (firstMarginTop) lyricPx * 0.3f else 0f,
+                marginTop = if (index > 0) fontSp * density * 0.3f else if (firstMarginTop) fontSp * density * 0.75f else 0f,
                 alignEnd = alignEnd,
             )
         }
@@ -202,8 +202,9 @@ internal fun measureFooterRows(
         FooterRow(
             line, layout, alpha,
             marginTop = when {
+                refined -> if (index > 0) fontSp * density * 0.3f else if (firstMarginTop) fontSp * density * 0.75f else 0f
                 index > 0 -> lyricPx * margin
-                firstMarginTop -> lyricPx * (if (refined) 0.3f else 0.45f)
+                firstMarginTop -> lyricPx * 0.45f
                 else -> 0f
             },
             height = maxOf(layout.size.height.toFloat(), avatar),
