@@ -247,6 +247,7 @@ internal fun apiErrorMessage(body: String): String? = runCatching {
 internal fun spicyOriginName(raw: String?): String = when (raw?.trim()?.lowercase()?.replace('-', '_')?.replace(' ', '_')) {
     "apple", "apple_music", "am", "aml" -> "Apple Music"
     "spotify", "spotify_lyrics", "spt" -> "Spotify"
+    "uns", "unison" -> "Unison"
     "spicy", "spicy_lyrics", "community", "spl" -> "Spicy Lyrics Community"
     null, "" -> "Spicy Lyrics"
     else -> raw.trim()
