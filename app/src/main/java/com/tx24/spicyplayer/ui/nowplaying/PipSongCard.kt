@@ -35,6 +35,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import com.tx24.spicyplayer.lyrics.spicy.models.MiniCredit
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -120,7 +121,7 @@ internal fun PipDock(
     artworkUri: String? = null,
     hasSession: Boolean = true,
     /** Where the lyrics come from, as one short line under the times; null shows none. */
-    credit: String? = null,
+    credit: MiniCredit? = null,
 ) {
     val coverArt = if (cover) rememberSessionArtwork(artwork, artworkUri, maxDimension = PIP_DOCK_ARTWORK_PX, hasSession = hasSession) else null
     // Ticks while playing; paused, the timeline holds still.
@@ -170,7 +171,7 @@ internal fun PipDock(
                 val timeStyle = SpicyType.Caption.copy(fontSize = (sp * 0.6f).sp, color = SpicyColors.TextSecondary, fontWeight = FontWeight.Medium)
                 Text(clock(now), style = timeStyle)
                 credit?.let {
-                    CreditMarquee(it, timeStyle, SpicyColors.TextSecondary, Modifier.weight(1f).padding(horizontal = 6.dp))
+                    MiniCreditLine(it, timeStyle, SpicyColors.TextSecondary, Modifier.weight(1f).padding(horizontal = 6.dp))
                 }
                 if (durationMs > 0) Text(clock(durationMs), style = timeStyle)
             }

@@ -13,13 +13,15 @@ data class LyricsFooter(
      * One short line for where the lyrics come from, for the controls and the floating window:
      * "Community lyrics · Made by @name", or "Provided by Apple Music". Null with no provenance.
      */
-    fun miniCredit(): String? {
+    fun miniCredit(): MiniCredit? {
         val p = provenance ?: return null
         val person = maker ?: uploader
-        if (p.provider == "Spicy Lyrics" && person != null) return "Community lyrics · Made by @${person.name}"
+        if (p.provider == "Spicy Lyrics" && person != null) {
+            return MiniCredit("Community lyrics · Made by", person.name, person.avatarUrl?.takeIf { it.startsWith("https://") })
+        }
         val origin = p.contributor?.takeIf(String::isNotBlank)
             ?.let { if (it == "Spicy Lyrics Community") "Spicy Lyrics" else it } ?: p.provider
-        return "Provided by $origin"
+        return MiniCredit("Provided by $origin")
     }
 
     /**
@@ -42,6 +44,11 @@ data class LyricsFooter(
         maker?.let { add(it.line("Made by")) }
         uploader?.let { add(it.line(if (maker != null) "Uploaded by" else if (spicyCommunity) "Made by" else "Submitted by")) }
     }
+}
+
+/** The one-line credit: [prefix], then a credited person's avatar and @[name] when there is one. */
+data class MiniCredit(val prefix: String, val name: String? = null, val avatarUrl: String? = null) {
+    val text: String get() = if (name == null) prefix else "$prefix @$name"
 }
 
 /** A person credited for a sync, with the links the source gave for them. */

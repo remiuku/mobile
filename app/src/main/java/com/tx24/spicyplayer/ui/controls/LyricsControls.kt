@@ -137,7 +137,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.tx24.spicyplayer.ui.nowplaying.CreditMarquee
+import com.tx24.spicyplayer.lyrics.spicy.models.MiniCredit
+import com.tx24.spicyplayer.ui.nowplaying.MiniCreditLine
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.text.style.TextOverflow
 import com.tx24.spicyplayer.lyrics.spicy.canvas.LyricsLayoutCalculator
@@ -185,7 +186,7 @@ class PlaybackControlsState(
     val onRotate: (() -> Unit)? = null,
     val rotated: Boolean = false,
     /** Where the lyrics come from, as one short line under the timeline; null shows none. */
-    val credit: String? = null,
+    val credit: MiniCredit? = null,
 )
 
 /**
@@ -1216,7 +1217,7 @@ private fun TimelineRow(controls: PlaybackControlsState, shown: () -> Float, mod
                 Text(elapsedText, style = TimeStyle, maxLines = 1)
                 // The source sits between the two times, on their line.
                 controls.credit?.takeIf { showCredit }?.let { credit ->
-                    CreditMarquee(
+                    MiniCreditLine(
                         credit,
                         TimeStyle.copy(fontSize = 11.sp),
                         SpicyPalette.Neutral.TextSecondary.copy(alpha = 0.8f),

@@ -66,6 +66,11 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.ui.Alignment
+import androidx.compose.material3.Text
+import androidx.compose.foundation.layout.Spacer
+import com.tx24.spicyplayer.lyrics.spicy.models.MiniCredit
+import androidx.compose.foundation.shape.CircleShape
+import coil.compose.AsyncImage
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -549,11 +554,37 @@ internal fun MarqueeLine(
     }
 }
 
-/** A short credit line that sits centred when it fits and scrolls like the header's names when it doesn't. */
+/**
+ * The one-line credit: centred with the person's avatar before their name when it fits, and
+ * scrolling like the header's names (without the avatar) when it doesn't.
+ */
 @Composable
-internal fun CreditMarquee(text: String, style: TextStyle, color: Color, modifier: Modifier = Modifier) {
+internal fun MiniCreditLine(credit: MiniCredit, style: TextStyle, color: Color, modifier: Modifier = Modifier) {
+    val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
     BoxWithConstraints(modifier, contentAlignment = Alignment.Center) {
-        MarqueeLine(text, style, color, constraints.maxWidth.toFloat(), padStart = 0f, padEndPx = 0f)
+        val avatar = credit.avatarUrl?.takeIf { credit.name != null }
+        val avatarDp = with(density) { (style.fontSize.toPx() * 1.2f).toDp() }
+        val gap = 4.dp
+        val width = remember(credit, style) {
+            measurer.measure(credit.prefix, style, maxLines = 1, softWrap = false).size.width +
+                (credit.name?.let { measurer.measure("@$it", style, maxLines = 1, softWrap = false).size.width } ?: 0)
+        } + with(density) { (if (avatar != null) avatarDp + gap * 2 else if (credit.name != null) gap else 0.dp).toPx() }
+        if (width <= constraints.maxWidth) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(credit.prefix, style = style, color = color, maxLines = 1, softWrap = false)
+                if (credit.name != null) {
+                    Spacer(Modifier.width(gap))
+                    if (avatar != null) {
+                        AsyncImage(avatar, null, Modifier.size(avatarDp).clip(CircleShape), contentScale = ContentScale.Crop)
+                        Spacer(Modifier.width(gap))
+                    }
+                    Text("@${credit.name}", style = style, color = color, maxLines = 1, softWrap = false)
+                }
+            }
+        } else {
+            MarqueeLine(credit.text, style, color, constraints.maxWidth.toFloat(), padStart = 0f, padEndPx = 0f)
+        }
     }
 }
 
