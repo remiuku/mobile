@@ -377,7 +377,7 @@ private fun ControlsBar(
         Spacer(Modifier.weight(1f))
         Column(Modifier.width(BAR_MIDDLE_WIDTH), horizontalAlignment = Alignment.CenterHorizontally) {
             PlaybackRow(controls, shuffle, repeat, Modifier, skipWidth = BAR_SKIP_WIDTH)
-            Timeline(controls, shown, Modifier)
+            Timeline(controls, shown, Modifier, showCredit = false)
         }
         BoxWithConstraints(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
             FloatingButtons(
