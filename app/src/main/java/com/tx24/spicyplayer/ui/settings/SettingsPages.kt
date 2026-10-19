@@ -49,6 +49,7 @@ import kotlin.math.abs
 import com.tx24.spicyplayer.ui.background.LEGACY_BLUR_DP
 import com.tx24.spicyplayer.ui.components.ChromeTheme
 import androidx.compose.material.icons.rounded.Apps
+import androidx.compose.material.icons.rounded.Notes
 import androidx.compose.material.icons.automirrored.rounded.CallMerge
 
 import androidx.compose.material.icons.rounded.PauseCircle
@@ -389,6 +390,13 @@ internal fun LyricsContent(state: PlayerUiState, viewModel: ExternalPlaybackView
             onCheckedChange = { settings.creditsFollowLastLine = it },
             description = "When a song ends on a duet line sung from the right, move the credits under it to the right too.",
             icon = Icons.Rounded.FormatAlignRight,
+        )
+        ToggleRow(
+            label = "Refined Credits",
+            checked = settings.refinedCredits,
+            onCheckedChange = { settings.refinedCredits = it },
+            description = "Show the credits as quiet type close under the last line, dim until the song has been sung.",
+            icon = Icons.Rounded.Notes,
         )
         SettingsSection("Effects") {
             ToggleRow(

@@ -136,17 +136,21 @@ internal fun measureFooterRows(
     maxWidthPx: Float,
     firstMarginTop: Boolean = true,
     alignEnd: Boolean = false,
+    refined: Boolean = false,
 ): List<FooterRow> {
     val lyricPx = creditBaseSp * density
     return lines.mapIndexed { index, line ->
-        val (size, alpha, margin) = when (line.kind) {
-            FooterLine.Kind.WRITERS -> Triple(0.47f, 0.7f, 0.25f)
-            FooterLine.Kind.PROVIDER -> Triple(0.34f, 0.55f, 0.25f)
-            FooterLine.Kind.NOTE -> Triple(0.35f, 0.65f, 0.3f)
-            FooterLine.Kind.CONTRIBUTOR -> Triple(0.34f, 1f, 0.2f)
+        val (size, alpha, margin) = when {
+            // Refined: one quiet size, the second line a touch smaller, tones set per span below.
+            refined && line.kind == FooterLine.Kind.WRITERS -> Triple(0.34f, 1f, 0.3f)
+            refined -> Triple(0.34f * 0.86f, 1f, 0.3f)
+            line.kind == FooterLine.Kind.WRITERS -> Triple(0.47f, 0.7f, 0.25f)
+            line.kind == FooterLine.Kind.PROVIDER -> Triple(0.34f, 0.55f, 0.25f)
+            line.kind == FooterLine.Kind.NOTE -> Triple(0.35f, 0.65f, 0.3f)
+            else -> Triple(0.34f, 1f, 0.2f)
         }
         val fontSp = creditBaseSp * size * CREDIT_SCALE
-        val text = if (line.kind == FooterLine.Kind.CONTRIBUTOR && line.label != null && line.name != null) {
+        val text = if (refined) refinedText(line) else if (line.kind == FooterLine.Kind.CONTRIBUTOR && line.label != null && line.name != null) {
             // "Made by " dimmer, then the bold, underlined "@name" (.song-info-profile-section).
             buildAnnotatedString {
                 withStyle(SpanStyle(color = Color.White.copy(alpha = 0.6f))) { append("${line.label} ") }
@@ -163,7 +167,11 @@ internal fun measureFooterRows(
             TextStyle(
                 fontFamily = LyricsLayoutCalculator.spicyFontFamily,
                 fontSize = fontSp.sp,
-                fontWeight = if (line.kind == FooterLine.Kind.NOTE) FontWeight.Bold else FontWeight.SemiBold,
+                fontWeight = when {
+                    refined -> if (line.kind == FooterLine.Kind.WRITERS) FontWeight.SemiBold else FontWeight.Medium
+                    line.kind == FooterLine.Kind.NOTE -> FontWeight.Bold
+                    else -> FontWeight.SemiBold
+                },
                 textAlign = if (alignEnd) TextAlign.End else TextAlign.Start,
             ),
             constraints = Constraints(maxWidth = (maxWidthPx - avatar).roundToInt().coerceAtLeast(1)),
@@ -172,13 +180,47 @@ internal fun measureFooterRows(
             line, layout, alpha,
             marginTop = when {
                 index > 0 -> lyricPx * margin
-                firstMarginTop -> lyricPx * 0.45f
+                firstMarginTop -> lyricPx * (if (refined) 0.3f else 0.45f)
                 else -> 0f
             },
             height = maxOf(layout.size.height.toFloat(), avatar),
             avatarSize = avatar,
             avatarGap = 2f * density,
         )
+    }
+}
+
+/**
+ * The credits in the Refined look: community lyrics name themselves on the second line, so the
+ * "Provided by" row goes, and that note reads "Community lyrics".
+ */
+internal fun refinedFooterLines(lines: List<FooterLine>): List<FooterLine> {
+    val community = lines.any { it.kind == FooterLine.Kind.NOTE }
+    return lines.filterNot { community && it.kind == FooterLine.Kind.PROVIDER && it.text.startsWith("Provided by") }
+        .map { if (it.kind == FooterLine.Kind.NOTE) it.copy(text = "Community lyrics") else it }
+}
+
+/** A credit's text with its label muted and its value (or linked name) a step brighter. */
+private fun refinedText(line: FooterLine): AnnotatedString {
+    val muted = SpanStyle(color = Color.White.copy(alpha = 0.55f))
+    val value = SpanStyle(color = Color.White.copy(alpha = 0.7f))
+    val label = line.text.substringBefore(": ", "")
+    return buildAnnotatedString {
+        when {
+            line.kind == FooterLine.Kind.CONTRIBUTOR && line.label != null && line.name != null -> {
+                withStyle(muted) { append("${line.label} ") }
+                withStyle(value.copy(textDecoration = TextDecoration.Underline)) { append("@${line.name}") }
+            }
+            line.kind == FooterLine.Kind.WRITERS && label.isNotEmpty() -> {
+                withStyle(muted) { append(label) }
+                append(" ")
+                withStyle(value) { append(line.text.substringAfter(": ")) }
+            }
+            line.kind == FooterLine.Kind.PROVIDER && label.isNotEmpty() -> {
+                withStyle(muted) { append("$label ${line.text.substringAfter(": ")}") }
+            }
+            else -> withStyle(muted) { append(line.text) }
+        }
     }
 }
 
@@ -199,6 +241,7 @@ internal fun DrawScope.drawFooterRows(
     endX: Float,
     alignEnd: Boolean,
     avatars: Map<String, ImageBitmap>,
+    dim: Float = 1f,
 ) {
     rows.zip(tops).forEach { (row, y) ->
         val avatarWidth = if (row.line.avatarUrl != null) row.avatarGap + row.avatarSize else 0f
@@ -207,7 +250,7 @@ internal fun DrawScope.drawFooterRows(
         drawText(
             textLayoutResult = row.text,
             color = Color.White,
-            alpha = row.alpha,
+            alpha = row.alpha * dim,
             topLeft = Offset(x, y + (row.height - textHeight) / 2f),
         )
         // The avatar follows the name, a 24px circle.
@@ -217,6 +260,7 @@ internal fun DrawScope.drawFooterRows(
             clipPath(Path().apply { addOval(Rect(ax, ay, ax + row.avatarSize, ay + row.avatarSize)) }) {
                 drawImage(
                     avatar,
+                    alpha = dim,
                     dstOffset = IntOffset(ax.roundToInt(), ay.roundToInt()),
                     dstSize = IntSize(row.avatarSize.roundToInt(), row.avatarSize.roundToInt()),
                 )
@@ -251,11 +295,14 @@ fun PinnedLyricsFooter(
     mode: PinnedFooterMode,
     fontSizeScale: Float,
     tappable: Boolean,
+    refined: Boolean = false,
     onHeight: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val footer = state.shownFooter
-    val lines = remember(footer, mode) { footer?.lines().orEmpty().filter { mode.pins(it.kind) } }
+    val lines = remember(footer, mode, refined) {
+        footer?.lines().orEmpty().let { if (refined) refinedFooterLines(it) else it }.filter { mode.pins(it.kind) }
+    }
     val textMeasurer = rememberTextMeasurer()
     val avatars = rememberFooterAvatars(lines)
     BoxWithConstraints(modifier.fillMaxWidth()) {
@@ -264,8 +311,8 @@ fun PinnedLyricsFooter(
         val slot = LyricsLayoutMetrics(width, density, LyricsType.Syllable, fontSizeScale).contentSlot(false, false, false)
         val baseSp = creditBaseSp(width, density, fontSizeScale)
         val alignEnd = state.footerAlignEnd
-        val rows = remember(lines, baseSp, slot.widthPx, LyricsLayoutCalculator.fontKey, alignEnd) {
-            measureFooterRows(lines, textMeasurer, baseSp, density, slot.widthPx, firstMarginTop = false, alignEnd = alignEnd)
+        val rows = remember(lines, baseSp, slot.widthPx, LyricsLayoutCalculator.fontKey, alignEnd, refined) {
+            measureFooterRows(lines, textMeasurer, baseSp, density, slot.widthPx, firstMarginTop = false, alignEnd = alignEnd, refined = refined)
         }
         val tops = remember(rows) { footerRowTops(rows, 0f) }
         val height = rows.sumOf { (it.marginTop + it.height).toDouble() }.toFloat()

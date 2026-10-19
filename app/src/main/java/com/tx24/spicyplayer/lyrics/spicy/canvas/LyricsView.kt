@@ -218,9 +218,12 @@ fun LyricsView(
         }
         scrollManager.pxPerReferencePx = creditBaseSp * density.density / REFERENCE_LYRIC_SIZE_PX
         // The rows the screen pins are drawn there instead.
-        val footerLines = remember(footer, pinnedFooter) { footer.lines().filterNot { pinnedFooter.pins(it.kind) } }
-        val footerLayouts = remember(footerLines, creditBaseSp, footerSlot.widthPx, canvasWidth, fontKey, footerAlignEnd) {
-            measureFooterRows(footerLines, textMeasurer, creditBaseSp, density.density, footerSlot.widthPx, alignEnd = footerAlignEnd)
+        val refinedCredits = config.refinedCredits
+        val footerLines = remember(footer, pinnedFooter, refinedCredits) {
+            footer.lines().let { if (refinedCredits) refinedFooterLines(it) else it }.filterNot { pinnedFooter.pins(it.kind) }
+        }
+        val footerLayouts = remember(footerLines, creditBaseSp, footerSlot.widthPx, canvasWidth, fontKey, footerAlignEnd, refinedCredits) {
+            measureFooterRows(footerLines, textMeasurer, creditBaseSp, density.density, footerSlot.widthPx, alignEnd = footerAlignEnd, refined = refinedCredits)
         }
         val footerHeight = footerLayouts.sumOf { (it.marginTop + it.height).toDouble() }.toFloat()
         val footerHeightUpdated by rememberUpdatedState(footerHeight)
@@ -288,6 +291,8 @@ fun LyricsView(
         if (lineLayouts.isEmpty()) return@BoxWithConstraints
 
         var animStates by remember { mutableStateOf<List<LineAnimState>>(emptyList()) }
+        // Refined Credits stay dim until the last line has been sung.
+        var footerDim by remember { mutableStateOf(1f) }
         var dynamicYOffsets by remember { mutableStateOf(FloatArray(0)) }
         var lastFrameTimeNanos by remember { mutableLongStateOf(0L) }
         val hostView = LocalView.current
@@ -349,6 +354,13 @@ fun LyricsView(
                                     sweeps[index]
                                 }
                             })
+
+                        val dimTarget = if (refinedCredits && lyricsType != LyricsType.Static &&
+                            currentTime < (currentLines.maxOfOrNull { it.endMs } ?: 0L)) 0.55f else 1f
+                        if (footerDim != dimTarget) {
+                            footerDim += (dimTarget - footerDim) * (deltaTime * 6f).coerceAtMost(1f)
+                            if (kotlin.math.abs(dimTarget - footerDim) < 0.002f) footerDim = dimTarget
+                        }
 
                         // 1.5 Calculate dynamic Y offsets based on interlude scales.
                         var accumulatedY = 0f
@@ -656,7 +668,7 @@ fun LyricsView(
             }
 
             val footerScroll = scrollOffsetFor(lineLayouts.size)
-            drawFooterRows(footerLayouts, footerRowTops().map { it + footerScroll }, footerSlot.startPx, footerSlot.startPx + footerSlot.widthPx, footerAlignEnd, avatars)
+            drawFooterRows(footerLayouts, footerRowTops().map { it + footerScroll }, footerSlot.startPx, footerSlot.startPx + footerSlot.widthPx, footerAlignEnd, avatars, footerDim)
         }
     }
 }

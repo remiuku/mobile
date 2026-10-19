@@ -63,6 +63,7 @@ class AppSettings(private val prefs: SharedPreferences) {
     var duetLinePadding by boolean("duetLinePadding", true)
     /** A song ending on a duet line sung from the right has its credits there too. */
     var creditsFollowLastLine by boolean("creditsFollowLastLine", false)
+    var refinedCredits by boolean("refinedCredits", true)
     var syllableMerge by enum("syllableMerge", SyllableMerge.Off)
 
     var scrollLeadEnabled by boolean("scrollLeadEnabled", false)

@@ -689,6 +689,7 @@ private fun LyricsApp(
         wordMotionBoost = settings.wordMotionBoost,
         wideDuetPadding = settings.duetLinePadding,
         creditsFollowLastLine = settings.creditsFollowLastLine,
+        refinedCredits = settings.refinedCredits,
         syllableMerge = settings.syllableMerge,
         distanceBlurEnabled = settings.distanceBlur && !lowPerformance,
         glowEnabled = settings.glow && !lowPerformance,
@@ -1298,6 +1299,7 @@ private fun LyricsApp(
                     fontSizeScale = lyricsFontScale,
                     // Faded out, they let the controls under them take the touch.
                     tappable = !(bottomBar && controlsTarget),
+                    refined = settings.refinedCredits,
                     onHeight = { pinnedHeightPx = it },
                     modifier = Modifier
                         .align(if (landscape) Alignment.BottomStart else Alignment.BottomCenter)

@@ -75,6 +75,8 @@ data class RenderConfig(
     val wideDuetPadding: Boolean = true,
     /** Credits Follow the Last Singer: a song ending on a duet line sung from the right has its credits there too. */
     val creditsFollowLastLine: Boolean = false,
+    /** Refined Credits: quiet type under the last line, dim until the song's last line has been sung. */
+    val refinedCredits: Boolean = true,
     val scroll: ScrollConfig = ScrollConfig(),
 ) {
     val isRefreshedSimple: Boolean get() = refreshedSimple && simpleLyricsMode && !appleMusic
