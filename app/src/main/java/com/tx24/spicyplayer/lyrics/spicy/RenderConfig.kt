@@ -20,7 +20,8 @@ data class ScrollConfig(
     /** Seek Fade-in Compensation: tapping a line seeks [SEEK_FADE_COMPENSATION_MS] before it. */
     val seekFadeCompensation: Boolean = false,
     /**
-     * Static lyrics scroll through over this long (the song's length), top to bottom; 0 leaves
+     * Static lyrics scroll through over this long (the song's length), top to bottom, and a run of
+     * untimed lines in synced lyrics over the gap it fills; 0 leaves
      * their scrolling to the user.
      */
     val staticSongMs: Long = 0L,

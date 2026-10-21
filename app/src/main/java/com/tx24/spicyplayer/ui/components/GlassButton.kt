@@ -100,6 +100,8 @@ fun GlassButton(
     onPressChange: ((Boolean) -> Unit)? = null,
     /** Off for a button that gives its own feedback, like one that acts as it's pressed. */
     releaseHaptic: Boolean = true,
+    /** What a remote's, keyboard's or gamepad's press does, for a button whose touch handling is its own. */
+    onKeyClick: (() -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
     val currentOnPressChange by rememberUpdatedState(onPressChange)
@@ -110,6 +112,7 @@ fun GlassButton(
     // The screen recomposes on every touch; keying the gesture on a fresh lambda would cancel
     // the press before it lifts.
     val currentOnClick by rememberUpdatedState(onClick)
+    val currentOnKeyClick by rememberUpdatedState(onKeyClick)
     val haptics by rememberUpdatedState(LocalHapticFeedback.current)
     val fill by animateColorAsState(
         if (pressed) SpicyGlass.FillPressed else SpicyGlass.Fill,
@@ -136,6 +139,7 @@ fun GlassButton(
                 } ?: Modifier,
             )
             .glassCircle { fill }
+            .keyClickable(CircleShape) { (currentOnKeyClick ?: currentOnClick)() }
             .semantics {
                 role = Role.Button
                 this.contentDescription = contentDescription

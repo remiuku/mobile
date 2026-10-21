@@ -12,7 +12,6 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.material3.Icon
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Row
@@ -39,6 +38,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tx24.spicyplayer.ui.theme.SpicyMotion
 import com.tx24.spicyplayer.ui.theme.SpicyRadii
@@ -61,7 +61,8 @@ fun SpicyToastHost(messages: Flow<String>, modifier: Modifier = Modifier) {
             if (text != null) shown.animateTo(0f, tween(120))
             text = message
             shown.animateTo(1f, tween(SpicyMotion.MODAL_MS, easing = SpicyMotion.Modal))
-            delay(TOAST_MS)
+            // Long ones stay up long enough to be read.
+            delay((TOAST_MS + (message.length - 60).coerceAtLeast(0) * MS_PER_CHAR).coerceAtMost(MAX_TOAST_MS))
             shown.animateTo(0f, tween(SpicyMotion.MODAL_MS, easing = SpicyMotion.Standard))
             text = null
         }
@@ -80,12 +81,13 @@ fun SpicyToastHost(messages: Flow<String>, modifier: Modifier = Modifier) {
             // The brand's pill: the ramp, a hairline ring with a lit top edge, the logo before the text.
             Row(
                 appear
-                    .shadow(16.dp, CircleShape, ambientColor = Color.Black, spotColor = Color.Black)
-                    .clip(CircleShape)
+                    // A pill while it's one line; wrapped, a rounded card rather than an oval.
+                    .shadow(16.dp, PILL, ambientColor = Color.Black, spotColor = Color.Black)
+                    .clip(PILL)
                     .drawBehind {
                         drawBrandRamp(brand)
                         val px = 1.dp.toPx()
-                        val radius = CornerRadius(size.height / 2f)
+                        val radius = CornerRadius(minOf(size.height / 2f, PILL_RADIUS.toPx()))
                         clipRect(bottom = px * 2f) {
                             drawRoundRect(brand.ink.copy(alpha = 0.22f), cornerRadius = radius, topLeft = Offset(0f, px), size = size)
                         }
@@ -103,7 +105,8 @@ fun SpicyToastHost(messages: Flow<String>, modifier: Modifier = Modifier) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(ImageVector.vectorResource(R.drawable.app_glyph), null, Modifier.size(16.dp), tint = brand.inkMuted)
-                Text(message, style = SpicyType.Caption.copy(color = brand.ink, fontWeight = FontWeight.SemiBold))
+                Text(message, style = SpicyType.Caption.copy(color = brand.ink, fontWeight = FontWeight.SemiBold),
+                    maxLines = MAX_LINES, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(vertical = SpicySpacing.S2))
             }
         } else {
             val shape = RoundedCornerShape(SpicyRadii.Md)
@@ -115,9 +118,16 @@ fun SpicyToastHost(messages: Flow<String>, modifier: Modifier = Modifier) {
                     .border(1.dp, palette.HairlineStrong, shape)
                     .padding(horizontal = SpicySpacing.S4, vertical = SpicySpacing.S3),
                 style = SpicyType.Caption.copy(color = palette.TextPrimary, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center),
+                maxLines = MAX_LINES,
+                overflow = TextOverflow.Ellipsis,
             )
         }
     }
 }
 
 private const val TOAST_MS = 3_000L
+private const val MS_PER_CHAR = 40L
+private const val MAX_TOAST_MS = 8_000L
+private const val MAX_LINES = 4
+private val PILL_RADIUS = 22.dp
+private val PILL = RoundedCornerShape(PILL_RADIUS)

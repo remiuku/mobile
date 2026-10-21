@@ -48,7 +48,7 @@ class SourceDefaultsTest {
         assertEquals(listOf("amll_ttml_db"), providers[LyricsOrigins.AMLL])
         assertEquals(listOf("spicy_lyrics", "rmm_revival", "lrc_red"), providers[LyricsOrigins.APPLE_MUSIC])
         assertEquals(listOf("lrc_red"), providers[LyricsOrigins.LRC_RED_AI])
-        assertEquals(listOf("unison", "spicy_lyrics", "rmm_revival"), providers[LyricsOrigins.UNISON])
+        assertEquals(listOf("unison", "spicy_unison"), providers[LyricsOrigins.UNISON])
         assertEquals(listOf("spicy_lyrics", "rmm_revival"), providers[LyricsOrigins.SPOTIFY])
         assertEquals(listOf("kugou", "lrcmux"), providers[LyricsOrigins.KUGOU])
         assertEquals(listOf("netease"), providers[LyricsOrigins.NETEASE])
@@ -120,6 +120,6 @@ class SourceDefaultsTest {
 
     private companion object {
         /** Spicy Lyrics, and the lyrics APIs that say any app may use them. */
-        val DEFAULT_ON = setOf(RemoteLyricsSource.SPICY_ID, "lrclib", "amll_ttml_db", "unison", "lrcmux", "lrc_red")
+        val DEFAULT_ON = setOf(RemoteLyricsSource.SPICY_ID, "lrclib", "amll_ttml_db", "unison", "spicy_unison", "lrcmux", "lrc_red")
     }
 }

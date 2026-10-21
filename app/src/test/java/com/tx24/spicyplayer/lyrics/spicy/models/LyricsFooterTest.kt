@@ -8,6 +8,16 @@ import org.junit.Test
 class LyricsFooterTest {
     private val spicy = LyricsProvenance("Spicy Lyrics", "Spicy Lyrics Community")
 
+    @Test fun translationAndRomanizationGetARowEachOrShareOneRefined() {
+        val footer = LyricsFooter(provenance = LyricsProvenance("LRCLIB"), translationCredit = "Genius + Google", romanizationCredit = "On-device")
+        val lines = footer.lines()
+        assertEquals(listOf("Provided by: LRCLIB", "Translation from: Genius + Google", "Romanization from: On-device"), lines.map { it.text })
+        val refined = com.tx24.spicyplayer.lyrics.spicy.canvas.refinedFooterLines(lines)
+        assertEquals(listOf("Provided by: LRCLIB", "Translation from: Genius + Google · Romanization from: On-device"), refined.map { it.text })
+        // Pinned "No Writers" keeps them with the source.
+        assertEquals(true, com.tx24.spicyplayer.lyrics.spicy.canvas.PinnedFooterMode.NoWriters.pins(FooterLine.Kind.TEXTS))
+    }
+
     @Test fun communityCreditsFollowSpicyLyricsWording() {
         val footer = LyricsFooter(songwriters = listOf("Ada", "Ben"), provenance = spicy, uploader = LyricsCredit("TX26"))
 

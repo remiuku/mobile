@@ -10,7 +10,13 @@ import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.Key
 import androidx.compose.material.icons.rounded.KeyOff
 import androidx.compose.material.icons.rounded.Block
+import androidx.compose.material.icons.rounded.Link
+import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material.icons.Icons
+import androidx.compose.runtime.LaunchedEffect
+import com.tx24.spicyplayer.playback.AiTranslationSettings
+import com.tx24.spicyplayer.translation.GeminiModels
+import com.tx24.spicyplayer.translation.OnDeviceModel
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.runtime.Composable
@@ -75,8 +81,11 @@ internal fun RomanizationTranslationContent(state: PlayerUiState, viewModel: Ext
         }
         SettingRow("Provider", description = "Choose who translates the lyric lines.", icon = Icons.Rounded.Public,
             searchDescription = "Choose who translates the original lyric lines.") {
+            // Gemini Nano is greyed out on phones that can't run it.
+            LaunchedEffect(Unit) { viewModel.checkOnDeviceModel() }
             SpicySelect(preferences.provider.name, TranslationProvider.entries.map { it.name },
-                { viewModel.setTranslationProvider(TranslationProvider.valueOf(it)) }, labels = TranslationProvider.entries.map { it.label })
+                { viewModel.setTranslationProvider(TranslationProvider.valueOf(it)) }, labels = TranslationProvider.entries.map { it.label },
+                unavailable = if (state.onDeviceModel == OnDeviceModel.Status.Unavailable) setOf(TranslationProvider.GeminiNano.name) else emptySet())
         }
         if (preferences.provider == TranslationProvider.DeepL) {
             SettingRow("DeepL API key", description = if (state.deepLKeyPresent) "Key saved. Paste a new one to replace it." else "Free keys end in :fx.", icon = Icons.Rounded.Key, stacked = true,
@@ -95,9 +104,77 @@ internal fun RomanizationTranslationContent(state: PlayerUiState, viewModel: Ext
                 }
             }
         }
+        AiProviderRows(state, viewModel, preferences.provider)
         ToggleRow("Use human translations from Genius", preferences.humanTranslations, viewModel::setHumanTranslations,
             description = "Prefer matching translations from Genius.", icon = Icons.Rounded.People,
             searchDescription = "Use human translations where Genius's original lyrics confidently match, then fill gaps with the selected provider.")
+    }
+}
+
+/** The AI providers' own settings: where the service is, which model, the key, or Gemini Nano's state. */
+@Composable
+private fun AiProviderRows(state: PlayerUiState, viewModel: ExternalPlaybackViewModel, provider: TranslationProvider) {
+    val ai = state.aiTranslation
+    when (provider) {
+        TranslationProvider.OpenAi -> {
+            TextSettingRow("AI service address", "The service's OpenAI-compatible API (https), ending in /v1.", Icons.Rounded.Link,
+                ai.baseUrl, AiTranslationSettings.OPENAI_BASE_URL) { viewModel.setAiTranslation(ai.copy(baseUrl = it)) }
+            TextSettingRow("AI model", if (ai.model.isBlank()) "Needed: the model's name at that service." else "Using ${ai.model}.",
+                Icons.Rounded.AutoAwesome, ai.model, "Model name") { viewModel.setAiTranslation(ai.copy(model = it)) }
+            KeyRows(state, viewModel, provider, "Leave it empty for a service that needs none.")
+        }
+        TranslationProvider.Gemini -> {
+            TextSettingRow("Gemini model", "Using ${ai.geminiModel}. Change it when Google renames its models.",
+                Icons.Rounded.AutoAwesome, ai.geminiModel, GeminiModels.DEFAULT) { viewModel.setAiTranslation(ai.copy(geminiModel = it.ifBlank { GeminiModels.DEFAULT })) }
+            KeyRows(state, viewModel, provider, "Get one free at aistudio.google.com.")
+        }
+        TranslationProvider.GeminiNano -> {
+            LaunchedEffect(Unit) { viewModel.checkOnDeviceModel() }
+            val status = state.onDeviceModel
+            val downloaded = state.onDeviceDownloadedBytes
+            SettingRow("Gemini Nano", description = when {
+                downloaded != null -> "Downloading… ${downloaded / 1_000_000} MB"
+                status == null -> "Checking this phone…"
+                else -> status.label
+            }, icon = Icons.Rounded.PhoneAndroid,
+                searchDescription = "Translate on the phone with Gemini Nano, where the phone has it. Nothing is sent anywhere.") {
+                if (status == OnDeviceModel.Status.Downloadable && downloaded == null) {
+                    SpicyButton("Download", onClick = viewModel::downloadOnDeviceModel)
+                }
+            }
+        }
+        else -> Unit
+    }
+}
+
+@Composable
+private fun KeyRows(state: PlayerUiState, viewModel: ExternalPlaybackViewModel, provider: TranslationProvider, hint: String) {
+    val saved = provider in state.translationKeys
+    TextSettingRow("${provider.label} API key", if (saved) "Key saved. Paste a new one to replace it." else hint,
+        Icons.Rounded.Key, "", "API key", password = true, clearAfterSave = true) { viewModel.useTranslationKey(provider, it) }
+    if (saved) {
+        SettingRow("Remove the key", description = "Forget the key on this device.", icon = Icons.Rounded.KeyOff) {
+            SpicyButton("Remove", onClick = { viewModel.useTranslationKey(provider, "") })
+        }
+    }
+}
+
+/** A text field with a Use button, which hands what was typed to [onSave]. */
+@Composable
+private fun TextSettingRow(
+    label: String, description: String, icon: androidx.compose.ui.graphics.vector.ImageVector,
+    current: String, placeholder: String, password: Boolean = false, clearAfterSave: Boolean = false,
+    onSave: (String) -> Unit,
+) {
+    var text by remember(current) { mutableStateOf(current) }
+    SettingRow(label, description = description, icon = icon, stacked = true) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(SpicySpacing.S2)) {
+            SpicyTextField(text, { text = it }, placeholder = placeholder, password = password, modifier = Modifier.weight(1f))
+            SpicyButton("Use", onClick = {
+                onSave(text.trim())
+                if (clearAfterSave) text = ""
+            }, enabled = text.trim() != current.trim() && (text.isNotBlank() || !clearAfterSave))
+        }
     }
 }
 

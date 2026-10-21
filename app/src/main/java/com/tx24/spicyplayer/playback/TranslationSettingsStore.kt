@@ -7,6 +7,20 @@ import com.tx24.spicyplayer.translation.TranslationProvider
 import com.tx24.spicyplayer.translation.TranslationConsent
 import com.tx24.spicyplayer.translation.languageCode
 
+/** Where an AI translator is: an OpenAI-compatible service's address and model, and the Gemini model. */
+data class AiTranslationSettings(val baseUrl: String = OPENAI_BASE_URL, val model: String = "", val geminiModel: String = "") {
+    /** Which service and model [provider] translates with, for telling their translations apart. */
+    fun variant(provider: TranslationProvider): String = when (provider) {
+        TranslationProvider.OpenAi -> "${com.tx24.spicyplayer.translation.openAiEndpoint(baseUrl)?.host.orEmpty()} $model"
+        TranslationProvider.Gemini -> geminiModel
+        else -> ""
+    }
+
+    companion object {
+        const val OPENAI_BASE_URL = "https://api.openai.com/v1"
+    }
+}
+
 /** Lookup preferences travel in backups; credentials and consent stay on this device. */
 internal class TranslationSettingsStore(context: Context) {
     private val preferences = context.getSharedPreferences("translation", 0)
@@ -24,6 +38,7 @@ internal class TranslationSettingsStore(context: Context) {
             provider = provider,
             excludedLanguages = preferences.getStringSet("excludedLanguages", emptySet()).orEmpty().mapNotNull(::languageCode).toSet(),
             humanTranslations = preferences.getBoolean("humanTranslations", true),
+            aiVariant = ai().variant(provider),
         )
     }
     fun save(value: TranslationPreferences) {
@@ -37,12 +52,33 @@ internal class TranslationSettingsStore(context: Context) {
     }
     fun key(): String = keys.getString("key", "").orEmpty()
     fun saveKey(key: String) { keys.edit { putString("key", key) } }
+
+    /** [provider]'s API key, kept on this device only (the DeepL key's store). */
+    fun key(provider: TranslationProvider): String = keys.getString(keyName(provider), "").orEmpty()
+    fun saveKey(provider: TranslationProvider, key: String) { keys.edit { putString(keyName(provider), key) } }
+    private fun keyName(provider: TranslationProvider) = when (provider) {
+        TranslationProvider.DeepL -> "key"
+        else -> provider.name.lowercase(java.util.Locale.ROOT) + "_key"
+    }
+
+    fun ai(): AiTranslationSettings = AiTranslationSettings(
+        baseUrl = preferences.getString("aiBaseUrl", null) ?: AiTranslationSettings.OPENAI_BASE_URL,
+        model = preferences.getString("aiModel", null).orEmpty(),
+        geminiModel = preferences.getString("geminiModel", null) ?: com.tx24.spicyplayer.translation.GeminiModels.DEFAULT,
+    )
+    fun saveAi(value: AiTranslationSettings) {
+        preferences.edit {
+            putString("aiBaseUrl", value.baseUrl.trim())
+            putString("aiModel", value.model.trim())
+            putString("geminiModel", value.geminiModel.trim())
+        }
+    }
     fun language(song: String?): String? = song?.let { languageCode(languages.getString(it, null)) }
     fun saveLanguage(song: String, language: String?) {
         languages.edit { if (language == null) remove(song) else putString(song, language) }
     }
-    fun disclosed(provider: TranslationProvider, human: Boolean): Boolean =
-        TranslationConsent.covered(preferences.getStringSet("disclosed", emptySet()).orEmpty(), provider, human)
+    fun disclosed(provider: TranslationProvider, human: Boolean, service: String? = null): Boolean =
+        TranslationConsent.covered(preferences.getStringSet("disclosed", emptySet()).orEmpty(), provider, human, service)
     fun disclose(id: String) {
         preferences.edit { putStringSet("disclosed", preferences.getStringSet("disclosed", emptySet()).orEmpty() + id) }
     }

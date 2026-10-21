@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.offset
 import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.staticCompositionLocalOf
 import com.tx24.spicyplayer.ui.components.drawBrandMark
+import com.tx24.spicyplayer.ui.components.focusLayer
+import com.tx24.spicyplayer.ui.components.focusRing
 import com.tx24.spicyplayer.ui.components.drawBrandRamp
 import com.tx24.spicyplayer.ui.components.rememberBrandGlyph
 import com.tx24.spicyplayer.ui.components.BrandTitleSize
@@ -89,6 +91,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Paint
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.layout.boundsInRoot
@@ -395,11 +398,13 @@ fun SettingsScreen(
                     scroll = homeScroll,
                     ready = homeReady,
                     skeleton = { HomeSkeleton() },
-                    modifier = Modifier.graphicsLayer {
-                        val over = covered(0)
-                        translationX = -over * width * HOME_PARALLAX
-                        alpha = 1f - over
-                    },
+                    modifier = Modifier
+                        .graphicsLayer {
+                            val over = covered(0)
+                            translationX = -over * width * HOME_PARALLAX
+                            alpha = 1f - over
+                        }
+                        .focusLayer(current = stack.isEmpty(), ready = homeReady),
                     header = { SpicySearchBar(query, { query = it }, Modifier.fillMaxWidth().padding(top = SpicySpacing.S4)) },
                 ) {
                     if (query.isBlank()) {
@@ -426,7 +431,8 @@ fun SettingsScreen(
                                 alpha = shift * (1f - over)
                             }
                             // Keeps touches from falling through to the page underneath.
-                            .pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent() } },
+                            .pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent() } }
+                            .focusLayer(current = index == stack.lastIndex, ready = opened.ready),
                         header = { Spacer(Modifier.height(SpicySpacing.S2)) },
                     ) {
                         PageContent(opened.page, state, viewModel, updater, settings, onOpenLyricsManager, onOpenSpotifySearch)
@@ -465,6 +471,14 @@ private fun PeekButton() {
         contentDescription = "Peek at the lyrics",
         // The peek starts on the press, so that's where it buzzes; a hold ticks again as it ends.
         releaseHaptic = false,
+        // A key can't be held to peek, so a press keeps the lyrics clear and the next brings the settings back.
+        onKeyClick = {
+            haptics.performHapticFeedback(HapticFeedbackType.VirtualKey)
+            if (peek.active) peek.end() else {
+                peek.start(bounds, plate = false)
+                peek.latched = true
+            }
+        },
         size = 40.dp,
         modifier = Modifier
             .onGloballyPositioned { bounds = it.boundsInRoot() }
@@ -761,6 +775,7 @@ internal fun GroupRow(
         Modifier
             .fillMaxWidth()
             .background(background)
+            .focusRing(RectangleShape)
             .clickable(interaction, indication = null, role = Role.Button, onClick = withHaptic(HapticFeedbackType.ContextClick, onClick))
             .padding(horizontal = 14.dp, vertical = SpicySpacing.S3),
         verticalAlignment = Alignment.CenterVertically,

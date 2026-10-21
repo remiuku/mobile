@@ -7,7 +7,9 @@ data class LyricsFooter(
     /** Sync credits: who made the timing and who uploaded/submitted it. */
     val maker: LyricsCredit? = null,
     val uploader: LyricsCredit? = null,
+    /** Who translated the lines on screen ("Genius + Google"), and where their romanization comes from. */
     val translationCredit: String? = null,
+    val romanizationCredit: String? = null,
 ) {
     /**
      * One short line for where the lyrics come from, for the controls and the floating window:
@@ -38,7 +40,8 @@ data class LyricsFooter(
                 ?.let { if (it == "Spicy Lyrics Community") "Spicy Lyrics" else it } ?: p.provider
             add(FooterLine("Provided by: $origin", FooterLine.Kind.PROVIDER))
         }
-        translationCredit?.let { add(FooterLine(it, FooterLine.Kind.PROVIDER)) }
+        translationCredit?.let { add(FooterLine("Translation from: $it", FooterLine.Kind.TEXTS)) }
+        romanizationCredit?.let { add(FooterLine("Romanization from: $it", FooterLine.Kind.TEXTS)) }
         val spicyCommunity = provenance?.provider == "Spicy Lyrics" && (maker != null || uploader != null)
         if (spicyCommunity) add(FooterLine("These lyrics have been provided by our community", FooterLine.Kind.NOTE))
         maker?.let { add(it.line("Made by")) }
@@ -82,7 +85,8 @@ data class FooterLine(
     /** For [Kind.COMMUNITY]: the people credited, drawn after [text] on one flowing line. */
     val parts: List<FooterLine> = emptyList(),
 ) {
-    enum class Kind { WRITERS, PROVIDER, NOTE, CONTRIBUTOR, COMMUNITY }
+    /** [TEXTS]: where the translation and romanization on screen come from. */
+    enum class Kind { WRITERS, PROVIDER, NOTE, CONTRIBUTOR, COMMUNITY, TEXTS }
 }
 
 data class LyricsProvenance(
@@ -98,6 +102,8 @@ data class LyricsDocument(
     val type: LyricsType = LyricsType.Syllable,
     /** Song URI + source + SHA-256 of the raw lyric payload. */
     val documentId: String = "",
+    /** The language of the lines' own translations, when the document says. */
+    val translationLanguage: String? = null,
 ) {
     val songwriters: List<String> get() = footer.songwriters
 

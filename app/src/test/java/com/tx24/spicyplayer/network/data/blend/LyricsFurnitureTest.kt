@@ -68,6 +68,13 @@ class LyricsFurnitureTest {
     }
 
     @Test
+    fun `a title card with a featured artist and the artist spelled its own way goes`() {
+        val lrc = "[00:00.61]Restart Refine ( feat. GUMI) - dØtcØmmie/ GUMI\n[00:16.83]You cannot escape my mind\n[00:18.74]Restart refine"
+        assertEquals("[00:16.83]You cannot escape my mind\n[00:18.74]Restart refine",
+            LyricsFurniture.clean(RemoteLyricsPayload(syncedLyrics = lrc), "Restart Refine", "d0tc0mmie").syncedLyrics)
+    }
+
+    @Test
     fun `a payload loses its furniture in the form it came`() {
         val lrc = "[00:00.00]作词 : Someone\n[00:05.00]Hold the light up high\n[00:09.00]Never let it die"
         assertEquals("[00:05.00]Hold the light up high\n[00:09.00]Never let it die",

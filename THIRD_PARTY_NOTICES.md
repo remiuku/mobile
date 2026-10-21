@@ -6,7 +6,7 @@ Spicy Lyrics Mobile is licensed under the [GNU Affero General Public License, ve
 
 | Project | What Spicy Lyrics Mobile adapts | License |
 | --- | --- | --- |
-| [Spicy Lyrics](https://github.com/Spikerko/spicy-lyrics) by Spikerko and contributors | The lyrics renderer: layout, word and line animation, scrolling, interludes, the song header, controls and settings styling, TTML parsing and romanization rules | AGPL-3.0 |
+| [Spicy Lyrics](https://github.com/Spikerko/spicy-lyrics) by Spikerko and contributors | The lyrics renderer: layout, word and line animation, scrolling, interludes, the song header, controls and settings styling, TTML parsing and romanization rules, and SLObjPack (the API's lyrics encoding, Kotlin port by Spikerko) | AGPL-3.0 |
 | [Spicy Lyrics fork](https://github.com/iPixelGalaxy/spicy-lyrics) by iPixelGalaxy | Settings layout, source cards, the legacy background and pop-up styling | AGPL-3.0 |
 | [mild-lyrics](https://github.com/gcoolL/mild-lyrics) by gcoolL | Source fetching order, lyric blends and Genius romanization alignment | N/A |
 | [@kawarp/core](https://github.com/better-lyrics/kawarp) 1.2.2, Copyright (c) 2026 Better Lyrics | The animated background | MIT |
@@ -23,7 +23,7 @@ Spicy Lyrics Mobile is licensed under the [GNU Affero General Public License, ve
 
 ## Libraries
 
-Kuromoji (Apache-2.0), OkHttp and Retrofit (Apache-2.0), Gson (Apache-2.0), Coil (Apache-2.0), Haze (Apache-2.0), Timber (Apache-2.0), Kotlin and kotlinx.coroutines (Apache-2.0) and AndroidX (Apache-2.0) are used as dependencies under their own licenses.
+Kuromoji (Apache-2.0), OkHttp and Retrofit (Apache-2.0), Gson (Apache-2.0), Coil (Apache-2.0), Haze (Apache-2.0), Timber (Apache-2.0), Kotlin and kotlinx.coroutines (Apache-2.0) AndroidX (Apache-2.0) and ML Kit GenAI (Google's ML Kit terms) are used as dependencies under their own licenses.
 
 ## Fonts
 

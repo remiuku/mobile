@@ -2,6 +2,7 @@ package com.tx24.spicyplayer.ui.controls
 
 import androidx.compose.ui.zIndex
 import kotlin.math.abs
+import com.tx24.spicyplayer.ui.components.scrollHints
 import com.tx24.spicyplayer.ui.components.LocalGlassCast
 import androidx.compose.runtime.CompositionLocalProvider
 import com.tx24.spicyplayer.ui.components.LocalGlyphPressed
@@ -124,6 +125,15 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.shape.CircleShape
+import com.tx24.spicyplayer.ui.components.focusRing
+import com.tx24.spicyplayer.ui.components.keyClickable
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.onClick
@@ -451,6 +461,7 @@ private fun MoreButton(actions: List<FloatingAction>, size: Dp) {
                         scaleOut(tween(SpicyMotion.FAST_MS), targetScale = 0.94f, transformOrigin = origin),
                 ) {
                     val plate = RoundedCornerShape(SpicyRadii.Md)
+                    val menuScroll = rememberScrollState()
                     Column(
                         Modifier
                             .widthIn(min = 180.dp, max = 280.dp)
@@ -459,7 +470,8 @@ private fun MoreButton(actions: List<FloatingAction>, size: Dp) {
                             .clip(plate)
                             .background(MENU_FILL)
                             .border(1.dp, SpicyColors.HairlineStrong, plate)
-                            .verticalScroll(rememberScrollState())
+                            .scrollHints(menuScroll)
+                            .verticalScroll(menuScroll)
                             .padding(vertical = SpicySpacing.S1),
                     ) {
                         actions.forEach { action ->
@@ -487,6 +499,7 @@ private fun MoreItem(action: FloatingAction, onClick: () -> Unit) {
             .padding(horizontal = SpicySpacing.S1)
             .clip(RoundedCornerShape(SpicyRadii.Sm))
             .background(if (pressed) SpicyColors.TintBgPressed else Color.Transparent)
+            .focusRing(RoundedCornerShape(SpicyRadii.Sm))
             .clickable(interaction, indication = null, role = Role.Button, onClick = onClick)
             .padding(horizontal = SpicySpacing.S3),
         verticalAlignment = Alignment.CenterVertically,
@@ -1014,6 +1027,7 @@ private fun PressableGlyph(
     val haptics by rememberUpdatedState(LocalHapticFeedback.current)
     Box(
         modifier = (touch ?: Modifier.size(width = maxOf(TOUCH_SIZE, width + 12.dp), height = TOUCH_SIZE))
+            .keyClickable(CircleShape) { currentOnClick() }
             .semantics {
                 role = Role.Button
                 contentDescription = description
@@ -1150,6 +1164,20 @@ private fun TimelineRow(controls: PlaybackControlsState, shown: () -> Float, mod
         Canvas(
             barModifier
                 .height(BAR_TOUCH_HEIGHT)
+                // A remote's or keyboard's left and right skip 10 s; up and down move on.
+                .focusRing(RoundedCornerShape(SpicyRadii.Sm))
+                .onKeyEvent { event ->
+                    val delta = when (event.key) {
+                        Key.DirectionLeft -> -KEY_SEEK_MS
+                        Key.DirectionRight -> KEY_SEEK_MS
+                        else -> return@onKeyEvent false
+                    }
+                    if (seekable && event.type == KeyEventType.KeyDown) {
+                        current.onSeek((current.positionMs() + delta).coerceIn(0L, duration))
+                    }
+                    seekable
+                }
+                .focusable(seekable)
                 .pointerInput(seekable, duration) {
                     if (!seekable) return@pointerInput
                     // A tap seeks where it went down. Only sideways movement makes it a drag: the
@@ -1281,3 +1309,6 @@ internal object SpicyIcons {
             .apply { paths.forEach { addPath(PathParser().parsePathString(it).toNodes(), fill = SolidColor(Color.White)) } }
             .build()
 }
+
+/** How far the timeline skips for a press of left or right. */
+private const val KEY_SEEK_MS = 10_000L

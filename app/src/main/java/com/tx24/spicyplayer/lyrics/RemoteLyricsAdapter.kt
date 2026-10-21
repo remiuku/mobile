@@ -35,6 +35,8 @@ internal object RemoteLyricsAdapter {
                     groupId = line.groupId,
                     agent = line.agent,
                     oppositeAligned = line.oppositeAligned,
+                    translation = line.translation,
+                    untimed = line.untimed,
                 )
             }.takeIf(List<TimedLine>::isNotEmpty)
         }
@@ -70,6 +72,7 @@ internal object RemoteLyricsAdapter {
             songwriters = (attribution?.songwriters.orEmpty() + parsedTtml?.songwriters.orEmpty())
                 .map { decodeEntities(it).trim() }.filter(String::isNotBlank).distinct(),
             sourceRomanized = unromanized.any { line -> line.words.any { it.romanized != null } },
+            translationLanguage = parsedTtml?.translationLanguage,
             lyricsType = when (selection.quality) {
                 RemoteLyricsQuality.WORD_SYNCED -> LyricsType.Syllable
                 RemoteLyricsQuality.LINE_SYNCED -> LyricsType.Line

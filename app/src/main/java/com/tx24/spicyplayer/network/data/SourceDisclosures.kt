@@ -30,15 +30,27 @@ private const val TITLE_ARTIST = "the song's title and artist"
 private const val WITH_LENGTH = "the song's title, artist and length"
 
 object SourceDisclosures {
-    fun translation(provider: com.tx24.spicyplayer.translation.TranslationProvider, human: Boolean = true): SourceDisclosure {
-        val deepL = provider == com.tx24.spicyplayer.translation.TranslationProvider.DeepL
-        val recipient = if (deepL) "DeepL" else "Google Translate"
+    /** [service] is the host an OpenAI-compatible translator is at. */
+    fun translation(provider: com.tx24.spicyplayer.translation.TranslationProvider, human: Boolean = true, service: String? = null): SourceDisclosure {
+        val recipient = when (provider) {
+            com.tx24.spicyplayer.translation.TranslationProvider.Google -> "Google Translate"
+            com.tx24.spicyplayer.translation.TranslationProvider.DeepL -> "DeepL"
+            com.tx24.spicyplayer.translation.TranslationProvider.OpenAi -> "the AI service at ${service ?: "the address you set"}"
+            com.tx24.spicyplayer.translation.TranslationProvider.Gemini -> "Google's Gemini API"
+            com.tx24.spicyplayer.translation.TranslationProvider.GeminiNano -> "Gemini Nano on this phone"
+        }
+        val how = when (provider) {
+            com.tx24.spicyplayer.translation.TranslationProvider.Google -> "This uses Google's free web service, not a paid API; no API key is needed. "
+            com.tx24.spicyplayer.translation.TranslationProvider.DeepL -> "Your DeepL API key authenticates requests to DeepL. "
+            com.tx24.spicyplayer.translation.TranslationProvider.OpenAi -> "Your API key, if you set one, authenticates the requests; your account with that service is billed for them. "
+            com.tx24.spicyplayer.translation.TranslationProvider.Gemini -> "Your Gemini API key authenticates the requests; Google may use them as its terms for your key's tier say. "
+            com.tx24.spicyplayer.translation.TranslationProvider.GeminiNano -> "The lines never leave this phone. "
+        }
         return SourceDisclosure(
-            id = com.tx24.spicyplayer.translation.TranslationConsent.id(provider, human),
+            id = com.tx24.spicyplayer.translation.TranslationConsent.id(provider, human, service),
             name = "translation", recipient = recipient + if (human) " and Genius" else "",
             descriptionOverride = "Translation sends the song's original lyric lines, including background vocals, to $recipient. " +
-                "Your target and lyrics languages are sent too. " +
-                (if (deepL) "Your DeepL API key authenticates requests to DeepL. " else "This uses Google's free web service, not a paid API; no API key is needed. ") +
+                "Your target and lyrics languages are sent too. " + how +
                 (if (human) "Human translations are checked first: the song's title and artist are sent to Genius, and its original and translated lyric pages are fetched. Only songs with gaps in the human translation need $recipient. " else "") +
                 "Their own terms and privacy policies apply. You can turn translation off at any time.",
         )

@@ -7,6 +7,11 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <!-- Updates: the downloaded APK goes to Android's installer, which asks the user first. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- Runs on TVs too (Google TV's launcher, driven by a remote or a gamepad); a touchscreen isn't needed. -->
+    <uses-feature android:name="android.software.leanback" android:required="false" />
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+    <!-- Gemini Nano (on-device translation) needs Android 8; it is only reached there (OnDeviceModel). -->
+    <uses-sdk tools:overrideLibrary="com.google.mlkit.genai.prompt,com.google.mlkit.genai.common" />
 
     <!-- Makes media players visible (Android 11+) so their custom-action icons can be loaded. -->
     <queries>
@@ -24,6 +29,7 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
+        android:banner="@drawable/tv_banner"
         android:theme="@style/Theme.SpicyLyricsMobile">
         <activity
             android:name="com.tx24.spicyplayer.LyricsActivity"
@@ -45,6 +51,7 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
         </activity-alias>
         <activity-alias
@@ -57,6 +64,7 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
         </activity-alias>
 

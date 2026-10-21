@@ -56,7 +56,7 @@ import kotlin.math.roundToInt
 /** Which credits stay on screen, pinned under the lyrics, instead of scrolling after them. */
 enum class PinnedFooterMode(val label: String) {
     Off("Off"),
-    /** The source and community credits; the writers still scroll. */
+    /** Every credit but the writers, which still scroll. */
     NoWriters("No Writers"),
     Full("Full");
 
@@ -129,6 +129,8 @@ internal class FlowPiece(
     val y: Float,
     val avatarUrl: String? = null,
     val avatarSize: Float = 0f,
+    /** The top of the wrapped line it's on. */
+    val lineTop: Float = 0f,
 )
 
 /** Where a person in a flow can be tapped, relative to the row. */
@@ -161,7 +163,7 @@ internal fun measureFooterRows(
             refined && line.kind == FooterLine.Kind.WRITERS -> Triple(0.34f, 1f, 0.3f)
             refined -> Triple(0.34f * 0.86f, 1f, 0.3f)
             line.kind == FooterLine.Kind.WRITERS -> Triple(0.47f, 0.7f, 0.25f)
-            line.kind == FooterLine.Kind.PROVIDER -> Triple(0.34f, 0.55f, 0.25f)
+            line.kind == FooterLine.Kind.PROVIDER || line.kind == FooterLine.Kind.TEXTS -> Triple(0.34f, 0.55f, 0.25f)
             line.kind == FooterLine.Kind.NOTE -> Triple(0.35f, 0.65f, 0.3f)
             else -> Triple(0.34f, 1f, 0.2f)
         }
@@ -218,7 +220,16 @@ internal fun measureFooterRows(
  * The credits in the Refined look: community lyrics name themselves on the second line, so the
  * "Provided by" row goes, and that note reads "Community lyrics".
  */
-internal fun refinedFooterLines(lines: List<FooterLine>): List<FooterLine> {
+internal fun refinedFooterLines(footer: List<FooterLine>): List<FooterLine> {
+    // Translation and romanization share one row, as the people do.
+    val texts = footer.filter { it.kind == FooterLine.Kind.TEXTS }
+    val lines = if (texts.size < 2) footer else footer.mapNotNull { line ->
+        when {
+            line === texts.first() -> FooterLine(texts.joinToString(" · ") { it.text }, FooterLine.Kind.TEXTS)
+            line.kind == FooterLine.Kind.TEXTS -> null
+            else -> line
+        }
+    }
     val people = lines.filter { it.kind == FooterLine.Kind.CONTRIBUTOR }
     if (people.isEmpty()) return lines
     val community = lines.any { it.kind == FooterLine.Kind.NOTE }
@@ -255,6 +266,12 @@ private fun refinedText(line: FooterLine): AnnotatedString {
             }
             line.kind == FooterLine.Kind.PROVIDER && label.isNotEmpty() -> {
                 withStyle(muted) { append("$label ${line.text.substringAfter(": ")}") }
+            }
+            // "Translation from Genius · Romanization from On-device", the sources a step brighter.
+            line.kind == FooterLine.Kind.TEXTS -> line.text.split(" · ").forEachIndexed { i, part ->
+                if (i > 0) withStyle(muted) { append(" · ") }
+                withStyle(muted) { append(part.substringBefore(": ") + " ") }
+                withStyle(value) { append(part.substringAfter(": ")) }
             }
             else -> withStyle(muted) { append(line.text) }
         }
@@ -294,6 +311,8 @@ private fun measureFlowRow(
     var y = 0f
     var widest = 0f
     var first = true
+    /** Where each wrapped line ends, by its top. */
+    val lineEnds = mutableMapOf<Float, Float>()
 
     /** Places one unit whole on the current row, or on the next if it doesn't fit. */
     fun place(width: (withDot: Boolean) -> Float, add: (x: Float, y: Float, withDot: Boolean) -> Unit) {
@@ -307,14 +326,15 @@ private fun measureFlowRow(
         add(x, y, withDot)
         x = before + width(withDot)
         widest = maxOf(widest, x)
+        lineEnds[y] = x
         first = false
     }
-    fun dotPiece(at: Float, y: Float) = FlowPiece(dot, at + dotGap, y + (lineHeight - dot.size.height) / 2f)
+    fun dotPiece(at: Float, y: Float) = FlowPiece(dot, at + dotGap, y + (lineHeight - dot.size.height) / 2f, lineTop = y)
     val dotWidth = dot.size.width + dotGap * 2f
 
     if (line.text.isNotEmpty()) {
         val lead = measure(line.text, muted)
-        place({ lead.size.width.toFloat() }) { px, py, _ -> pieces += FlowPiece(lead, px, py) }
+        place({ lead.size.width.toFloat() }) { px, py, _ -> pieces += FlowPiece(lead, px, py, lineTop = py) }
     }
     for (person in line.parts) {
         val role = measure(person.label.orEmpty(), muted)
@@ -325,19 +345,25 @@ private fun measureFlowRow(
             var cx = px
             if (withDot) { pieces += dotPiece(cx, py); cx += dotWidth }
             val left = cx
-            pieces += FlowPiece(role, cx, py)
+            pieces += FlowPiece(role, cx, py, lineTop = py)
             cx += role.size.width + gap
             if (hasAvatar) {
-                pieces += FlowPiece(null, cx, py + (lineHeight - avatar) / 2f, person.avatarUrl, avatar)
+                pieces += FlowPiece(null, cx, py + (lineHeight - avatar) / 2f, person.avatarUrl, avatar, lineTop = py)
                 cx += avatar + gap
             }
-            pieces += FlowPiece(name, cx, py)
+            pieces += FlowPiece(name, cx, py, lineTop = py)
             if (person.profileUrl != null) taps += FlowTap(person, left, py, cx + name.size.width, py + lineHeight)
         }
     }
+    // On the right, each wrapped line ends at the edge, not just the longest.
+    val shift = { top: Float -> if (alignEnd) widest - (lineEnds[top] ?: widest) else 0f }
     return FooterRow(
         line, measure("", muted), 1f, marginTop, y + lineHeight, 0f, 0f,
-        flow = FooterFlow(pieces, taps, widest),
+        flow = FooterFlow(
+            pieces.map { FlowPiece(it.text, it.x + shift(it.lineTop), it.y, it.avatarUrl, it.avatarSize, it.lineTop) },
+            taps.map { FlowTap(it.line, it.left + shift(it.top), it.top, it.right + shift(it.top), it.bottom) },
+            widest,
+        ),
     )
 }
 

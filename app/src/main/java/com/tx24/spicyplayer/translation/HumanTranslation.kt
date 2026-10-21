@@ -182,15 +182,20 @@ object HumanTranslation {
     private const val MIN_SCORE = 0.85
 }
 
+/** The lyrics' [own] translation first, then Genius's ([human]), then the [machine] one. */
 fun combineTranslations(
     key: TranslationKey, human: List<String?>, machine: List<String?>, language: String?,
     languages: List<String?> = human.map { null },
+    own: List<String?> = human.map { null },
 ): TranslationResult {
-    require(human.size == machine.size)
-    val texts = human.indices.map { human[it]?.takeIf(String::isNotBlank) ?: machine[it]?.takeIf(String::isNotBlank) }
+    require(human.size == machine.size && own.size == human.size)
+    val texts = human.indices.map {
+        own[it]?.takeIf(String::isNotBlank) ?: human[it]?.takeIf(String::isNotBlank) ?: machine[it]?.takeIf(String::isNotBlank)
+    }
     val origins = texts.indices.map { index ->
         when {
             texts[index] == null -> null
+            !own[index].isNullOrBlank() -> TranslationOrigin.Lyrics
             !human[index].isNullOrBlank() -> TranslationOrigin.Genius
             else -> TranslationOrigin.valueOf(key.provider.name)
         }

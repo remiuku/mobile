@@ -62,6 +62,35 @@ class AnonymousSpotifyCatalogSearch constructor(
         withContext(Dispatchers.IO) { session() }
     }
 
+    override suspend fun isrc(trackId: String): String? = withContext(Dispatchers.IO) {
+        val gid = trackGid(trackId) ?: return@withContext null
+        val url = "$METADATA_URL/$gid?market=from_token"
+        suspend fun fetch(token: String) = client.newCall(
+            Request.Builder().url(url)
+                .header("Authorization", "Bearer $token")
+                .header("app-platform", "WebPlayer")
+                .header("Accept", "application/json")
+                .get().build()
+        ).awaitResponse().use { response ->
+            when {
+                response.code == 401 -> null to true
+                !response.isSuccessful -> null to false
+                else -> response.body?.string() to false
+            }
+        }
+        val first = session().accessToken
+        var (body, rejected) = fetch(first)
+        if (rejected) {
+            invalidate(first)
+            body = fetch(session().accessToken).first
+        }
+        body?.let { gson.fromJson(it, JsonObject::class.java) }
+            ?.getAsJsonArray("external_id")
+            ?.mapNotNull { it.takeIf { id -> id.isJsonObject }?.asJsonObject }
+            ?.firstOrNull { it.get("type")?.asString == "isrc" }
+            ?.get("id")?.asString?.uppercase()
+    }
+
     /** The anonymous web-player token, for other calls on the same contract. */
     suspend fun accessToken(): String = withContext(Dispatchers.IO) { session().accessToken }
 
@@ -159,10 +188,24 @@ class AnonymousSpotifyCatalogSearch constructor(
         val candidates: List<SpotifyTrackCandidate>,
     )
 
-    private companion object {
+    internal companion object {
         const val BOOTSTRAP_TRACK_ID = "4uLU6hMCjMI75M1A2tKUQC"
         const val BOOTSTRAP_URL = "https://open.spotify.com/embed/track/$BOOTSTRAP_TRACK_ID"
         const val PATHFINDER_URL = "https://api-partner.spotify.com/pathfinder/v1/query"
+        const val METADATA_URL = "https://spclient.wg.spotify.com/metadata/4/track"
+
+        private const val BASE62 = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+        /** A track ID's hex form, which the metadata service takes; null for anything that isn't one. */
+        fun trackGid(trackId: String): String? {
+            if (trackId.length != 22) return null
+            var value = java.math.BigInteger.ZERO
+            for (c in trackId) {
+                val digit = BASE62.indexOf(c).takeIf { it >= 0 } ?: return null
+                value = value * java.math.BigInteger.valueOf(62) + java.math.BigInteger.valueOf(digit.toLong())
+            }
+            return value.toString(16).padStart(32, '0').takeIf { it.length == 32 }
+        }
         const val SEARCH_OPERATION = "searchDesktop"
 
         // Spotify persisted-query hashes are not stable API. A

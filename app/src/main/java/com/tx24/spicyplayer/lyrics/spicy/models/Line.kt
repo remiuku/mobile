@@ -24,6 +24,10 @@ data class Line(
     val translationReplaces: Boolean = false,
     /** Timed only as a whole inside word-synced lyrics: animated and drawn as line-synced. */
     val lineTimed: Boolean = false,
+    /** The source's own translation of this line (TTML `x-translation` or the head's entry). */
+    val translation: String? = null,
+    /** Synced lyrics' line with no timing of its own, placed in the gap around it; lit whole, never wiped. */
+    val untimed: Boolean = false,
 ) {
     val isBackground: Boolean get() = role == LineRole.BACKGROUND
     val isInterlude: Boolean get() = role == LineRole.INTERLUDE

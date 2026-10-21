@@ -214,7 +214,9 @@ class TranslationTest {
         assertNotEquals(key.fileName(), key.copy(provider = TranslationProvider.DeepL).fileName())
         assertNotEquals(key.fileName(), key.copy(sourceLanguage = "ru").fileName())
         assertNotEquals(key.fileName(), key.fileName(TRANSLATION_CACHE_VERSION + 1))
-        assertEquals(8, TRANSLATION_CACHE_VERSION)
+        // An AI provider's service and model count too.
+        assertNotEquals(key.copy(variant = "gemini-a").fileName(), key.copy(variant = "gemini-b").fileName())
+        assertEquals(9, TRANSLATION_CACHE_VERSION)
     }
 
     @Test fun `wrong cache version and malformed entries are ignored`() {

@@ -134,6 +134,8 @@ dependencies {
     implementation("com.squareup.retrofit2:converter-gson:3.0.0")
     implementation("com.squareup.okhttp3:okhttp:5.5.0")
     implementation("javax.inject:javax.inject:1")
+    // On-device translation with Gemini Nano, where the phone has it (AICore, Android 8+).
+    implementation("com.google.mlkit:genai-prompt:1.0.0-beta4")
     debugImplementation("androidx.compose.ui:ui-tooling")
     testImplementation("junit:junit:4.13.2")
     testImplementation("net.sf.kxml:kxml2:2.3.0")

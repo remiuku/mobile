@@ -468,6 +468,23 @@ fun LyricsView(
                             }
                             -(settledYScratch[index] + half)
                         }
+                        // A run of lines with no timing of their own is sung all at once, over the gap
+                        // they fill. The view holds the run's first line there, or with static
+                        // auto-scroll on, moves through the run over the gap as static lyrics do the song.
+                        targetIndex?.let { index ->
+                            val line = currentLayouts[index].line
+                            if (!line.untimed) return@let
+                            val run = currentLayouts.indices.filter { i ->
+                                val other = currentLayouts[i].line
+                                other.untimed && other.startMs == line.startMs && !currentLayouts[i].isBackground
+                            }
+                            if (run.isEmpty()) return@let
+                            fun anchor(i: Int) = settledYScratch[i] + if (alignTopUpdated) 0f else currentLayouts[i].height / 2f
+                            val progress = if (scrollConfigUpdated.staticSongMs > 0L && line.endMs > line.startMs) {
+                                ((currentTime - line.startMs).toFloat() / (line.endMs - line.startMs)).coerceIn(0f, 1f)
+                            } else 0f
+                            targetY = -(anchor(run.first()) + (anchor(run.last()) - anchor(run.first())) * progress)
+                        }
                         // Once the song's last line has been sung, the credits scroll up far enough to be whole
                         // on screen, above whatever the pinned credits and controls cover.
                         val lastLine = currentLayouts.lastOrNull()
@@ -675,11 +692,12 @@ fun LyricsView(
                     lyricsType == LyricsType.Static -> drawStaticLine(layout, lineAnim, lineStartX, scrollOffset, dynamicY)
                     lyricsType == LyricsType.Line || layout.line.lineTimed -> drawLineModeLine(layout, lineAnim, lineStartX, scrollOffset, dynamicY, config)
                     // Minimal Lyrics Mode shrinks inactive lines (a CSS `scale`: paint only, no reflow)
-                    // about their start edge, like line-synced lines.
+                    // about their start edge, like line-synced lines. Background vocals that pop out
+                    // fold up into their top edge, under their line.
                     lineAnim.scale != 1f -> withTransform({
                         scale(lineAnim.scale, lineAnim.scale, Offset(
                             if (layout.isRightAligned) lineStartX + layout.totalWidth else lineStartX,
-                            dynamicY + scrollOffset + layout.height / 2f,
+                            dynamicY + scrollOffset + if (layout.isBackground && config.backgroundPop) 0f else layout.height / 2f,
                         ))
                     }) { drawStandardLine(layout, lineAnim, lineStartX, scrollOffset, dynamicY, config) }
                     else -> drawStandardLine(layout, lineAnim, lineStartX, scrollOffset, dynamicY, config)

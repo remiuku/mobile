@@ -138,7 +138,12 @@ import com.tx24.spicyplayer.lyrics.spicy.models.buildDisplayTimeline
 import com.tx24.spicyplayer.playback.ExternalPlaybackViewModel
 import com.tx24.spicyplayer.playback.PlayerLimit
 import com.tx24.spicyplayer.playback.PlayerUiState
+import com.tx24.spicyplayer.playback.SessionAccessService
 import com.tx24.spicyplayer.translation.TranslationResult
+import com.tx24.spicyplayer.translation.romanizationOrigins
+import androidx.compose.foundation.focusGroup
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.platform.LocalFocusManager
 import com.tx24.spicyplayer.translation.translateButtonHelps
 import com.tx24.spicyplayer.translation.TranslationMode
 import com.tx24.spicyplayer.translation.TranslationPresentation
@@ -148,6 +153,7 @@ import com.tx24.spicyplayer.ui.background.SpicySessionBackground
 import com.tx24.spicyplayer.ui.components.LocalBackdrop
 import com.tx24.spicyplayer.ui.components.SpicyModalNotes
 import com.tx24.spicyplayer.ui.components.SpicyVersionRow
+import com.tx24.spicyplayer.ui.controls.KeyInput
 import com.tx24.spicyplayer.ui.controls.ActionKind
 import com.tx24.spicyplayer.ui.controls.CoverControls
 import com.tx24.spicyplayer.ui.controls.PanelTimeline
@@ -248,6 +254,20 @@ private var imageLoaderSet = false
 class LyricsActivity : ComponentActivity() {
     private val playbackViewModel: ExternalPlaybackViewModel by viewModels()
     private val updateViewModel: UpdateViewModel by viewModels()
+    private val keyInput by lazy {
+        KeyInput().apply {
+            onPlayPause = playbackViewModel::playPause
+            onPrevious = playbackViewModel::skipPrevious
+            onNext = playbackViewModel::skipNext
+            onResync = playbackViewModel::resync
+        }
+    }
+
+    // Activity's own public method: androidx.core's ComponentActivity re-declares it restricted,
+    // which lint reads as this override reaching into the library.
+    @android.annotation.SuppressLint("RestrictedApi")
+    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean =
+        keyInput.handle(event) || super.dispatchKeyEvent(event)
 
     /** In the small floating window: the lyrics screen then shows the lyrics and nothing else. */
     private var inPip by mutableStateOf(false)
@@ -340,11 +360,18 @@ class LyricsActivity : ComponentActivity() {
                         updater = updateViewModel,
                         settings = settings,
                         openNotificationAccess = {
-                            startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                            // Many TVs have no notification access screen; there it's granted over adb.
+                            try {
+                                startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                            } catch (missing: android.content.ActivityNotFoundException) {
+                                playbackViewModel.showMessage("This device has no notification access screen. Allow it from a computer: " +
+                                    "adb shell cmd notification allow_listener $packageName/${SessionAccessService::class.java.name}")
+                            }
                         },
                         inPip = inPip,
                         onEnterPip = ::enterPip.takeIf { pipSupported },
                         onPipAllowed = { pipAllowed.value = it && pipSupported },
+                        keyInput = keyInput,
                     )
                     }
                 }
@@ -478,6 +505,7 @@ private fun LyricsApp(
     /** Shrinks the lyrics into the floating window; null where the phone has none. */
     onEnterPip: (() -> Unit)?,
     onPipAllowed: (Boolean) -> Unit,
+    keyInput: KeyInput = remember { KeyInput() },
 ) {
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
@@ -741,6 +769,24 @@ private fun LyricsApp(
         // Over a Canvas there's something to see, so there they go as usual.
         (headerExpanded && !landscape && !(portraitCanvas && heldCanvasUrl != null)) || !settings.autoHideControls
     val idleMs = settings.controlsHideDelay.millis
+    // A key (remote, keyboard, gamepad) counts as a touch; a screen over the lyrics counts as shown.
+    SideEffect { keyInput.controlsShown = { controlsVisible || showSettings || showQuickSettings || showSpotifySearch } }
+    // While something is open over the lyrics screen, a remote's arrows stay in it: the screen
+    // underneath takes no focus, and gives up what it had as the overlay opens.
+    val overSettings = showSpotifySearch || showLyricsManager
+    val overlayOpen = showSettings || showQuickSettings || overSettings ||
+        lyricsViewState.profileRequest != null || state.limitNotice != null
+    // Whichever is on top: one opened from settings takes the focus from them too.
+    val topOverlay = listOf(showSpotifySearch, showLyricsManager, showQuickSettings, showSettings, overlayOpen).indexOf(true)
+    val focusManager = LocalFocusManager.current
+    LaunchedEffect(topOverlay) { if (topOverlay >= 0) focusManager.clearFocus(force = true) }
+    LaunchedEffect(keyInput) {
+        keyInput.presses.collect { at ->
+            if (at == 0L) return@collect
+            controlsVisible = true
+            touches.value = at
+        }
+    }
     LaunchedEffect(hold, idleMs) {
         if (hold) {
             controlsVisible = true
@@ -825,7 +871,12 @@ private fun LyricsApp(
                 },
         ) {
             // The background fills the screen; everything on it keeps clear of the cutout.
-            BoxWithConstraints(Modifier.fillMaxSize()) {
+            BoxWithConstraints(
+                Modifier
+                    .fillMaxSize()
+                    .focusProperties { onEnter = { if (overlayOpen) cancelFocusChange() } }
+                    .focusGroup(),
+            ) {
                 // The header rises into the cutout's band (the camera is clear of the cover), so the
                 // page starts at the top of the screen and only the bottom inset comes off.
                 val topInsetPx = with(LocalDensity.current) { padding.calculateTopPadding().toPx() }
@@ -1099,6 +1150,8 @@ private fun LyricsApp(
                             lyrics = state.lyrics,
                             translation = state.translation.takeIf { state.translationEnabled },
                             translationMode = settings.translationMode,
+                            textCredits = settings.textCredits,
+                            romanizationCredit = rememberRomanizationCredit(state, romanize, settings.textCredits),
                             romanizationMode = settings.romanizationMode,
                             currentTimeMs = viewModel::currentLyricPositionMs,
                             onSeek = viewModel::seekTo,
@@ -1405,7 +1458,11 @@ private fun LyricsApp(
             lastProfile?.let { OpenProfileMessage(it, lyricsViewState::dismissProfile) }
         }
 
-        if (showSettings) {
+        if (showSettings) Box(
+            Modifier
+                .focusProperties { onEnter = { if (overSettings) cancelFocusChange() } }
+                .focusGroup(),
+        ) {
             SettingsScreen(
                 state = state,
                 viewModel = viewModel,
@@ -1538,6 +1595,8 @@ private fun PipLyrics(
             lyrics = state.lyrics,
             translation = state.translation.takeIf { state.translationEnabled },
             translationMode = settings.translationMode,
+            textCredits = settings.textCredits,
+            romanizationCredit = rememberRomanizationCredit(state, romanize, settings.textCredits),
             romanizationMode = settings.romanizationMode,
             currentTimeMs = viewModel::currentLyricPositionMs,
             onSeek = {},
@@ -1835,6 +1894,9 @@ private fun LyricsPanel(
     translation: TranslationResult? = null,
     translationMode: TranslationMode = TranslationMode.UnderLine,
     romanizationMode: RomanizationMode = RomanizationMode.Replace,
+    /** Whether the credits say who translated the lyrics; [romanizationCredit] is already null when they don't. */
+    textCredits: Boolean = true,
+    romanizationCredit: String? = null,
 ) {
     // The loading skeleton: up as soon as the lookup starts, over whatever the panel
     // shows, fading in over 0.2s and out over 0.25s (ease-out).
@@ -1846,6 +1908,8 @@ private fun LyricsPanel(
             translation = translation,
             translationMode = translationMode,
             romanizationMode = romanizationMode,
+            textCredits = textCredits,
+            romanizationCredit = romanizationCredit,
         )
         AnimatedVisibility(
             visible = lyrics == LyricsState.Loading,
@@ -1889,6 +1953,8 @@ private fun LyricsPanelContent(
     translation: TranslationResult? = null,
     translationMode: TranslationMode = TranslationMode.UnderLine,
     romanizationMode: RomanizationMode = RomanizationMode.Replace,
+    textCredits: Boolean = true,
+    romanizationCredit: String? = null,
 ) {
     when (lyrics) {
         LyricsState.Idle -> LyricsNotice("Waiting for a song", modifier, bottomPx = noticeBottomPx, compact = noticeActions == null)
@@ -1908,6 +1974,7 @@ private fun LyricsPanelContent(
                         groupId = line.groupId,
                         oppositeAligned = line.oppositeAligned,
                         lineTimed = line.lineTimed,
+                        untimed = line.untimed,
                     )
                 }
             }
@@ -1944,10 +2011,11 @@ private fun LyricsPanelContent(
                 pinnedFooter = pinnedFooter,
                 maskBottomPx = maskBottomPx,
                 maskScale = maskScale,
-                footer = remember(lyrics, translation) {
+                footer = remember(lyrics, translation, textCredits, romanizationCredit) {
                     LyricsFooter(
                         songwriters = lyrics.songwriters,
-                        translationCredit = translation?.credit(),
+                        translationCredit = translation?.credit()?.takeIf { textCredits },
+                        romanizationCredit = romanizationCredit,
                         // "Lyrics: Spicy Lyrics • Apple Music" when a provider syndicates another catalogue.
                         // The source alone: Apple Music's lyrics read the same from every service that fetches them.
                         provenance = LyricsProvenance(lyrics.source ?: lyrics.provider),
@@ -1960,6 +2028,16 @@ private fun LyricsPanelContent(
         }
     }
 }
+
+/** "Romanization from" in the credits: while romanization shows and the credit is on, where it comes from. */
+@Composable
+private fun rememberRomanizationCredit(state: PlayerUiState, romanize: Boolean, shown: Boolean): String? =
+    remember(state.lyrics, state.humanRomanizedLines, romanize, shown) {
+        val lyrics = state.lyrics as? LyricsState.Ready
+        val romanized = lyrics?.lines?.count { line -> line.words.any { it.romanized != null } } ?: 0
+        if (!romanize || !shown || lyrics == null || romanized == 0) null
+        else romanizationOrigins(lyrics.sourceRomanized, state.humanRomanizedLines, romanized).joinToString(" + ") { it.label }
+    }
 
 /** How long the custom PiP shape has to stay put before it's sent. */
 private const val PIP_RATIO_SETTLE_MS = 600L

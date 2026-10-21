@@ -110,6 +110,7 @@ import com.tx24.spicyplayer.ui.components.SpicyModal
 import com.tx24.spicyplayer.ui.components.SpicyTextField
 import com.tx24.spicyplayer.ui.settings.AppSettings
 import com.tx24.spicyplayer.ui.theme.SpicyColors
+import com.tx24.spicyplayer.ui.components.focusRing
 import com.tx24.spicyplayer.ui.theme.SpicyRadii
 import com.tx24.spicyplayer.ui.theme.SpicySpacing
 import com.tx24.spicyplayer.ui.theme.SpicyType
@@ -503,6 +504,7 @@ private fun DropZone(busy: Boolean, subtitle: String, onClick: () -> Unit) {
                     style = Stroke(stroke, pathEffect = PathEffect.dashPathEffect(floatArrayOf(6.dp.toPx(), 5.dp.toPx()))),
                 )
             }
+            .focusRing(RoundedCornerShape(SpicyRadii.Md))
             .clickable(interaction, indication = null, enabled = !busy, role = Role.Button, onClick = withHaptic(HapticFeedbackType.ContextClick, onClick))
             .padding(SpicySpacing.S6),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -556,6 +558,7 @@ private fun ToolbarButton(icon: ImageVector, label: String, style: ToolbarStyle,
             .graphicsLayer { scaleX = scale; scaleY = scale }
             .clip(shape)
             .background(fill)
+            .focusRing(RoundedCornerShape(SpicyRadii.Md))
             .clickable(interaction, indication = null, role = Role.Button, onClick = withHaptic(HapticFeedbackType.ContextClick, onClick))
             .padding(horizontal = 14.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -614,6 +617,7 @@ private fun RowAction(
                     else -> SpicyColors.TintBg
                 },
             )
+            .focusRing(RoundedCornerShape(SpicyRadii.Md))
             .clickable(interaction, indication = null, enabled = enabled, role = Role.Button, onClickLabel = description, onClick = withHaptic(HapticFeedbackType.ContextClick, onClick))
             .padding(horizontal = if (label != null) 10.dp else 9.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -641,6 +645,10 @@ private const val PRESS_HOLD_MS = 300L
 /**
  * What the file picker offers. It filters by type, not name: a .ttml is TTML to a phone that
  * knows the extension and a nameless blob of bytes to one that doesn't, so both are asked for
- * (with plain XML, and plain text for .lrc), which keeps music, pictures and documents out.
+ * (with plain XML), which keeps music, pictures and documents out. A .lrc has no one type:
+ * Android's own table calls it `application/lrc`, file managers and other tables use the rest.
  */
-private val PICKABLE_TYPES = arrayOf(TTML_MIME, "application/xml", "text/xml", "text/plain", "application/octet-stream")
+private val PICKABLE_TYPES = arrayOf(
+    TTML_MIME, "application/xml", "text/xml", "text/plain", "application/octet-stream",
+    "application/lrc", "application/x-lrc", "text/lrc", "text/x-lrc",
+)

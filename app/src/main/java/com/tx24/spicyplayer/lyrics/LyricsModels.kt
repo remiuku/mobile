@@ -19,6 +19,10 @@ data class TimedLine(
     val oppositeAligned: Boolean = false,
     /** Word-synced lyrics' line that is timed only as a whole ([MixedSync]); drawn as line-synced. */
     val lineTimed: Boolean = false,
+    /** The source's own translation of this line. */
+    val translation: String? = null,
+    /** Synced lyrics' line with no timing of its own ([com.tx24.spicyplayer.lyrics.spicy.models.Line.untimed]). */
+    val untimed: Boolean = false,
 )
 
 sealed interface LyricsState {
@@ -34,6 +38,8 @@ sealed interface LyricsState {
         val lyricsType: com.tx24.spicyplayer.lyrics.spicy.models.LyricsType = com.tx24.spicyplayer.lyrics.spicy.models.LyricsType.Syllable,
         /** The source brought its own romanization (TTML), which a human one from Genius doesn't replace. */
         val sourceRomanized: Boolean = false,
+        /** The language of the lines' own translations ([TimedLine.translation]), when the source says. */
+        val translationLanguage: String? = null,
     ) : LyricsState
     /**
      * A notice in place of lyrics. [kind] gives its headline and explanation; [detail] says which

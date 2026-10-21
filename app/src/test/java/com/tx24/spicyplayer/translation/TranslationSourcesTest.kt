@@ -223,8 +223,8 @@ class TranslationSourcesTest {
         assertEquals(listOf("Night comes", "machine:声が響く"), result.texts)
         assertEquals(listOf(TranslationOrigin.Genius, TranslationOrigin.Google), result.origins)
         assertEquals(input.lines.map { it.text }, machine.requests.single().lines)
-        assertEquals("Translation: Genius + Google", result.credit())
-        assertEquals("Translation: Genius + Google", LyricsFooter(translationCredit = result.credit()).lines().single().text)
+        assertEquals("Genius + Google", result.credit())
+        assertEquals("Translation from: Genius + Google", LyricsFooter(translationCredit = result.credit()).lines().single().text)
     }
 
     @Test fun `complete human coverage makes zero machine calls and disk hits retain origins`() = runBlocking {
@@ -236,7 +236,7 @@ class TranslationSourcesTest {
         val result = (engine.translate(input, preferences, null, machine) { pair } as TranslationOutcome.Translated).result
         assertEquals(listOf("Night comes", null, "Stars shine"), result.texts)
         assertEquals(listOf(TranslationOrigin.Genius, null, TranslationOrigin.Genius), result.origins)
-        assertEquals("Translation: Genius", result.credit())
+        assertEquals("Genius", result.credit())
         assertEquals(result, (engine.translate(input, preferences, null, machine) { error("Cache should avoid Genius too") } as TranslationOutcome.Translated).result)
         assertTrue(machine.requests.isEmpty())
     }
@@ -334,7 +334,7 @@ class TranslationSourcesTest {
         }
         val result = engine.translate(document(*request.lines.toTypedArray()), preferences.copy(provider = TranslationProvider.DeepL, humanTranslations = false), null, deepL)
         assertEquals(listOf("I miss you", null, "Love you"), (result as TranslationOutcome.Translated).result.texts)
-        assertEquals("Translation: DeepL", result.result.credit())
+        assertEquals("DeepL", result.result.credit())
     }
 
     @Test fun `a Genius outage is an error, not a song without a translation`() = runBlocking {

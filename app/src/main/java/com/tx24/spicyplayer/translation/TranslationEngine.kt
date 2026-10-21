@@ -31,13 +31,13 @@ object TranslationBatching {
         val batches = mutableListOf<List<TranslationPiece>>()
         var batch = mutableListOf<TranslationPiece>()
         verses.forEach { block ->
-            if (size(batch + block) > GOOGLE_TEXT_LIMIT && batch.isNotEmpty()) {
+            if (size(batch + block) > provider.textLimit && batch.isNotEmpty()) {
                 batches.add(batch)
                 batch = mutableListOf()
             }
             // An oversized verse has to split between lines; each piece still keeps its address.
             block.forEach { piece ->
-                if (size(batch + piece) > GOOGLE_TEXT_LIMIT && batch.isNotEmpty()) {
+                if (size(batch + piece) > provider.textLimit && batch.isNotEmpty()) {
                     batches.add(batch)
                     batch = mutableListOf()
                 }
@@ -135,8 +135,35 @@ class TranslationEngine(
         languages[document.hash]
     }
 
+    /**
+     * The lyrics' own translations, by line, when they are in the target language: the language
+     * the lyrics give them, else the one they're detected in. Null when there are none to use.
+     */
+    fun ownTranslations(document: TranslationDocument, preferences: TranslationPreferences): List<String?>? {
+        if (document.lines.none { it.own != null }) return null
+        val language = document.ownLanguage ?: synchronized(languages) {
+            val key = "own:" + document.hash
+            if (!languages.containsKey(key)) languages[key] = languageCode(detector.detect(document.ownText))
+            languages[key]
+        }
+        if (language != languageCode(preferences.targetLanguage)) return null
+        return document.lines.map { it.own }
+    }
+
+    /**
+     * The song translated by its own translations alone, when they cover every line: nothing is
+     * sent anywhere then. Null when a line still needs a translator.
+     */
+    fun ownResult(document: TranslationDocument, preferences: TranslationPreferences, source: String?): TranslationResult? {
+        val own = ownTranslations(document, preferences) ?: return null
+        if (document.lines.any { !it.boundary && own[it.index] == null }) return null
+        val none = List<String?>(document.lines.size) { null }
+        return combineTranslations(key(document, preferences, source), none, none, source, own = own)
+    }
+
     fun key(document: TranslationDocument, preferences: TranslationPreferences, source: String?): TranslationKey =
-        TranslationKey(document.hash, languageCode(preferences.targetLanguage) ?: "en", preferences.provider, languageCode(source), preferences.humanTranslations)
+        TranslationKey(document.hash, languageCode(preferences.targetLanguage) ?: "en", preferences.provider, languageCode(source), preferences.humanTranslations,
+            preferences.aiVariant.takeIf { preferences.provider.isAi }.orEmpty())
 
     /**
      * [source] is a language the whole song is known to be in (one set for the song), and only
@@ -157,6 +184,8 @@ class TranslationEngine(
     ): TranslationOutcome = coroutineScope {
         fun skips(language: String?) = skipTranslation(language, preferences.targetLanguage, preferences.excludedLanguages)
         if (skips(source)) return@coroutineScope TranslationOutcome.Skipped(source)
+        // Translations that came with the lyrics, covering every line, need no translator.
+        ownResult(document, preferences, source)?.let { return@coroutineScope TranslationOutcome.Translated(it) }
         require(translator.provider == preferences.provider)
         val key = key(document, preferences, source)
         cache.read(key, document.lines.size)?.let { cached ->
@@ -167,6 +196,7 @@ class TranslationEngine(
         }
         if (document.lines.all { it.boundary }) return@coroutineScope TranslationOutcome.Skipped(source)
         val none = List<String?>(document.lines.size) { null }
+        val own = ownTranslations(document, preferences) ?: none
         // A failed lookup (Genius limiting or unreachable) isn't the same as no translation: the
         // result is then shown but not kept, so the next play asks Genius again.
         var humanFailed = false
@@ -191,8 +221,8 @@ class TranslationEngine(
                 else "Genius: ${texts.count { it != null }} lines matched of ${pair.originals.size} on the page")
         }
         if (quick != null) traceHuman(quick, humanTexts)
-        if (document.lines.all { it.boundary || humanTexts[it.index] != null }) {
-            val result = combineTranslations(key, humanTexts, none, source ?: languageCode(quick?.sourceLanguage))
+        if (document.lines.all { it.boundary || humanTexts[it.index] != null || own[it.index] != null }) {
+            val result = combineTranslations(key, humanTexts, none, source ?: languageCode(quick?.sourceLanguage), own = own)
             cache.write(result)
             return@coroutineScope TranslationOutcome.Translated(result)
         }
@@ -209,17 +239,17 @@ class TranslationEngine(
             val response = ask(translator, TranslatorRequest(batch.map { it.text }, key.targetLanguage, source, document.context), trace)
             if (response.lines.size != batch.size) {
                 trace("asked ${batch.size} lines, ${response.lines.size} came back")
-                if (translator.provider != TranslationProvider.Google) throw TranslationFailure("Translation returned an incomplete response. Try again later.")
+                if (translator.provider != TranslationProvider.Google && !translator.provider.isAi) throw TranslationFailure("Translation returned an incomplete response. Try again later.")
                 if (batch.size > 1) TranslationBatching.fallback(batch).forEach { send(it) }
                 return
             }
             answered = true
             val weights = mutableMapOf<String, Int>()
             batch.forEachIndexed { position, piece ->
-                val own = languageCode(response.lines[position]?.language)
-                if (own != null && piece.part == 0) lineLanguages[piece.index] = own
+                val lineLanguage = languageCode(response.lines[position]?.language)
+                if (lineLanguage != null && piece.part == 0) lineLanguages[piece.index] = lineLanguage
                 if (piece.part != 0) return@forEachIndexed
-                val language = own ?: languageCode(response.detectedLanguage) ?: return@forEachIndexed
+                val language = lineLanguage ?: languageCode(response.detectedLanguage) ?: return@forEachIndexed
                 // By lines, not characters: a line of Hangul or kanji is far shorter than its English.
                 weights.merge(language, 1, Int::plus)
             }
@@ -240,12 +270,12 @@ class TranslationEngine(
         }
         val perLine = document.lines.map { lineLanguages[it.index] }
         if (lookup != null && quick == null) {
-            if (texts.any { it != null }) onPartial(combineTranslations(key, none, texts, detected, perLine))
+            if (texts.any { it != null }) onPartial(combineTranslations(key, none, texts, detected, perLine, own))
             val pair = lookup.await()
             humanTexts = pair?.let { HumanTranslation.align(document, it) } ?: none
             traceHuman(pair, humanTexts)
         }
-        val result = combineTranslations(key, humanTexts, texts, detected, perLine)
+        val result = combineTranslations(key, humanTexts, texts, detected, perLine, own)
         if (result.texts.all { it == null }) {
             // Every line answered and none needed translating: the song is in the target language
             // (or ones left alone). Kept, so it's known the next time it plays.
@@ -277,7 +307,7 @@ class TranslationEngine(
                     val until = now() + rest
                     restsUntil[provider] = until
                     trace("${provider.label} is limiting (retry after: ${asked?.let { "${it / 1000} s" } ?: "not given"}), left alone for ${rest / 1000} s")
-                    throw resting(provider, until)
+                    throw resting(provider, until, busy.detail)
                 }
                 val wait = asked?.coerceAtLeast(1_000L) ?: (BUSY_WAIT_MS * (attempt + 1))
                 trace("${provider.label} is busy, asking again in ${wait / 1000} s")
@@ -287,12 +317,14 @@ class TranslationEngine(
         }
     }
 
-    private fun resting(provider: TranslationProvider, until: Long): ProviderResting {
+    private fun resting(provider: TranslationProvider, until: Long, detail: String? = null): ProviderResting {
         val minutes = ((until - now()).coerceAtLeast(0L) + 59_999L) / 60_000L
         val wait = if (minutes <= 1) "a minute" else "$minutes minutes"
         return ProviderResting(provider, until, when (provider) {
             TranslationProvider.Google -> "Google is limiting translations on this connection. Trying again in $wait, or use DeepL."
             TranslationProvider.DeepL -> "DeepL is busy right now. Trying again in $wait."
+            // An AI service says which limit it hit (per minute, per day…), which is worth passing on.
+            else -> "${provider.label} is busy right now. Trying again in $wait." + detail?.let { " It said: $it" }.orEmpty()
         })
     }
 

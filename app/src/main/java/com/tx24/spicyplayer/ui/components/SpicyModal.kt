@@ -252,19 +252,22 @@ fun SpicyModal(
                     top = brand?.ink?.copy(alpha = 0.22f) ?: Color.White.copy(alpha = 0.08f),
                     ring = brand?.ink?.copy(alpha = 0.16f) ?: palette.HairlineStrong,
                 )
-                // Touches on the plate stay on the plate.
-                .pointerInput(Unit) { awaitPointerEventScope { while (true) { awaitPointerEvent(); touchOnPlate[0] = true } } },
+                // Touches on the plate stay on the plate, and so do a remote's arrows.
+                .pointerInput(Unit) { awaitPointerEventScope { while (true) { awaitPointerEvent(); touchOnPlate[0] = true } } }
+                .focusLayer(current = visible, ready = settled),
         ) {
           CompositionLocalProvider(LocalSpicyPalette provides palette) {
             if (title != null) ModalHeader(title, onDismissRequest, onBack, animate)
             if (fillBody) {
                 Column(Modifier.weight(1f).graphicsLayer { alpha = bodyFade.value }, content = body)
             } else {
-                // The body: padding 20px 24px 24px, scrolling when it runs long.
+                // The body: padding 20px 24px 24px, scrolling when it runs long, and saying so.
+                val bodyScroll = rememberScrollState()
                 Column(
                     Modifier
                         .weight(1f, fill = false)
-                        .verticalScroll(rememberScrollState())
+                        .scrollHints(bodyScroll)
+                        .verticalScroll(bodyScroll)
                         .padding(start = SpicySpacing.S6, end = SpicySpacing.S6, top = SpicySpacing.S5, bottom = SpicySpacing.S6)
                         .graphicsLayer { alpha = bodyFade.value },
                     verticalArrangement = Arrangement.spacedBy(SpicySpacing.S3),
@@ -337,6 +340,7 @@ private fun BackButton(onClick: () -> Unit) {
             .graphicsLayer { scaleX = scale; scaleY = scale }
             .clip(CircleShape)
             .background(if (pressed) SpicyColors.TintBgPressed else Color.Transparent)
+            .focusRing(CircleShape)
             .clickable(interaction, indication = null, role = Role.Button, onClick = withHaptic(HapticFeedbackType.ContextClick, onClick))
             .semantics { contentDescription = "Back" }
             .drawBehind {
@@ -364,6 +368,7 @@ private fun CloseButton(onClick: () -> Unit) {
             .graphicsLayer { scaleX = scale; scaleY = scale }
             .clip(CircleShape)
             .background(if (pressed) SpicyColors.TintBgPressed else Color.Transparent)
+            .focusRing(CircleShape)
             .clickable(interaction, indication = null, role = Role.Button, onClick = withHaptic(HapticFeedbackType.ContextClick, onClick))
             .semantics { contentDescription = "Close" }
             .drawBehind {
@@ -522,6 +527,7 @@ fun SpicyModalButton(
                     Modifier.border(1.dp, if (pressed) SpicyColors.HairlineStrong else SpicyColors.Hairline, shape)
                 } else Modifier,
             )
+            .focusRing(shape)
             .clickable(interaction, indication = null, role = Role.Button, onClick = withHaptic(HapticFeedbackType.ContextClick, onClick))
             .padding(horizontal = if (style == SpicyButtonStyle.Quiet) 14.dp else 18.dp, vertical = 9.dp),
         contentAlignment = Alignment.Center,

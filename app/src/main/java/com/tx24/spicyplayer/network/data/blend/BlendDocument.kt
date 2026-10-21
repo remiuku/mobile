@@ -197,19 +197,11 @@ internal object BlendDocuments {
     }
 
     /**
-     * Every line's (start, end), untimed ones placed in the gap their neighbours leave. A blend can
-     * leave a line nobody could place; drawn at 0:00 it would sit lit through the whole intro.
+     * Every line's (start, end), null for a line nobody could place: it goes out untimed, and the
+     * parser shows it whole in the gap its neighbours leave.
      */
-    private fun fillTimes(lines: List<BlendLine>): List<Pair<Double, Double>> {
-        val starts = lines.map { BlendText.lineStart(it) }
-        val ends = lines.map { BlendText.lineEnd(it) }
-        return lines.indices.map { i ->
-            val s = starts[i]
-            if (s != null) return@map s to maxOf(ends[i] ?: s, s)
-            val before = (i - 1 downTo 0).firstNotNullOfOrNull { ends[it] ?: starts[it] } ?: 0.0
-            val after = (i + 1 until lines.size).firstNotNullOfOrNull { starts[it] } ?: (before + 4.0)
-            before to maxOf(after, before)
-        }
+    private fun fillTimes(lines: List<BlendLine>): List<Pair<Double, Double>?> = lines.map { line ->
+        BlendText.lineStart(line)?.let { start -> start to maxOf(BlendText.lineEnd(line) ?: start, start) }
     }
 
     private fun sec(ms: Long) = ms / 1000.0

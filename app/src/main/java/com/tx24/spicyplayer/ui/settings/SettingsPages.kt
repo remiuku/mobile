@@ -7,6 +7,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import dev.chrisbanes.haze.HazeInputScale
 import dev.chrisbanes.haze.hazeEffect
+import com.tx24.spicyplayer.ui.components.focusRing
 import com.tx24.spicyplayer.ui.theme.SpicyRadii
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.gestures.scrollBy
@@ -100,6 +101,7 @@ import androidx.compose.material.icons.rounded.FormatIndentIncrease
 import androidx.compose.material.icons.rounded.FontDownload
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.OpenInBrowser
+import androidx.compose.material.icons.rounded.Translate
 import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material.icons.rounded.VerticalAlignCenter
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -805,6 +807,13 @@ internal fun NowPlayingContent(settings: AppSettings, viewModel: ExternalPlaybac
                 )
             }
             ToggleRow(
+                label = "Translation & Romanization Credits",
+                checked = settings.textCredits,
+                onCheckedChange = { settings.textCredits = it },
+                description = "Say in the credits who translated and romanized the lyrics on screen.",
+                icon = Icons.Rounded.Translate,
+            )
+            ToggleRow(
                 label = "Open Profiles in Browser",
                 checked = settings.profilesInBrowser,
                 onCheckedChange = { settings.profilesInBrowser = it },
@@ -1390,13 +1399,21 @@ private fun SourceCard(
         }
     Column(modifier.fillMaxWidth().then(lifted).outlinedCard(tinted = true)) {
         Row(
-            Modifier
-                .fillMaxWidth()
-                .clickable(remember { MutableInteractionSource() }, indication = null, role = Role.Button, onClick = onExpand)
-                .padding(start = SpicySpacing.S3, top = SpicySpacing.S3, bottom = SpicySpacing.S3, end = SpicySpacing.S1),
+            Modifier.fillMaxWidth().padding(end = SpicySpacing.S1),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(SpicySpacing.S2),
         ) {
+          // What opens the source, beside its switch rather than around it: a remote's arrows only
+          // move to what lies outside the focused control.
+          Row(
+            Modifier
+                .weight(1f)
+                .focusRing(RoundedCornerShape(SpicyRadii.Md))
+                .clickable(remember { MutableInteractionSource() }, indication = null, role = Role.Button, onClick = onExpand)
+                .padding(start = SpicySpacing.S3, top = SpicySpacing.S3, bottom = SpicySpacing.S3),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(SpicySpacing.S2),
+          ) {
             Box(
                 Modifier
                     .size(28.dp)
@@ -1413,6 +1430,7 @@ private fun SourceCard(
                 tint = SpicyColors.TextSecondary,
                 modifier = Modifier.size(20.dp).rotate(chevron),
             )
+          }
             SpicyToggle(enabled, onCheckedChange = onEnabledChange)
             Box(handle.size(32.dp, 40.dp), contentAlignment = Alignment.Center) {
                 Icon(Icons.Rounded.DragIndicator, "Drag ${origin.displayName} to reorder", tint = SpicyColors.TextTertiary, modifier = Modifier.size(20.dp))
@@ -1489,6 +1507,7 @@ private fun RemoteLyricsQuality.typeLabel() = when (this) {
 private fun providerNote(origin: LyricsOrigin, provider: String): String? = when {
     LyricsBlends.byId(provider) != null -> "Lines from the sources above, word timing from its donors."
     provider == "rmm_revival" -> "Relays Spicy Lyrics' API by Apple Music ID."
+    provider == "spicy_unison" -> "Spicy Lyrics' copy of Unison's lyrics, by the song's ISRC or YouTube video."
     provider == "spicy_lyrics" && origin.id != LyricsOrigins.SPICY_COMMUNITY -> "Passed on by Spicy Lyrics' API."
     provider == "lrc_red" && origin.id == LyricsOrigins.APPLE_MUSIC -> "Serves Apple Music's lyrics by ISRC."
     provider == "lrcmux" -> "Passes on what it finds at ${origin.displayName}."
@@ -1557,19 +1576,21 @@ internal fun AdvancedContent(state: PlayerUiState, viewModel: ExternalPlaybackVi
             icon = Icons.Rounded.Insights,
         )
     }
-    SettingsSection("Debug info") { CopyDebugInfoRow(state) }
+    SettingsSection("Debug info") {
+        CopyDebugInfoRow(state)
+        CopyExtraLogsRow()
+    }
     MoreOptions("Session, these lyrics, translation and last lookup details") {
         SettingsSection("Session") { InfoLines(sessionLines(state)) }
         lyricsLines(state)?.let { details -> SettingsSection("These lyrics") { InfoLines(details) } }
         SettingsSection("Romanization and translation") {
             InfoLines(textLines(LocalContext.current, state))
-            // What translation did, step by step: which provider answered in which languages, what
-            // Genius had, waits and failures. Newest last; the same lines go in the debug info.
+            // What translation did last, newest last. The whole story goes in the extra logs.
             val log = com.tx24.spicyplayer.playback.TranslationTrace.lines(android.os.SystemClock.elapsedRealtime())
             if (log.isEmpty()) {
                 Text("Nothing translated yet", style = DescriptionStyle, modifier = Modifier.padding(horizontal = SpicySpacing.S3, vertical = SpicySpacing.S1))
             }
-            log.forEach { line ->
+            log.takeLast(SHOWN_TRANSLATION_LOG).forEach { line ->
                 Searchable("Translation log", line, "Diagnostics") {
                     Text(line, style = SpicyType.Caption.copy(color = SpicyColors.TextSecondary),
                         modifier = Modifier.padding(horizontal = SpicySpacing.S3, vertical = SpicySpacing.S1))
@@ -1586,6 +1607,9 @@ internal fun AdvancedContent(state: PlayerUiState, viewModel: ExternalPlaybackVi
         }
     }
 }
+
+/** How many of the translation log's lines Advanced shows; Copy extra logs has them all. */
+private const val SHOWN_TRANSLATION_LOG = 5
 
 internal fun sessionLines(state: PlayerUiState): List<Pair<String, String>> = listOfNotNull(
     "Player" to (state.sourcePackage ?: "None"),

@@ -243,6 +243,13 @@ data class PlayerUiState(
      */
     val guessedLanguage: String? = null,
     val deepLKeyPresent: Boolean = false,
+    /** The translation providers with an API key saved on this device. */
+    val translationKeys: Set<TranslationProvider> = emptySet(),
+    val aiTranslation: AiTranslationSettings = AiTranslationSettings(),
+    /** Gemini Nano on this phone, once checked; null until then. */
+    val onDeviceModel: OnDeviceModel.Status? = null,
+    /** How much of Gemini Nano has downloaded, while it does. */
+    val onDeviceDownloadedBytes: Long? = null,
 ) {
     /** [sourcePolicy] read against the providers there are. */
     val sourceRanking: SourceRanking
@@ -298,6 +305,8 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
         translationPreferences = translationStore.read(),
         translationEnabled = translationStore.read().automatic,
         deepLKeyPresent = translationStore.key().isNotBlank(),
+        translationKeys = savedTranslationKeys(),
+        aiTranslation = translationStore.ai(),
         outputLabel = outputRoute.label,
         lyricDelayMs = outputProfiles.delayMs(outputRoute),
         sourceDescriptors = lyricsBackend.descriptors + lyricsBackend.blendDescriptors,
@@ -337,11 +346,51 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
     fun setTranslationExcluded(languages: Set<String>) = saveTranslationPreferences(mutableState.value.translationPreferences.copy(excludedLanguages = languages))
     fun setHumanTranslations(enabled: Boolean) = saveTranslationPreferences(mutableState.value.translationPreferences.copy(humanTranslations = enabled))
 
-    private fun saveTranslationPreferences(preferences: TranslationPreferences) {
+    private fun saveTranslationPreferences(changed: TranslationPreferences) {
+        val preferences = changed.copy(aiVariant = translationStore.ai().variant(changed.provider))
         translationStore.save(preferences)
         clearTranslation()
         mutableState.value = mutableState.value.copy(translationPreferences = preferences)
         translateCurrent()
+    }
+
+    private fun savedTranslationKeys(): Set<TranslationProvider> =
+        listOf(TranslationProvider.OpenAi, TranslationProvider.Gemini).filter { translationStore.key(it).isNotBlank() }.toSet()
+
+    /** Saves (or, blank, removes) [provider]'s API key on this device. */
+    fun useTranslationKey(provider: TranslationProvider, input: String) {
+        val key = input.trim()
+        translationStore.saveKey(provider, key)
+        mutableState.value = mutableState.value.copy(translationKeys = savedTranslationKeys())
+        clearTranslation()
+        translateCurrent()
+        showMessage(if (key.isEmpty()) "Removed the ${provider.label} key." else "Using your ${provider.label} key.")
+    }
+
+    fun setAiTranslation(value: AiTranslationSettings) {
+        translationStore.saveAi(value)
+        mutableState.value = mutableState.value.copy(aiTranslation = translationStore.ai(), translationPreferences = translationStore.read())
+        clearTranslation()
+        translateCurrent()
+    }
+
+    /** Looks at whether this phone has Gemini Nano, for Translation settings. */
+    fun checkOnDeviceModel() {
+        viewModelScope.launch {
+            val status = OnDeviceModel.status()
+            mutableState.value = mutableState.value.copy(onDeviceModel = status)
+        }
+    }
+
+    fun downloadOnDeviceModel() {
+        if (mutableState.value.onDeviceDownloadedBytes != null) return
+        mutableState.value = mutableState.value.copy(onDeviceModel = OnDeviceModel.Status.Downloading, onDeviceDownloadedBytes = 0L)
+        viewModelScope.launch {
+            val done = OnDeviceModel.download { bytes -> mutableState.value = mutableState.value.copy(onDeviceDownloadedBytes = bytes) }
+            mutableState.value = mutableState.value.copy(onDeviceModel = OnDeviceModel.status(), onDeviceDownloadedBytes = null)
+            if (!done) showMessage("Gemini Nano couldn't be downloaded. Try again later.")
+            else translateCurrent(force = true)
+        }
     }
 
     fun useDeepLKey(input: String) {
@@ -368,11 +417,14 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
     private fun translationConsent(action: String): Boolean {
         val preferences = mutableState.value.translationPreferences
         val provider = preferences.provider
-        if (translationStore.disclosed(provider, preferences.humanTranslations)) return false
+        val service = if (provider == TranslationProvider.OpenAi) openAiEndpoint(translationStore.ai().baseUrl)?.host else null
+        if (translationStore.disclosed(provider, preferences.humanTranslations, service)) return false
+        // On the phone with no Genius lookup, nothing leaves it: nothing to consent to.
+        if (provider.onDevice && !preferences.humanTranslations) return false
         pendingTranslationAction = action
         // A source notice already on screen finishes first; its answer resumes this action.
         if (mutableState.value.sourceDisclosure != null) return true
-        mutableState.value = mutableState.value.copy(sourceDisclosure = SourceDisclosures.translation(provider, preferences.humanTranslations))
+        mutableState.value = mutableState.value.copy(sourceDisclosure = SourceDisclosures.translation(provider, preferences.humanTranslations, service))
         return true
     }
 
@@ -398,7 +450,8 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
         val state = mutableState.value
         val lyrics = state.lyrics as? LyricsState.Ready ?: return null
         val song = state.localLyricsKey ?: return null
-        return TranslationDocument.from(song, "${shownSelection?.source?.id.orEmpty()}:${lyrics.provider}:${lyrics.source.orEmpty()}", lyrics.lines)
+        return TranslationDocument.from(song, "${shownSelection?.source?.id.orEmpty()}:${lyrics.provider}:${lyrics.source.orEmpty()}", lyrics.lines,
+            lyrics.translationLanguage)
     }
 
     fun detectLyricsLanguage() = translateCurrent(detectOnly = true)
@@ -448,10 +501,26 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
                     if (manual) showMessage("Already in ${TranslationLanguages.name(source!!)}.")
                     return@launch
                 }
+                // Translations that came with the lyrics and cover the song are shown without
+                // asking a translator, so nothing needs consenting to.
+                val own = withContext(Dispatchers.Default) { translationEngine.ownResult(document, preferences, source) }
+                if (own != null) {
+                    if (!translationSession.accepts(ticket) || translationDocument()?.hash != document.hash) return@launch
+                    traceTranslation("translated: ${own.lineSources()}")
+                    mutableState.value = mutableState.value.copy(translation = own)
+                    if (manual) showMessage("Translated: ${own.lineSources()}.")
+                    return@launch
+                }
                 if (translationConsent("resume")) return@launch
                 val translator = when (preferences.provider) {
                     TranslationProvider.Google -> GoogleTranslator(translationClient)
                     TranslationProvider.DeepL -> DeepLTranslator(translationClient, translationStore.key())
+                    TranslationProvider.OpenAi -> translationStore.ai().let {
+                        OpenAiTranslator(translationClient, it.baseUrl, translationStore.key(TranslationProvider.OpenAi), it.model)
+                    }
+                    TranslationProvider.Gemini ->
+                        GeminiTranslator(translationClient, translationStore.key(TranslationProvider.Gemini), translationStore.ai().geminiModel)
+                    TranslationProvider.GeminiNano -> GeminiNanoTranslator()
                 }
                 mutableState.value = mutableState.value.copy(translating = true)
                 val result = try {
@@ -637,6 +706,8 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
                 translationPreferences = translationStore.read(),
                 translationEnabled = translationStore.read().automatic,
                 deepLKeyPresent = translationStore.key().isNotBlank(),
+                translationKeys = savedTranslationKeys(),
+                aiTranslation = translationStore.ai(),
                 outputLabel = outputRoute.label,
                 lyricDelayMs = outputProfiles.delayMs(outputRoute),
                 sourceDescriptors = lyricsBackend.descriptors + lyricsBackend.blendDescriptors,
@@ -1769,6 +1840,10 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
                 translationPreferences = kept.translationPreferences,
                 translationEnabled = kept.translationEnabled,
                 deepLKeyPresent = kept.deepLKeyPresent,
+                translationKeys = kept.translationKeys,
+                aiTranslation = kept.aiTranslation,
+                onDeviceModel = kept.onDeviceModel,
+                onDeviceDownloadedBytes = kept.onDeviceDownloadedBytes,
                 humanRomanizations = kept.humanRomanizations,
                 splitBackgroundVocals = kept.splitBackgroundVocals,
                 sourceDisclosure = kept.sourceDisclosure,

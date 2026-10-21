@@ -66,6 +66,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.focusable
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.foundation.text.BasicSecureTextField
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
@@ -259,7 +266,7 @@ fun SettingRow(
         label, description, icon, interaction, enabled, stacked,
         modifier.then(
             if (onClick != null && enabled) {
-                Modifier.clickable(interaction, indication = null) {
+                Modifier.focusRing(RoundedCornerShape(SpicyRadii.Sm)).clickable(interaction, indication = null) {
                     haptics.performHapticFeedback(HapticFeedbackType.ContextClick)
                     onClick()
                 }
@@ -286,7 +293,7 @@ fun ToggleRow(
     val haptics = LocalHapticFeedback.current
     RowFrame(
         label, description, icon, interaction, enabled, stacked = false,
-        modifier = modifier.toggleable(checked, interaction, indication = null, enabled = enabled, role = Role.Switch) {
+        modifier = modifier.focusRing(RoundedCornerShape(SpicyRadii.Sm)).toggleable(checked, interaction, indication = null, enabled = enabled, role = Role.Switch) {
             haptics.toggled(it)
             onCheckedChange(it)
         },
@@ -362,7 +369,7 @@ fun SpicyToggle(checked: Boolean, modifier: Modifier = Modifier, onCheckedChange
     )
     val haptics = LocalHapticFeedback.current
     val click = if (onCheckedChange != null) {
-        Modifier.toggleable(checked, remember { MutableInteractionSource() }, indication = null, role = Role.Switch) {
+        Modifier.focusRing(CircleShape).toggleable(checked, remember { MutableInteractionSource() }, indication = null, role = Role.Switch) {
             haptics.toggled(it)
             onCheckedChange(it)
         }
@@ -417,13 +424,15 @@ fun SpicySelect(
     modifier: Modifier = Modifier,
     labels: List<String> = options,
     enabled: Boolean = true,
+    /** Options shown greyed out, which can't be picked. */
+    unavailable: Set<String> = emptySet(),
 ) {
     val haptics = LocalHapticFeedback.current
     SelectMenu(labels.getOrElse(options.indexOf(value)) { value }, modifier, enabled, searchable = options.size >= SEARCH_FROM) { close, query ->
         val shown = matchingOptions(query, options, labels)
         for (i in shown) {
             val option = options[i]
-            SelectOption(labels.getOrElse(i) { option }, selected = option == value) {
+            SelectOption(labels.getOrElse(i) { option }, selected = option == value, enabled = option !in unavailable) {
                 haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
                 close()
                 if (option != value) onChange(option)
@@ -533,6 +542,7 @@ private fun SelectMenu(
                 .clip(shape)
                 .background(if (pressed || open) SpicyColors.TintBgPressed else SpicyColors.TintBg)
                 .border(1.dp, if (pressed || open) SpicyColors.HairlineStrong else SpicyColors.Hairline, shape)
+                .focusRing(shape)
                 .clickable(interaction, indication = null, enabled = enabled, role = Role.DropdownList) {
                     if (open || SystemClock.uptimeMillis() - closedAt < REOPEN_GUARD_MS) return@clickable
                     haptics.performHapticFeedback(HapticFeedbackType.ContextClick)
@@ -608,9 +618,11 @@ private fun SelectMenu(
                                 placeholder = "Search",
                             )
                         }
+                        val listScroll = rememberScrollState()
                         Column(
                             Modifier
-                                .verticalScroll(rememberScrollState())
+                                .scrollHints(listScroll)
+                                .verticalScroll(listScroll)
                                 .padding(vertical = SpicySpacing.S1),
                         ) {
                             val shown = items(close, query)
@@ -631,7 +643,7 @@ private fun SelectMenu(
 }
 
 @Composable
-private fun SelectOption(label: String, selected: Boolean, onClick: () -> Unit) {
+private fun SelectOption(label: String, selected: Boolean, enabled: Boolean = true, onClick: () -> Unit) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     Row(
@@ -641,7 +653,9 @@ private fun SelectOption(label: String, selected: Boolean, onClick: () -> Unit) 
             .padding(horizontal = SpicySpacing.S1)
             .clip(RoundedCornerShape(SpicyRadii.Sm))
             .background(if (pressed) SpicyColors.TintBgPressed else Color.Transparent)
-            .clickable(interaction, indication = null, role = Role.Button, onClick = onClick)
+            .focusRing(RoundedCornerShape(SpicyRadii.Sm))
+            .clickable(interaction, indication = null, enabled = enabled, role = Role.Button, onClick = onClick)
+            .alpha(if (enabled) 1f else 0.38f)
             .padding(horizontal = SpicySpacing.S3),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(SpicySpacing.S3),
@@ -786,6 +800,7 @@ private fun PressSurface(
                 },
                 shape,
             )
+            .focusRing(shape)
             .clickable(interaction, indication = null, enabled = enabled, role = Role.Button) {
                 haptics.performHapticFeedback(HapticFeedbackType.ContextClick)
                 onClick()
@@ -898,6 +913,7 @@ fun SpicySearchBar(value: String, onValueChange: (String) -> Unit, modifier: Mod
                 Box(
                     Modifier
                         .size(28.dp)
+                        .focusRing(CircleShape)
                         .clickable(remember { MutableInteractionSource() }, indication = null, role = Role.Button) {
                             haptics.performHapticFeedback(HapticFeedbackType.ContextClick)
                             onValueChange("")
@@ -963,6 +979,18 @@ fun SpicyBipolarSlider(
             Modifier
                 .fillMaxWidth()
                 .height(32.dp)
+                // A remote's or keyboard's left and right step it; up and down move on.
+                .focusRing(RoundedCornerShape(SpicyRadii.Sm))
+                .onKeyEvent { event ->
+                    val delta = when (event.key) {
+                        Key.DirectionLeft -> -step
+                        Key.DirectionRight -> step
+                        else -> return@onKeyEvent false
+                    }
+                    if (enabled && event.type == KeyEventType.KeyDown) currentOnChange((shown + delta).coerceIn(range))
+                    enabled
+                }
+                .focusable(enabled)
                 .pointerInput(enabled) {
                     if (!enabled) return@pointerInput
                     detectTapGestures { currentOnChange(valueAt(it.x, size.width.toFloat(), thumbR.toPx())) }
@@ -1025,6 +1053,7 @@ fun SpicyBipolarSlider(
                     "Reset",
                     style = SpicyType.Caption.copy(fontWeight = FontWeight.Medium, color = SpicyColors.TextSecondary),
                     modifier = Modifier
+                        .focusRing(RoundedCornerShape(SpicyRadii.Sm))
                         .clickable(remember { MutableInteractionSource() }, indication = null, role = Role.Button) {
                             haptics.performHapticFeedback(HapticFeedbackType.ContextClick)
                             onValueChange(default)

@@ -53,26 +53,28 @@ internal fun debugReport(context: Context, state: PlayerUiState): String {
             val detail = attemptDetail(attempt) { time.format(it) }
             appendLine("  ${attemptSourceName(attempt, state)}: ${attempt.outcome.label()}" + if (detail.isNotEmpty()) " ($detail)" else "")
         }
-        val translation = TranslationTrace.lines(SystemClock.elapsedRealtime())
-        if (translation.isNotEmpty()) {
-            appendLine()
-            appendLine("Translation (newest last):")
-            translation.forEach { appendLine("  $it") }
-        }
-        val traffic = TrafficCounter.lines()
-        if (traffic.isNotEmpty()) {
-            appendLine()
-            appendLine("Downloaded since start:")
-            traffic.forEach { appendLine("  $it") }
-        }
-        val sync = SyncTrace.lines(SystemClock.elapsedRealtime())
-        if (sync.isNotEmpty()) {
-            appendLine()
-            appendLine("Sync (newest last):")
-            sync.forEach { appendLine("  $it") }
-        }
     }
     return redactSecrets(report).trimEnd()
+}
+
+/**
+ * The step-by-step logs kept apart from [debugReport], which they'd bury: what translation did,
+ * how the lyric clock was synced, and what was downloaded. Null when there are none yet.
+ */
+internal fun extraLogs(): String? {
+    val now = SystemClock.elapsedRealtime()
+    val report = buildString {
+        fun section(title: String, lines: List<String>) {
+            if (lines.isEmpty()) return
+            if (isNotEmpty()) appendLine()
+            appendLine(title)
+            lines.forEach { appendLine("  $it") }
+        }
+        section("Translation (newest last):", TranslationTrace.lines(now))
+        section("Sync (newest last):", SyncTrace.lines(now))
+        section("Downloaded since start:", TrafficCounter.lines())
+    }
+    return redactSecrets(report).trimEnd().ifEmpty { null }
 }
 
 /** Where the romanization and translation on screen come from, and how they're set. */
@@ -107,6 +109,30 @@ internal fun textLines(context: Context, state: PlayerUiState): List<Pair<String
 internal fun redactSecrets(text: String): String = text
     .replace(Regex("""sl_(pk|sk)_[A-Za-z0-9_-]+"""), "sl_$1_…")
     .replace(Regex("""(https?://[^\s?#]+)\?\S*"""), "$1?…")
+
+/** Copies [extraLogs], for when a bug needs the step-by-step story. */
+@Composable
+internal fun CopyExtraLogsRow() {
+    val context = LocalContext.current
+    var copied by remember { mutableStateOf(false) }
+    LaunchedEffect(copied) {
+        if (copied) {
+            delay(2000)
+            copied = false
+        }
+    }
+    SettingRow(
+        label = "Copy extra logs",
+        description = "What translation, syncing and downloads did, step by step. Add them when asked.",
+        icon = Icons.Rounded.ContentCopy,
+    ) {
+        SpicyButton(if (copied) "Copied" else "Copy", onClick = {
+            val clipboard = context.getSystemService(ClipboardManager::class.java)
+            clipboard?.setPrimaryClip(ClipData.newPlainText("Spicy Lyrics Mobile logs", extraLogs() ?: "No logs yet."))
+            copied = clipboard != null
+        })
+    }
+}
 
 /** Copies [debugReport], for the Discord thread or a bug report written by hand. */
 @Composable

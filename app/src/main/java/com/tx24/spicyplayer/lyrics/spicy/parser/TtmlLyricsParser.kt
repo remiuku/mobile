@@ -18,8 +18,8 @@ import kotlin.math.roundToLong
  * clients read these documents), and kept that way:
  * - Names are matched as written, prefix included (`ttm:role`, `itunes:key`, `xml:id`).
  * - An element with no attributes and no child elements is plain text there, so an attribute-
- *   less `<span>` is not a syllable (it only counts towards a line's text) and an attribute-less
- *   `<p>` is skipped in word-synced lyrics.
+ *   less `<span>` is not a syllable (it only counts towards a line's text). An attribute-less
+ *   `<p>` with text is a line with no timing, kept in its place ([placeUntimed]).
  * - A syllable is one timed `<span>`, whole: its text is never split and its timing never shared.
  * - A syllable joins the next one when its closing tag touches the next vocal span's opening
  *   tag and neither side has whitespace between them (nor a comma before).
@@ -94,7 +94,10 @@ object TtmlLyricsParser {
     )
 
     private class Syllable(val text: String, val roman: String?, val partOfWord: Boolean, val start: Double?, val end: Double?)
-    private class RoleTexts(val roman: String?)
+    private class RoleTexts(val roman: String?, val translation: String?, val translationLanguage: String?)
+    /** One `<text for>` translation entry: the lead's text and, in order, its background vocals'. */
+    private class TranslatedLine(val lead: String, val backgrounds: List<String>)
+    private class Translations(val byKey: Map<String, TranslatedLine>, val language: String?)
 
     private fun parseDocument(root: Element): ParsedLyrics? {
         if (root.name != "tt") return null
@@ -115,18 +118,20 @@ object TtmlLyricsParser {
         val metadata = root.element("head")?.element("metadata")
         val songwriters = getSongwriters(metadata)
         val transliterations = getTransliterations(metadata)
+        val translated = TranslationLookup(getTranslations(metadata))
         val oppositeAgents = metadata?.elements("ttm:agent").orEmpty()
             .filter { !it.isPlain && (it["xml:id"] == "v2" || it["xml:id"] == "v2000") }
             .mapNotNull { it["xml:id"] }.toSet()
 
         val lines = when (type) {
-            LyricsType.Static -> staticLines(divs)
-            LyricsType.Line -> lineSyncedLines(divs, transliterations)
+            LyricsType.Static -> staticLines(divs, translated)
+            LyricsType.Line -> lineSyncedLines(divs, transliterations, translated)
             // v1 is the main vocal; a declared v2 or v2000 sings from the other side.
-            LyricsType.Syllable -> syllableLines(divs, body, transliterations) { agent -> agent in oppositeAgents }
-        }
+            LyricsType.Syllable -> syllableLines(divs, body, transliterations, translated) { agent -> agent in oppositeAgents }
+        }.let(::placeUntimed)
         if (lines.isEmpty()) return null
-        return ParsedLyrics(lines = lines, footer = LyricsFooter(songwriters), type = type)
+        return ParsedLyrics(lines = lines, footer = LyricsFooter(songwriters), type = type,
+            translationLanguage = translated.language.takeIf { lines.any { it.translation != null } })
     }
 
     /** Divs, tolerating documents that hang `<p>` straight off `<body>`. */
@@ -150,7 +155,7 @@ object TtmlLyricsParser {
         return if (sawTiming) LyricsType.Line else LyricsType.Static
     }
 
-    private fun staticLines(divs: List<Element>): List<Line> = divs
+    private fun staticLines(divs: List<Element>, translated: TranslationLookup): List<Line> = divs
         .filter { it["itunes:songPart"] != "Instrumental" && it["itunes:songPart"] != "Outro" }
         .flatMap { it.elements("p") }
         .mapNotNull { p ->
@@ -158,10 +163,15 @@ object TtmlLyricsParser {
             // Static lyrics only take the inline x-roman span, never iTunesMetadata.
             val roman = inlineRoleTexts(p).roman?.trim().orEmpty()
             if (!hasLyricsText(text) && !hasLyricsText(roman)) return@mapNotNull null
-            Line(listOf(Word(display(text), 0L, 0L, romanizedText = roman.ifEmpty { null })), 0L, 0L)
+            Line(listOf(Word(display(text), 0L, 0L, romanizedText = roman.ifEmpty { null })), 0L, 0L,
+                translation = translated.lead(p))
         }
 
-    private fun lineSyncedLines(divs: List<Element>, transliterations: Map<String, TransliterationLine>?): List<Line> = divs
+    private fun lineSyncedLines(
+        divs: List<Element>,
+        transliterations: Map<String, TransliterationLine>?,
+        translated: TranslationLookup,
+    ): List<Line> = divs
         .filter { it["itunes:songPart"] != "Instrumental" }
         .flatMap { it.elements("p") }
         .mapNotNull { p ->
@@ -181,13 +191,14 @@ object TtmlLyricsParser {
             // Line-synced lines are never duet-aligned from TTML; our own converter says so explicitly.
             val opposite = p["spicy:oppositeAligned"]?.toBooleanStrictOrNull() ?: false
             Line(listOf(Word(display(text.orEmpty()), startMs, endMs, romanizedText = roman)), startMs, endMs,
-                agent = p["ttm:agent"], oppositeAligned = opposite)
+                agent = p["ttm:agent"], oppositeAligned = opposite, translation = translated.lead(p), untimed = start == null)
         }
 
     private fun syllableLines(
         divs: List<Element>,
         body: Element,
         transliterations: Map<String, TransliterationLine>?,
+        translated: TranslationLookup,
         isOppositeAgent: (String?) -> Boolean,
     ): List<Line> {
         val lines = mutableListOf<Line>()
@@ -195,7 +206,8 @@ object TtmlLyricsParser {
         for (div in divs) {
             if (div["itunes:songPart"] == "Instrumental") continue
             for (p in div.elements("p")) {
-                if (p.isPlain) continue
+                // A bare `<p>` is a line with no timing: kept, in its place, when it has text.
+                if (p.isPlain && !hasLyricsText(p.ownText)) continue
                 val agent = p["ttm:agent"]?.ifEmpty { null } ?: div["ttm:agent"]?.ifEmpty { null } ?: body["ttm:agent"]
                 val opposite = p["spicy:oppositeAligned"]?.toBooleanStrictOrNull() ?: isOppositeAgent(agent)
                 val lineEntry = p["itunes:key"]?.let { transliterations?.get(it) }
@@ -217,13 +229,13 @@ object TtmlLyricsParser {
                 var leadStart = listOfNotNull(convertTimeToSeconds(p["begin"]), lead.mapNotNull { it.start }.minOrNull()).minOrNull()
                 var leadEnd = listOfNotNull(convertTimeToSeconds(p["end"]), lead.mapNotNull { it.end }.maxOrNull()).maxOrNull()
 
-                val backgrounds = pSpans.filter { isSpanObject(it) && it["ttm:role"] == "x-bg" }.mapNotNull { bgSpan ->
+                val backgrounds = pSpans.filter { isSpanObject(it) && it["ttm:role"] == "x-bg" }.mapIndexedNotNull { bgIndex, bgSpan ->
                     val bgChildren = bgSpan.elements("span")
                     val bgVocal = bgChildren.filter(::isVocalSpan)
                     val bgEntry = bgSpan["itunes:key"]?.let { transliterations?.get(it) }
                     val syllables = buildSyllables(bgSpan, bgChildren, pickBackgroundTransliterations(bgEntry, lineEntry),
                         stripParentheses = true)
-                    if (syllables.none { hasLyricsText(it.text) || hasLyricsText(it.roman) }) return@mapNotNull null
+                    if (syllables.none { hasLyricsText(it.text) || hasLyricsText(it.roman) }) return@mapIndexedNotNull null
                     val start = convertTimeToSeconds(bgVocal.firstOrNull()?.get("begin"))
                         ?: convertTimeToSeconds(bgSpan["begin"]) ?: syllables.first().start
                     val end = convertTimeToSeconds(bgVocal.lastOrNull()?.get("end"))
@@ -232,7 +244,7 @@ object TtmlLyricsParser {
                     // window covers them (so an early "(ooh)" makes its line active).
                     if (end != null && (leadEnd == null || end > leadEnd!!)) leadEnd = end
                     if (start != null && (leadStart == null || start < leadStart!!)) leadStart = start
-                    Triple(syllables, start, end)
+                    Background(syllables, start, end, translated.background(p, bgSpan, bgIndex))
                 }
 
                 val empty = lead.none { hasLyricsText(it.text) || hasLyricsText(it.roman) } && backgrounds.isEmpty()
@@ -240,17 +252,57 @@ object TtmlLyricsParser {
 
                 val id = groupId++
                 val leadStartMs = ms(leadStart) ?: 0L
+                val untimed = leadStart == null
                 lines += Line(toWords(lead, leadStartMs), leadStartMs, ms(leadEnd) ?: leadStartMs,
-                    agent = agent, role = LineRole.LEAD, groupId = id, oppositeAligned = opposite)
-                backgrounds.forEach { (syllables, start, end) ->
+                    agent = agent, role = LineRole.LEAD, groupId = id, oppositeAligned = opposite, translation = translated.lead(p),
+                    untimed = untimed)
+                backgrounds.forEach { (syllables, start, end, translation) ->
                     val startMs = ms(start) ?: leadStartMs
                     lines += Line(toWords(syllables, startMs), startMs, ms(end) ?: startMs,
-                        agent = agent, role = LineRole.BACKGROUND, groupId = id, oppositeAligned = opposite)
+                        agent = agent, role = LineRole.BACKGROUND, groupId = id, oppositeAligned = opposite, translation = translation,
+                        untimed = untimed)
                 }
             }
         }
         return lines
     }
+
+    /**
+     * Synced lyrics' lines with no timing at all, put in their place: in the gap between the timed
+     * lines around them, shared evenly by a run of them, so the lyrics scroll through them in
+     * order. One before the first timed line starts the song; one after the last gets
+     * [UNTIMED_MS]. A line and its background vocals count as one.
+     */
+    private fun placeUntimed(lines: List<Line>): List<Line> {
+        if (lines.none { it.untimed }) return lines
+        val groups = mutableListOf<MutableList<Line>>()
+        lines.forEach { line ->
+            val last = groups.lastOrNull()
+            if (last != null && line.isBackground && line.groupId != null && line.groupId == last.first().groupId) last += line
+            else groups += mutableListOf(line)
+        }
+        val out = mutableListOf<Line>()
+        var i = 0
+        while (i < groups.size) {
+            if (!groups[i].first().untimed) { out += groups[i++]; continue }
+            var j = i
+            while (j < groups.size && groups[j].first().untimed) j++
+            val from = groups.subList(0, i).flatten().filterNot { it.untimed }.maxOfOrNull { it.endMs } ?: 0L
+            val next = groups.subList(j, groups.size).flatten().firstOrNull { !it.untimed }?.startMs
+            val until = maxOf(from, next ?: (from + UNTIMED_MS * (j - i)))
+            // The run is sung all at once, over the whole gap: nothing says which line comes when.
+            for (k in i until j) {
+                groups[k].forEach { line ->
+                    out += line.copy(startMs = from, endMs = until, words = line.words.map { it.copy(startMs = from, endMs = until) })
+                }
+            }
+            i = j
+        }
+        return out
+    }
+
+    /** How long a line with no timing after the last timed one stays. */
+    private const val UNTIMED_MS = 4_000L
 
     /** The reference marks a syllable that continues into the next; our words mark the one glued to the previous. */
     private fun toWords(syllables: List<Syllable>, lineStartMs: Long): List<Word> {
@@ -309,8 +361,58 @@ object TtmlLyricsParser {
         return p.ownText.takeIf { p.children.any { it is Text } }
     }
 
-    private fun inlineRoleTexts(p: Element): RoleTexts =
-        RoleTexts(p.elements("span").firstOrNull { isSpanObject(it) && it["ttm:role"] == "x-roman" }?.ownText)
+    private data class Background(val syllables: List<Syllable>, val start: Double?, val end: Double?, val translation: String?)
+
+    private fun inlineRoleTexts(p: Element): RoleTexts {
+        fun role(name: String) = p.elements("span").firstOrNull { isSpanObject(it) && it["ttm:role"] == name }
+        val translation = role("x-translation")
+        return RoleTexts(role("x-roman")?.ownText, translation?.let(::leadText)?.let(::collapse)?.takeIf(::hasLyricsText),
+            translation?.get("xml:lang"))
+    }
+
+    private fun collapse(text: String) = stripZeroWidth(text).replace(Regex("\\s+"), " ").trim()
+
+    /**
+     * Each line's translation: an x-translation span inside the `<p>` (or inside its x-bg span),
+     * else the head's entry for the line's `itunes:key`. A background vocal's head entry is the
+     * one for its own key, else the x-bg spans in its line's entry, in order.
+     */
+    private class TranslationLookup(private val head: Translations?) {
+        /** The language the translations are in, when the document says. */
+        var language: String? = head?.language
+            private set
+
+        fun lead(p: Element): String? = inline(p) ?: p["itunes:key"]?.let { head?.byKey?.get(it) }?.lead?.takeIf(::hasLyricsText)
+
+        fun background(p: Element, bgSpan: Element, index: Int): String? = inline(bgSpan)
+            ?: bgSpan["itunes:key"]?.let { head?.byKey?.get(it) }?.lead?.takeIf(::hasLyricsText)
+            ?: p["itunes:key"]?.let { head?.byKey?.get(it) }?.backgrounds?.getOrNull(index)?.takeIf(::hasLyricsText)
+
+        private fun inline(node: Element): String? {
+            val texts = inlineRoleTexts(node)
+            if (texts.translation != null && language == null) language = texts.translationLanguage
+            return texts.translation
+        }
+    }
+
+    /** The head's translations: the first `<translation>` block, which is in one language. */
+    private fun getTranslations(metadata: Element?): Translations? {
+        for (itm in metadata?.elements("iTunesMetadata").orEmpty()) {
+            val block = itm.element("translations")?.elements("translation")?.firstOrNull() ?: continue
+            val byKey = block.elements("text").mapNotNull { entry ->
+                val key = entry["for"] ?: return@mapNotNull null
+                key to TranslatedLine(collapse(leadText(entry)), backgroundTexts(entry).map(::collapse))
+            }.toMap()
+            if (byKey.isNotEmpty()) return Translations(byKey, block["xml:lang"])
+        }
+        return null
+    }
+
+    /** The text of each x-bg span under [node], in document order. */
+    private fun backgroundTexts(node: Element): List<String> = node.children.filterIsInstance<Element>().flatMap { child ->
+        if (child["ttm:role"] == "x-bg") listOf(child.children.joinToString("") { (it as? Text)?.value ?: (it as? Element)?.let(::leadText).orEmpty() })
+        else backgroundTexts(child)
+    }
 
     private fun getSongwriters(metadata: Element?): List<String> {
         val itm = metadata?.elements("iTunesMetadata").orEmpty()

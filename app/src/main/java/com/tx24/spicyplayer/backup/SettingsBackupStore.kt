@@ -58,6 +58,7 @@ class SettingsBackupStore(private val context: Context) {
                 "targetLanguage" to String::class, "automatic" to Boolean::class,
                 "provider" to String::class, "excludedLanguages" to Set::class,
                 "humanTranslations" to Boolean::class,
+                "aiBaseUrl" to String::class, "aiModel" to String::class, "geminiModel" to String::class,
             )
             else -> emptyMap()
         }

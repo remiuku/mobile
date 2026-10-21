@@ -7,21 +7,45 @@ import java.util.Locale
 
 enum class TranslationMode(val label: String) { UnderLine("Under each line"), Replace("Replace") }
 enum class TranslationProvider(val label: String) {
-    Google("Google Translate"), DeepL("DeepL");
+    Google("Google Translate"), DeepL("DeepL"),
+    OpenAi("AI (OpenAI-compatible)"), Gemini("AI (Gemini)"), GeminiNano("On-device AI (Gemini Nano)");
+
+    /** A language model, asked with a prompt: it can get a line count wrong, and is asked again verse by verse. */
+    val isAi: Boolean get() = this == OpenAi || this == Gemini || this == GeminiNano
+    /** Nothing leaves the phone. */
+    val onDevice: Boolean get() = this == GeminiNano
+    /** The most text one request carries; Gemini Nano reads under 4,000 tokens, prompt included. */
+    val textLimit: Int get() = when (this) {
+        GeminiNano -> 1_200
+        OpenAi, Gemini -> 4_000
+        else -> TranslationBatching.GOOGLE_TEXT_LIMIT
+    }
 
     companion object {
         fun stored(value: String?): TranslationProvider = entries.firstOrNull { it.name == value } ?: Google
     }
 }
 
-enum class TranslationOrigin { Genius, Google, DeepL }
+/** Who translated a line; [Lyrics] is the lyrics' own translation, which came with them. */
+enum class TranslationOrigin(val label: String) {
+    Lyrics("Lyrics"), Genius("Genius"), Google("Google"), DeepL("DeepL"),
+    // Named as the providers are: a machine line's origin is its provider's.
+    OpenAi("AI"), Gemini("Gemini"), GeminiNano("Gemini Nano"),
+}
 
 object TranslationConsent {
-    fun id(provider: TranslationProvider, human: Boolean): String =
-        "translation_${provider.name.lowercase(Locale.ROOT)}" + if (human) "_genius" else ""
+    /**
+     * An OpenAI-compatible translator's consent names its [service] (host): agreeing to send
+     * lyrics to one server doesn't cover another one set later.
+     */
+    fun id(provider: TranslationProvider, human: Boolean, service: String? = null): String =
+        "translation_${provider.name.lowercase(Locale.ROOT)}" +
+            (if (provider == TranslationProvider.OpenAi) "_" + service.orEmpty().lowercase(Locale.ROOT) else "") +
+            if (human) "_genius" else ""
 
-    fun covered(disclosed: Set<String>, provider: TranslationProvider, human: Boolean): Boolean =
-        id(provider, human) in disclosed || (!human && (id(provider, true) in disclosed || provider == TranslationProvider.DeepL && "DeepL" in disclosed))
+    fun covered(disclosed: Set<String>, provider: TranslationProvider, human: Boolean, service: String? = null): Boolean =
+        id(provider, human, service) in disclosed ||
+            (!human && (id(provider, true, service) in disclosed || provider == TranslationProvider.DeepL && "DeepL" in disclosed))
 }
 
 data class TranslationPreferences(
@@ -30,20 +54,34 @@ data class TranslationPreferences(
     val provider: TranslationProvider = TranslationProvider.Google,
     val excludedLanguages: Set<String> = emptySet(),
     val humanTranslations: Boolean = true,
+    /** Which AI service and model translate ("host model"), so changing either translates afresh. Blank for the others. */
+    val aiVariant: String = "",
 )
 
 /** A main line and each of its background voices have distinct, stable addresses. */
 data class LyricAddress(val lineIndex: Int, val backgroundIndex: Int? = null)
-data class OriginalLine(val index: Int, val address: LyricAddress, val text: String, val boundary: Boolean, val verseStart: Boolean = false)
+data class OriginalLine(
+    val index: Int, val address: LyricAddress, val text: String, val boundary: Boolean, val verseStart: Boolean = false,
+    /** The lyrics' own translation of the line. */
+    val own: String? = null,
+)
 
-data class TranslationDocument(val song: String, val source: String, val lines: List<OriginalLine>) {
+data class TranslationDocument(
+    val song: String,
+    val source: String,
+    val lines: List<OriginalLine>,
+    /** The language of the lines' [OriginalLine.own] translations, when the lyrics say. */
+    val ownLanguage: String? = null,
+) {
     val context: String get() = lines.joinToString("\n") { if (it.boundary) "" else it.text }
-    val hash: String = translationHash(listOf(song, source) + lines.flatMap {
-        listOf(it.address.toString(), it.text, it.boundary.toString(), it.verseStart.toString())
+    val hash: String = translationHash(listOf(song, source, ownLanguage.orEmpty()) + lines.flatMap {
+        listOf(it.address.toString(), it.text, it.boundary.toString(), it.verseStart.toString(), it.own.orEmpty())
     })
+    /** The own translations as one text, for detecting their language. */
+    val ownText: String get() = lines.mapNotNull { it.own }.joinToString("\n")
 
     companion object {
-        fun from(song: String, source: String, lines: List<TimedLine>): TranslationDocument {
+        fun from(song: String, source: String, lines: List<TimedLine>, ownLanguage: String? = null): TranslationDocument {
             val leads = lines.mapIndexedNotNull { index, line ->
                 line.groupId?.takeIf { line.role == LineRole.LEAD }?.let { it to index }
             }.toMap()
@@ -66,8 +104,9 @@ data class TranslationDocument(val song: String, val source: String, val lines: 
                 // A timed instrumental gap is a verse boundary even when TTML has no blank rows.
                 val verseStart = line.role == LineRole.LEAD && previousLead?.let { line.startMs - it.endMs >= 3_000L } == true
                 if (line.role == LineRole.LEAD) previousLead = line
-                OriginalLine(index, address, text, line.role == LineRole.INTERLUDE || !isTranslationContent(text), verseStart)
-            })
+                val boundary = line.role == LineRole.INTERLUDE || !isTranslationContent(text)
+                OriginalLine(index, address, text, boundary, verseStart, own = line.translation?.takeIf { !boundary && it.isNotBlank() })
+            }, languageCode(ownLanguage))
         }
     }
 }
@@ -136,13 +175,16 @@ data class TranslationKey(
     val provider: TranslationProvider,
     val sourceLanguage: String?,
     val humanTranslations: Boolean = true,
+    /** The AI service and model ([TranslationPreferences.aiVariant]); blank for the other providers. */
+    val variant: String = "",
 ) {
     fun fileName(version: Int = TRANSLATION_CACHE_VERSION): String = translationHash(
-        listOf(version.toString(), lyricsHash, targetLanguage, provider.name, sourceLanguage.orEmpty(), humanTranslations.toString()),
+        listOf(version.toString(), lyricsHash, targetLanguage, provider.name, sourceLanguage.orEmpty(), humanTranslations.toString()) +
+            listOfNotNull(variant.takeIf(String::isNotEmpty)),
     ) + ".json"
 }
 
-const val TRANSLATION_CACHE_VERSION = 8
+const val TRANSLATION_CACHE_VERSION = 9
 
 data class TranslationResult(
     val key: TranslationKey,
@@ -165,14 +207,14 @@ data class TranslationResult(
 
     /** Where the lines came from, for the debug report and a tap's message: "Genius 22, Google 37, none 4". */
     fun lineSources(): String {
-        val counts = origins.groupingBy { it?.name ?: "none" }.eachCount()
-        val order = TranslationOrigin.entries.map { it.name } + "none"
+        val counts = origins.groupingBy { it?.label ?: "none" }.eachCount()
+        val order = TranslationOrigin.entries.map { it.label } + "none"
         return order.mapNotNull { name -> counts[name]?.let { "$name $it" } }.joinToString(", ")
     }
 
-    /** Who translated the lines on screen, for the credits: "Translation: Genius + Google". */
+    /** Who translated the lines on screen, for the credits: "Genius + Google". */
     fun credit(): String? = TranslationOrigin.entries.filter { it in origins }.takeIf { it.isNotEmpty() }
-        ?.joinToString(" + ", prefix = "Translation: ") { it.name }
+        ?.joinToString(" + ") { it.label }
 }
 
 /** A generation also rejects an old request after off/on, even when its document is identical. */
@@ -201,7 +243,21 @@ open class TranslationFailure(message: String) : IllegalArgumentException(messag
 class ProviderResting(val provider: TranslationProvider, val untilMs: Long, message: String) : TranslationFailure(message)
 
 /** The provider is rate limited for now; [retryAfterMs] is how long it asked to wait, when it said. */
-class ProviderBusy(val retryAfterMs: Long? = null) : java.io.IOException("Translation is busy.")
+class ProviderBusy(val retryAfterMs: Long? = null, val detail: String? = null) : java.io.IOException("Translation is busy.")
+
+/** Where the romanization on screen comes from. */
+enum class RomanizationOrigin(val label: String) { Lyrics("Lyrics"), Genius("Genius"), OnDevice("On-device") }
+
+/**
+ * The sources of a song's romanization: the lyrics' own, else Genius's for [humanLines] of the
+ * [romanizedLines] lines that have one and the phone's for the rest.
+ */
+fun romanizationOrigins(sourceRomanized: Boolean, humanLines: Int, romanizedLines: Int): List<RomanizationOrigin> = when {
+    sourceRomanized -> listOf(RomanizationOrigin.Lyrics)
+    humanLines <= 0 -> listOf(RomanizationOrigin.OnDevice)
+    humanLines >= romanizedLines -> listOf(RomanizationOrigin.Genius)
+    else -> listOf(RomanizationOrigin.Genius, RomanizationOrigin.OnDevice)
+}
 
 fun interface SongLanguageDetector { fun detect(originalLyrics: String): String? }
 
@@ -243,8 +299,8 @@ object TranslationLanguages {
 
     /** Whether [provider] can translate into or from [code]. A language not listed here is left to the provider. */
     fun supports(provider: TranslationProvider, code: String): Boolean = when (provider) {
-        TranslationProvider.Google -> true
         TranslationProvider.DeepL -> languageCode(code) !in DEEPL_MISSING
+        else -> true
     }
 
     /** The languages [provider] can translate into, by name, plus [current] so a saved choice still shows. */

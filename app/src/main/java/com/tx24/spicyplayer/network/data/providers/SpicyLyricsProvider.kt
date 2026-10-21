@@ -192,17 +192,9 @@ class SpicyLyricsProvider @Inject constructor(
         val root = gson.fromJson(json, JsonObject::class.java)
         if (root.get("Status")?.asInt != 200) return ProviderResult.Miss
         val body = root.getAsJsonObject("Body") ?: return malformed("Missing Body")
-        // Syllable/Line responses carry Content; Static ones carry only Lines[].Text.
-        val content = body.getAsJsonArray("Content")
-        val ttml = content?.let { SpicyLyricsTtmlConverter.convert(body, it) }
-        val plain = body.getAsJsonArray("Lines")
-            ?.mapNotNull { it.takeIf { line -> line.isJsonObject }?.asJsonObject?.get("Text")?.takeIf { text -> text.isJsonPrimitive }?.asString }
-            ?.joinToString("\n")?.takeIf(String::isNotBlank)
-        if (ttml == null && plain == null) return malformed("No usable lyric content")
+        val lyrics = spicyBodyPayload(body) ?: return malformed("No usable lyric content")
         val upload = body.getAsJsonObject("UploadAttribution")
-        return ProviderResult.Hit(RemoteLyricsPayload(
-            ttmlLyrics = ttml,
-            plainLyrics = plain,
+        return ProviderResult.Hit(lyrics.copy(
             attribution = LyricsAttribution(
                 providerName = "Spicy Lyrics",
                 originName = spicyOriginName(body.get("source")?.takeIf { it.isJsonPrimitive }?.asString),
@@ -217,6 +209,22 @@ class SpicyLyricsProvider @Inject constructor(
         ProviderFailureCategory.MALFORMED_RESPONSE,
         message,
     )
+}
+
+/**
+ * The lyrics in a Spicy Lyrics API body, the shape Unison's store list serves too: Syllable and
+ * Line bodies carry Content, Static ones only Lines[].Text. Null when there is neither.
+ */
+internal fun spicyBodyPayload(body: JsonObject): RemoteLyricsPayload? {
+    val lines = body.getAsJsonArray("Lines")?.mapNotNull { it.takeIf { line -> line.isJsonObject }?.asJsonObject }.orEmpty()
+    fun JsonObject.text(name: String) = get(name)?.takeIf { it.isJsonPrimitive }?.asString
+    // Static lyrics with translations go as TTML, which carries them; plain text can't.
+    val ttml = body.getAsJsonArray("Content")?.let { SpicyLyricsTtmlConverter.convert(body, it) }
+        ?: lines.takeIf { all -> all.any { !it.text("TranslatedText").isNullOrBlank() } }
+            ?.let { SpicyLyricsTtmlConverter.static(it.map { line -> line.text("Text").orEmpty() to line.text("TranslatedText") }) }
+    val plain = lines.mapNotNull { it.text("Text") }.joinToString("\n").takeIf(String::isNotBlank)
+    if (ttml == null && plain == null) return null
+    return RemoteLyricsPayload(ttmlLyrics = ttml, plainLyrics = plain)
 }
 
 /** A maker or uploader in a Spicy Lyrics upload attribution (RMM Revival passes them on as is). */
@@ -274,7 +282,7 @@ internal object SpicyLyricsTtmlConverter {
                     return@forEach
                 }
                 wordTimed = true
-                paragraph(key, lead, item.getAsJsonArray("Background"), agent, opposite)?.let(::add) ?: return@forEach
+                paragraph(key, item, lead, item.getAsJsonArray("Background"), agent, opposite)?.let(::add) ?: return@forEach
                 transliteration(lead.getAsJsonArray("Syllables"), item.getAsJsonArray("Background"))?.let {
                     transliterations.append("<text for=\"$key\">$it</text>")
                 }
@@ -309,25 +317,39 @@ internal object SpicyLyricsTtmlConverter {
         val start = item.number("StartTime") ?: return null
         val end = item.number("EndTime") ?: return null
         val agentAttribute = agent?.let { " ttm:agent=\"${xml(it)}\"" }.orEmpty()
-        return "<p begin=\"${seconds(start)}\" end=\"${seconds(end)}\" itunes:key=\"$key\"$agentAttribute spicy:oppositeAligned=\"$opposite\">${xml(text)}</p>"
+        return "<p begin=\"${seconds(start)}\" end=\"${seconds(end)}\" itunes:key=\"$key\"$agentAttribute spicy:oppositeAligned=\"$opposite\">${xml(text)}${translationSpan(item)}</p>"
     }
 
-    private fun paragraph(key: String, lead: JsonObject, backgrounds: JsonArray?, agent: String?, opposite: Boolean): String? {
+    /** Untimed lyrics, each line with its translation if it has one. */
+    fun static(lines: List<Pair<String, String?>>): String? {
+        val paragraphs = lines.filter { it.first.isNotBlank() }.joinToString("") { (text, translation) ->
+            "<p>${xml(text)}${translation?.trim()?.takeIf(String::isNotEmpty)?.let { "<span ttm:role=\"x-translation\">${xml(it)}</span>" }.orEmpty()}</p>"
+        }.ifEmpty { return null }
+        return """<?xml version="1.0" encoding="UTF-8"?><tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata" xmlns:itunes="http://music.apple.com/lyric-ttml-internal" itunes:timing="None"><body><div>$paragraphs</div></body></tt>"""
+    }
+
+    /** The API's translation of a line or background group, as an inline x-translation span. */
+    private fun translationSpan(vararg sources: JsonObject?): String = sources.firstNotNullOfOrNull { source ->
+        source?.string("TranslatedText")?.trim()?.takeIf(String::isNotEmpty)
+    }?.let { "<span ttm:role=\"x-translation\">${xml(it)}</span>" }.orEmpty()
+
+    private fun paragraph(key: String, item: JsonObject, lead: JsonObject, backgrounds: JsonArray?, agent: String?, opposite: Boolean): String? {
         val leadSpans = spans(lead.getAsJsonArray("Syllables"))
         val bgGroups = backgrounds?.mapNotNull { element ->
             val group = element.takeIf { it.isJsonObject }?.asJsonObject ?: return@mapNotNull null
-            spans(group.getAsJsonArray("Syllables")).takeIf(List<TimedText>::isNotEmpty)
+            spans(group.getAsJsonArray("Syllables")).takeIf(List<TimedText>::isNotEmpty)?.let { it to translationSpan(group) }
         }.orEmpty()
         // A line is dropped only when its lead and every background group
         // are empty: a line can be background vocals alone (Industry Baby opens with one).
         if (leadSpans.isEmpty() && bgGroups.isEmpty()) return null
-        val start = lead.number("StartTime") ?: (leadSpans + bgGroups.flatten()).minOf { it.start }
-        val end = lead.number("EndTime") ?: (leadSpans + bgGroups.flatten()).maxOf { it.end }
-        val bg = bgGroups.joinToString("") { group ->
-            "<span ttm:role=\"x-bg\">${group.joinToString("") { it.xmlSpan() }}</span>"
+        val all = leadSpans + bgGroups.flatMap { it.first }
+        val start = lead.number("StartTime") ?: all.minOf { it.start }
+        val end = lead.number("EndTime") ?: all.maxOf { it.end }
+        val bg = bgGroups.joinToString("") { (group, translation) ->
+            "<span ttm:role=\"x-bg\">${group.joinToString("") { it.xmlSpan() }}$translation</span>"
         }
         val agentAttribute = agent?.let { " ttm:agent=\"${xml(it)}\"" }.orEmpty()
-        return "<p begin=\"${seconds(start)}\" end=\"${seconds(end)}\" itunes:key=\"$key\"$agentAttribute spicy:oppositeAligned=\"$opposite\">${leadSpans.joinToString("") { it.xmlSpan() }}$bg</p>"
+        return "<p begin=\"${seconds(start)}\" end=\"${seconds(end)}\" itunes:key=\"$key\"$agentAttribute spicy:oppositeAligned=\"$opposite\">${leadSpans.joinToString("") { it.xmlSpan() }}$bg${translationSpan(lead, item)}</p>"
     }
 
     private fun spans(array: JsonArray?): List<TimedText> = array?.mapIndexedNotNull { index, element ->

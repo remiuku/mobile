@@ -63,6 +63,8 @@ internal object LyricsFurniture {
     )
     /** What counts as one sung unit: a CJK character, or a Latin word. */
     private val SUNG_UNIT = Regex("[가-힣ᄀ-ᇿ㄰-㆏぀-ヿㇰ-ㇿｦ-ﾟ㐀-䶿一-鿿豈-﫿]|[A-Za-zÀ-ɏ']+")
+    /** A bracketed "feat. …" ("ft.", "with", 合唱…) after a title. */
+    private val FEATURING = Regex("\\s*[(（\\[【]\\s*(?:feat\\.?|ft\\.?|featuring|with|合唱)\\s[^)）\\]】]*[)）\\]】]", RegexOption.IGNORE_CASE)
     private val BRACKETED = Regex("\\s*[(（\\[【][^)）\\]】]*[)）\\]】]")
 
     /** The indexes of [lines] to keep, in order. */
@@ -145,9 +147,11 @@ internal object LyricsFurniture {
         if (cut < 0) return false
         val head = text.substring(0, cut)
         val tail = text.substring(cut + 3)
-        // An exact title stands without the byline, which a catalogue may write in its own script.
+        // An exact title stands without the byline, which a catalogue may write in its own script
+        // or spell its own way ("dØtcØmmie"); a featured artist it adds in brackets doesn't count.
         return listOf(head to tail, tail to head).any { (song, by) ->
-            key(by).isNotEmpty() && sameSong(song, title) && (sameArtist(by, artist) || key(song) == key(title))
+            key(by).isNotEmpty() && sameSong(song, title) &&
+                (sameArtist(by, artist) || key(song) == key(title) || key(FEATURING.replace(song, "")) == key(title))
         }
     }
 

@@ -147,6 +147,12 @@ class LyricsAnimator(
         const val LINE_TRANSITION_MS = 200
         /** Minimal Lyrics Mode (Mixed.css): scale 0.4s ease-in-out, opacity 0.4s linear. */
         const val MINIMAL_TRANSITION_MS = 400
+        /** Background Vocal Pop-Out: how long a background line takes to tuck away, and to fade as it does. */
+        const val POP_CLOSE_MS = 300
+        const val POP_FADE_MS = 120
+        val POP_FADE_EASING = CubicBezierEasing(0f, 0f, 0.58f, 1f)
+        /** Folded, a background line is this size. */
+        const val POP_FOLDED_SCALE = 0.8f
         val EASE_IN_OUT = CubicBezierEasing(0.42f, 0f, 0.58f, 1f)
         const val MINIMAL_SUNG_SCALE = 0.95f
         const val MINIMAL_NOT_SUNG_SCALE = 0.965f
@@ -227,6 +233,7 @@ class LyricsAnimator(
         cachedLineGlow.clear()
         appleFinalStates.clear()
         presenceAnims.clear()
+        popFadeAnims.clear()
         popLeads = null
         appleOrdinalsFor = null
         blurringLastLine = -1
@@ -272,6 +279,7 @@ class LyricsAnimator(
             letterSpringsMap.clear()
             dotSpringsMap.clear()
             presenceAnims.clear()
+            popFadeAnims.clear()
             popLeads = null
         }
 
@@ -337,8 +345,10 @@ class LyricsAnimator(
                 when (lineState) {
                     ElementState.Active -> {
                         val pct = progress(processedPosition, line.startMs, line.endMs)
-                        lineGradient = if (config.isSimple) 100f else pct * 100f
-                        if (config.isSimple) {
+                        // A line with no timing of its own is lit whole: there's nothing to wipe by.
+                        val whole = config.isSimple || line.untimed
+                        lineGradient = if (whole) 100f else pct * 100f
+                        if (whole) {
                             lineGlow = 0f
                         } else {
                             val spring = lineGlowSprings.getOrPut(lineIdx) {
@@ -348,7 +358,7 @@ class LyricsAnimator(
                             lineGlow = spring.step(deltaTime)
                         }
                     }
-                    ElementState.NotSung -> lineGradient = if (config.isSimple) 100f else -20f
+                    ElementState.NotSung -> lineGradient = if (config.isSimple || line.untimed) 100f else -20f
                     ElementState.Sung -> lineGradient = 100f
                 }
                 cachedLineGradient[lineIdx] = lineGradient
@@ -407,10 +417,10 @@ class LyricsAnimator(
             val blur = if (!config.distanceBlurEnabled || suppressBlur || isActive || minimalLook && keptAfterActive) 0f
                 else blurAmounts.getOrElse(lineIdx) { 0f }
 
-            val (presence, presenceGoal) = popPresence(lines, states, lineIdx, lyricsType)
-            val folded = AppleMusicMotion.BACKGROUND_FOLDED_SCALE
+            val (presence, presenceGoal, presenceAlpha) = popPresence(lines, states, lineIdx, lyricsType)
+            val folded = POP_FOLDED_SCALE
             LineAnimState(
-                opacity = if (presence == 1f) opacity else opacity * AppleMusicMotion.backgroundAlpha(presence),
+                opacity = opacity * presenceAlpha,
                 blur = blur,
                 scale = if (presence == 1f) lineScale else lineScale * (folded + (1f - folded) * presence),
                 presence = presence,
@@ -436,14 +446,20 @@ class LyricsAnimator(
     /** Each background line's lead (same group), or -1; null until worked out for these lines. */
     private var popLeads: IntArray? = null
 
+    /** A background line's openness under Background Vocal Pop-Out, where it's heading, and its opacity for it. */
+    private data class PopPresence(val presence: Float, val goal: Float, val alpha: Float)
+
     /**
      * How far open a background line is under Background Vocal Pop-Out: closed (taking no room)
-     * until it or its lead is sung, then sliding out, and tucking back in once both are done.
-     * 1 for every other line, and whenever the option is off.
+     * until it or its lead is sung, then sliding out. Once both have been sung it stays open as a
+     * sung line until the list moves on to a later line, and folds with that scroll: folding a
+     * line at rest would shift the rows below under the reader. So in Minimal Lyrics Mode it fades
+     * out with its lead, as a sung line, before it folds. Folding, it's gone in a quick fade before
+     * the rows below glide up over it. 1 for every other line, and whenever the option is off.
      */
-    private fun popPresence(lines: List<Line>, states: List<ElementState>, lineIdx: Int, lyricsType: LyricsType): Pair<Float, Float> {
+    private fun popPresence(lines: List<Line>, states: List<ElementState>, lineIdx: Int, lyricsType: LyricsType): PopPresence {
         val line = lines[lineIdx]
-        if (!config.backgroundPop || !line.isBackground || line.isInterlude || lyricsType == LyricsType.Static) return 1f to 1f
+        if (!config.backgroundPop || !line.isBackground || line.isInterlude || lyricsType == LyricsType.Static) return PopPresence(1f, 1f, 1f)
         val leads = popLeads ?: IntArray(lines.size) { i ->
             val other = lines[i]
             if (!other.isBackground || other.groupId == null) -1
@@ -452,15 +468,36 @@ class LyricsAnimator(
             } ?: -1
         }.also { popLeads = it }
         val lead = leads[lineIdx]
-        val target = if (states[lineIdx] == ElementState.Active || lead >= 0 && states[lead] == ElementState.Active) 1f else 0f
-        val anim = presenceAnims.getOrPut(lineIdx) { Animatable(target) }
-        if (anim.targetValue != target) {
+        val anim = presenceAnims[lineIdx]
+        val sung = states[lineIdx] == ElementState.Active || lead >= 0 && states[lead] == ElementState.Active
+        val kept = !sung && anim?.targetValue == 1f && states[lineIdx] == ElementState.Sung &&
+            (lead < 0 || states[lead] == ElementState.Sung) && !movedOn(lines, states, lineIdx)
+        val target = if (sung || kept) 1f else 0f
+        val presence = anim ?: Animatable(target).also { presenceAnims[lineIdx] = it }
+        val fade = popFadeAnims.getOrPut(lineIdx) { Animatable(target) }
+        if (presence.targetValue != target) {
             // Quick ease-out glides: the scroll aims at the settled layout, so the room opening
             // up must not lag behind it.
-            coroutineScope.launch { anim.animateTo(target, tween(if (target == 1f) 500 else 300, easing = POP_EASING)) }
+            coroutineScope.launch { presence.animateTo(target, tween(if (target == 1f) 500 else POP_CLOSE_MS, easing = POP_EASING)) }
+            if (target == 1f) coroutineScope.launch { fade.snapTo(1f) }
+            else coroutineScope.launch { fade.animateTo(0f, tween(POP_FADE_MS, easing = POP_FADE_EASING)) }
         }
-        return anim.value to target
+        val alpha = if (target == 1f) AppleMusicMotion.backgroundAlpha(presence.value) else fade.value
+        return PopPresence(presence.value, target, alpha)
     }
+
+    /** Whether a line after [lineIdx]'s group is being sung, so the list has scrolled on past it. */
+    private fun movedOn(lines: List<Line>, states: List<ElementState>, lineIdx: Int): Boolean {
+        val group = lines[lineIdx].groupId
+        for (j in states.indices.reversed()) {
+            if (j <= lineIdx) return false
+            if (states[j] == ElementState.Active && (group == null || lines[j].groupId != group)) return true
+        }
+        return false
+    }
+
+    /** Each background line's fade as it closes under Background Vocal Pop-Out. */
+    private val popFadeAnims = mutableMapOf<Int, Animatable<Float, AnimationVector1D>>()
 
     // ── The Apple Music style ───────────────────────────────────────────────────────
 
@@ -506,6 +543,7 @@ class LyricsAnimator(
             }
             appleActiveLine = -1
             presenceAnims.clear()
+            popFadeAnims.clear()
             blurAnims.clear()
             litAnims.clear()
         }

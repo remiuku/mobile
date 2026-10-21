@@ -42,6 +42,9 @@ class SpotifyTrackResolver(private val catalogSearch: SpotifyCatalogSearch) {
     /** Spotify's results for a query the user typed. */
     suspend fun search(query: String): List<SpotifyTrackCandidate> = catalogSearch.search(query)
 
+    /** The track's ISRC, for sources that look songs up by it. */
+    suspend fun isrc(trackId: String): String? = catalogSearch.isrc(trackId)
+
     /** The match already made for [track], without searching; null if none was made lately. */
     fun remembered(track: LocalTrackMetadata): SpotifyTrackResolution.Matched? = synchronized(recent) { recent[track] }
 
