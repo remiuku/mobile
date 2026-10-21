@@ -102,6 +102,7 @@ import androidx.compose.material.icons.rounded.FontDownload
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.OpenInBrowser
 import androidx.compose.material.icons.rounded.Translate
+import androidx.compose.material.icons.rounded.ScreenRotation
 import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material.icons.rounded.VerticalAlignCenter
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -358,12 +359,36 @@ internal fun LyricsContent(state: PlayerUiState, viewModel: ExternalPlaybackView
         enabled = spicyStyle,
     )
     SettingsSection("Text") {
-        SettingRow(label = "Lyrics size", description = "Make the lyrics smaller or bigger than the screen's default.", icon = Icons.Rounded.FormatSize) {
-            SpicySelect(
-                value = settings.lyricsSize.name,
-                options = LyricsSize.entries.map { it.name },
-                labels = LyricsSize.entries.map { it.label },
-                onChange = { settings.lyricsSize = LyricsSize.valueOf(it) },
+        SettingRow(
+            label = "Lyrics size",
+            description = "With the phone upright, against the screen's default.",
+            icon = Icons.Rounded.FormatSize,
+            stacked = true,
+            searchDescription = "Make the lyrics smaller or bigger than the screen's default. Portrait.",
+        ) {
+            SpicyBipolarSlider(
+                value = settings.lyricsSizePortrait,
+                range = LYRICS_SIZE_RANGE,
+                step = 5,
+                onValueChange = { settings.lyricsSizePortrait = it },
+                default = 100,
+                unit = "%",
+            )
+        }
+        SettingRow(
+            label = "Lyrics size in landscape",
+            description = "With the phone on its side, against the screen's default.",
+            icon = Icons.Rounded.ScreenRotation,
+            stacked = true,
+            searchDescription = "Make the lyrics smaller or bigger in landscape.",
+        ) {
+            SpicyBipolarSlider(
+                value = settings.lyricsSizeLandscape,
+                range = LYRICS_SIZE_RANGE,
+                step = 5,
+                onValueChange = { settings.lyricsSizeLandscape = it },
+                default = 100,
+                unit = "%",
             )
         }
         LyricsFontRows(settings)

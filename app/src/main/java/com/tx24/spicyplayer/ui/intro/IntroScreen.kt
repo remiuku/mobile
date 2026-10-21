@@ -339,10 +339,10 @@ private fun ColumnScope.SetupStep(settings: AppSettings, next: () -> Unit) {
         Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(SpicyColors.TintBg).border(1.dp, SpicyColors.Hairline, RoundedCornerShape(16.dp))) {
             SettingRow("Lyrics Size", description = "How big the lyrics are.", icon = Icons.Rounded.FormatSize) {
                 SpicySelect(
-                    value = settings.lyricsSize.name,
+                    value = LyricsSize.nearest(settings.lyricsSizePortrait).name,
                     options = LyricsSize.entries.map { it.name },
                     labels = LyricsSize.entries.map { it.label },
-                    onChange = { settings.lyricsSize = LyricsSize.valueOf(it) },
+                    onChange = { settings.setLyricsSize(LyricsSize.valueOf(it)) },
                 )
             }
             SettingRow("Background", description = "What fills the screen behind the lyrics.", icon = Icons.Rounded.Wallpaper) {

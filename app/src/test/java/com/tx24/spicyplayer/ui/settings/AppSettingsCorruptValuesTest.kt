@@ -25,11 +25,20 @@ class AppSettingsCorruptValuesTest {
         assertEquals(setOf(StageArt.CoverArt), AppSettings(Prefs(mapOf("coverStage" to false, "stageArts" to "CoverArt"))).stageArt)
     }
 
+    @Test fun lyricsSizesStartFromTheOneSizePickedBefore() {
+        val upgraded = AppSettings(Prefs(mapOf("lyricsSize" to "Larger")))
+        assertEquals(130 to 130, upgraded.lyricsSizePortrait to upgraded.lyricsSizeLandscape)
+        assertEquals(1.3f, upgraded.lyricsScale(landscape = true), 0.0001f)
+        assertEquals(100, AppSettings(Prefs(emptyMap())).lyricsSizePortrait)
+        // Kept inside the slider's range, whatever was stored.
+        assertEquals(250, AppSettings(Prefs(mapOf("lyricsSizeLandscape" to 900))).lyricsSizeLandscape)
+    }
+
     @Test fun knowsWhatTypeEachSettingIsStoredAs() {
         val types = AppSettings(Prefs(emptyMap())).storedTypes
         assertEquals(Boolean::class, types["lowPerformance"])
         assertEquals(Int::class, types["backgroundBlur"])
-        assertEquals(String::class, types["lyricsSize"])
+        assertEquals(Int::class, types["lyricsSizePortrait"])
         assertEquals(String::class, types["stageArts"])
         assertEquals(Boolean::class, types["coverStage"])
     }

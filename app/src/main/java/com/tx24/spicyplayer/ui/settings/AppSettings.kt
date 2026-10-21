@@ -50,7 +50,21 @@ class AppSettings(private val prefs: SharedPreferences) {
     var refreshedSimpleLyrics by boolean("refreshedSimpleLyrics", false)
     var minimalLyricsMode by boolean("minimalLyricsMode", false)
     var originalWordMotion by boolean("originalWordMotion", false)
-    var lyricsSize by enum("lyricsSize", LyricsSize.Default)
+    /**
+     * The lyric text size against the screen's default, in percent, held apart for portrait and
+     * landscape. Both start from the size picked before they were split.
+     */
+    var lyricsSizePortrait by int("lyricsSizePortrait", legacyLyricsSize(), LYRICS_SIZE_RANGE)
+    var lyricsSizeLandscape by int("lyricsSizeLandscape", legacyLyricsSize(), LYRICS_SIZE_RANGE)
+    /** The lyrics' size as a scale, for the way the screen is turned. */
+    fun lyricsScale(landscape: Boolean): Float = (if (landscape) lyricsSizeLandscape else lyricsSizePortrait) / 100f
+    /** Sets both sizes to [preset]'s, as the intro's one choice does. */
+    fun setLyricsSize(preset: LyricsSize) {
+        lyricsSizePortrait = preset.percent
+        lyricsSizeLandscape = preset.percent
+    }
+    private fun legacyLyricsSize(): Int =
+        runCatching { LyricsSize.valueOf(prefs.getString("lyricsSize", null)!!).percent }.getOrDefault(100)
     /** Carries over the old "Use System Font" switch. */
     var lyricsFont by enum("lyricsFont", if (read { prefs.getBoolean("systemFont", false) } == true) LyricsFont.System else LyricsFont.Default)
     /** The picked font's file in the app's storage (`LyricsFontFile`), and the name it came with. */
@@ -331,10 +345,20 @@ enum class LyricsStyle(val label: String) {
     AppleMusic("Apple Music"),
 }
 
-/** The lyric text size against the default, which follows the screen width. */
-enum class LyricsSize(val scale: Float, val label: String) {
-    Small(0.85f, "Small"),
-    Default(1f, "Default"),
-    Large(1.15f, "Large"),
-    Larger(1.3f, "Larger"),
+/** Lyric text sizes to pick from in one step, against the default, which follows the screen width. */
+enum class LyricsSize(val percent: Int, val label: String) {
+    Small(85, "Small"),
+    Default(100, "Default"),
+    Large(115, "Large"),
+    Larger(130, "Larger"),
+    Huge(160, "Huge"),
+    ;
+
+    companion object {
+        /** The one nearest [percent]. */
+        fun nearest(percent: Int): LyricsSize = entries.minBy { kotlin.math.abs(it.percent - percent) }
+    }
 }
+
+/** How far the lyrics' size goes either way, in percent of the default. */
+val LYRICS_SIZE_RANGE = 60..250

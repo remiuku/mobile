@@ -73,7 +73,8 @@ fun configSnapshot(settings: AppSettings): Map<String, Any> = with(settings) {
         "refreshed_simple_lyrics" to refreshedSimpleLyrics,
         "minimal_mode" to minimalLyricsMode,
         "original_word_motion" to originalWordMotion,
-        "lyrics_size" to lyricsSize.name,
+        "lyrics_size" to lyricsSizePortrait,
+        "lyrics_size_landscape" to lyricsSizeLandscape,
         // Default, System or Custom; a custom font's own name stays on the phone.
         "font" to lyricsFont.name,
         "romanize" to romanize,

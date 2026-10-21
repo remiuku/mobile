@@ -652,7 +652,7 @@ private fun HomeGroups(state: PlayerUiState, settings: AppSettings, updater: Upd
                 },
                 (if (settings.originalWordMotion) "Original word motion" else "Boosted word motion")
                     .takeIf { settings.lyricsStyle == LyricsStyle.Spicy },
-                "${settings.lyricsSize.label.lowercase()} text".takeIf { settings.lyricsSize != LyricsSize.Default },
+                "${settings.lyricsSizePortrait}% text".takeIf { settings.lyricsSizePortrait != 100 },
                 when (settings.lyricsFont) {
                     LyricsFont.Default -> null
                     LyricsFont.System -> "system font"

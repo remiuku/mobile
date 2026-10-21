@@ -925,7 +925,7 @@ private fun LyricsApp(
                 val swapFade = { if (landscape && !hideHeader) abs(1f - 2f * panelSide.value) else 1f }
                 // Landscape lyrics keep the desktop page's size against the cover rather than
                 // following their box's width.
-                val lyricsFontScale = settings.lyricsSize.scale * if (landscape) {
+                val lyricsFontScale = settings.lyricsScale(landscape) * if (landscape) {
                     landscapeMetrics.lyricFontSizeSp /
                         LyricsLayoutMetrics(lyricsBoxLeft.widthPx, density, LyricsType.Syllable, 1f).baseFontSizeSp
                 } else 1f
@@ -1141,7 +1141,7 @@ private fun LyricsApp(
                         // Landscape lyrics scroll like the full page: centred, 30px high against lyrics
                         // at their size here, on the whole page (the low bar comes and goes over it).
                         val centredLiftPx = if (landscape) {
-                            val lyricSp = landscapeMetrics.lyricFontSizeSp * settings.lyricsSize.scale
+                            val lyricSp = landscapeMetrics.lyricFontSizeSp * settings.lyricsScale(landscape = true)
                             30f * lyricSp / 56f * density
                         } else {
                             30f * headerMetrics.lyricsScale * headerMetrics.density + controlsHeightPx / 2f
@@ -1557,7 +1557,8 @@ private fun PipLyrics(
         val staticBoost = if ((state.lyrics as? LyricsState.Ready)?.lyricsType == LyricsType.Static)
             LyricsLayoutMetrics.baseFontSizeSp(LyricsType.Syllable, maxWidth.value) / LyricsLayoutMetrics.baseFontSizeSp(LyricsType.Static, maxWidth.value)
             else 1f
-        val fontScale = windowScale * settings.lyricsSize.scale * staticBoost
+        // The floating window's size follows its own shape, as the screen's does the way it's turned.
+        val fontScale = windowScale * settings.lyricsScale(landscape = maxWidth > maxHeight) * staticBoost
         SpicySessionBackground(
             artwork = state.artwork,
             artworkUri = state.artworkUri,
