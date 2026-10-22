@@ -180,6 +180,8 @@ class TranslationEngine(
         onPartial: suspend (TranslationResult) -> Unit = {},
         /** What happened, step by step, for the debug report. */
         trace: (String) -> Unit = {},
+        /** Asked when [translator] times out or is busy; its answer is shown but not kept. */
+        fallback: Translator? = null,
         human: suspend () -> GeniusTranslationPair? = { null },
     ): TranslationOutcome = coroutineScope {
         fun skips(language: String?) = skipTranslation(language, preferences.targetLanguage, preferences.excludedLanguages)
@@ -227,66 +229,110 @@ class TranslationEngine(
             return@coroutineScope TranslationOutcome.Translated(result)
         }
         // Keep the whole original song in the machine request, even where human lines win.
-        val batches = TranslationBatching.batches(document, translator.provider)
-        if (batches.isEmpty()) return@coroutineScope TranslationOutcome.Skipped(source)
-        val aligned = mutableMapOf<Pair<Int, Int>, String?>()
-        val lineLanguages = mutableMapOf<Int, String>()
-        val languageWeights = mutableMapOf<String, Int>()
+        if (TranslationBatching.batches(document, translator.provider).isEmpty()) return@coroutineScope TranslationOutcome.Skipped(source)
         var requests = 0
-        var answered = false
-        suspend fun send(batch: List<TranslationPiece>) {
-            if (requests++ > 0) pause(PACE_MS)
-            val response = ask(translator, TranslatorRequest(batch.map { it.text }, key.targetLanguage, source, document.context), trace)
-            if (response.lines.size != batch.size) {
-                trace("asked ${batch.size} lines, ${response.lines.size} came back")
-                if (translator.provider != TranslationProvider.Google && !translator.provider.isAi) throw TranslationFailure("Translation returned an incomplete response. Try again later.")
-                if (batch.size > 1) TranslationBatching.fallback(batch).forEach { send(it) }
-                return
+        suspend fun machine(translator: Translator): MachinePass {
+            val batches = TranslationBatching.batches(document, translator.provider)
+            val aligned = mutableMapOf<Pair<Int, Int>, String?>()
+            val lineLanguages = mutableMapOf<Int, String>()
+            val languageWeights = mutableMapOf<String, Int>()
+            var answered = false
+            suspend fun send(batch: List<TranslationPiece>) {
+                if (requests++ > 0) pause(PACE_MS)
+                val response = ask(translator, TranslatorRequest(batch.map { it.text }, key.targetLanguage, source, document.context), trace)
+                if (response.lines.size != batch.size) {
+                    trace("asked ${batch.size} lines, ${response.lines.size} came back")
+                    if (translator.provider != TranslationProvider.Google && !translator.provider.isAi) throw TranslationFailure("Translation returned an incomplete response. Try again later.")
+                    if (batch.size > 1) TranslationBatching.fallback(batch).forEach { send(it) }
+                    return
+                }
+                answered = true
+                val weights = mutableMapOf<String, Int>()
+                batch.forEachIndexed { position, piece ->
+                    val lineLanguage = languageCode(response.lines[position]?.language)
+                    if (lineLanguage != null && piece.part == 0) lineLanguages[piece.index] = lineLanguage
+                    if (piece.part != 0) return@forEachIndexed
+                    val language = lineLanguage ?: languageCode(response.detectedLanguage) ?: return@forEachIndexed
+                    // By lines, not characters: a line of Hangul or kanji is far shorter than its English.
+                    weights.merge(language, 1, Int::plus)
+                }
+                weights.forEach { (language, weight) -> languageWeights.merge(language, weight, Int::plus) }
+                aligned.putAll(TranslationBatching.align(batch, response) { skips(it) })
+                trace("${translator.provider.label}: ${batch.size} lines" +
+                    weights.entries.sortedByDescending { it.value }.joinToString(" ") { it.key }.takeIf(String::isNotEmpty)?.let { ", in $it" }.orEmpty())
             }
-            answered = true
-            val weights = mutableMapOf<String, Int>()
-            batch.forEachIndexed { position, piece ->
-                val lineLanguage = languageCode(response.lines[position]?.language)
-                if (lineLanguage != null && piece.part == 0) lineLanguages[piece.index] = lineLanguage
-                if (piece.part != 0) return@forEachIndexed
-                val language = lineLanguage ?: languageCode(response.detectedLanguage) ?: return@forEachIndexed
-                // By lines, not characters: a line of Hangul or kanji is far shorter than its English.
-                weights.merge(language, 1, Int::plus)
+            batches.forEach { send(it) }
+            val pieces = batches.flatten().groupBy { it.index }
+            val texts = document.lines.map { line ->
+                val parts = pieces[line.index].orEmpty()
+                // A missing chunk leaves the entire original line intact.
+                if (parts.isEmpty() || parts.any { aligned[it.index to it.part] == null }) null
+                else parts.joinToString(" ") { aligned.getValue(it.index to it.part).orEmpty() }
             }
-            weights.forEach { (language, weight) -> languageWeights.merge(language, weight, Int::plus) }
-            aligned.putAll(TranslationBatching.align(batch, response) { skips(it) })
-            trace("${translator.provider.label}: ${batch.size} lines" +
-                weights.entries.sortedByDescending { it.value }.joinToString(" ") { it.key }.takeIf(String::isNotEmpty)?.let { ", in $it" }.orEmpty())
+            return MachinePass(translator.provider, texts, document.lines.map { lineLanguages[it.index] },
+                // The song's language is the one most of its lines are in.
+                languageWeights.maxByOrNull { it.value }?.key,
+                answered && batches.flatten().all { (it.index to it.part) in aligned })
         }
-        batches.forEach { send(it) }
-        // The song's language is the one most of its lines are in.
-        val detected = source ?: languageWeights.maxByOrNull { it.value }?.key ?: languageCode(quick?.sourceLanguage)
-        val pieces = batches.flatten().groupBy { it.index }
-        val texts = document.lines.map { line ->
-            val parts = pieces[line.index].orEmpty()
-            // A missing chunk leaves the entire original line intact.
-            if (parts.isEmpty() || parts.any { aligned[it.index to it.part] == null }) null
-            else parts.joinToString(" ") { aligned.getValue(it.index to it.part).orEmpty() }
+        // A slow or busy translator doesn't throw away what else there is: the fallback's lines,
+        // or Genius's. Only when neither has any does the failure stand.
+        var failure: Exception? = null
+        val pass = try {
+            machine(translator)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            if (error !is java.io.IOException && error !is ProviderResting) throw error
+            failure = error
+            trace("${translator.provider.label} failed: ${error.message ?: error.javaClass.simpleName}")
+            fallback?.let { backup ->
+                trace("asking ${backup.provider.label} instead")
+                try {
+                    machine(backup)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (backupError: Exception) {
+                    trace("${backup.provider.label} failed: ${backupError.message ?: backupError.javaClass.simpleName}")
+                    null
+                }
+            } ?: error.takeIf { lookup == null }?.let { throw it }
         }
-        val perLine = document.lines.map { lineLanguages[it.index] }
+        val texts = pass?.texts ?: none
+        val perLine = pass?.languages ?: none
+        val detected = source ?: pass?.language ?: languageCode(quick?.sourceLanguage)
         if (lookup != null && quick == null) {
-            if (texts.any { it != null }) onPartial(combineTranslations(key, none, texts, detected, perLine, own))
+            if (texts.any { it != null }) onPartial(combineTranslations(key, none, texts, detected, perLine, own, pass?.provider ?: key.provider))
             val pair = lookup.await()
             humanTexts = pair?.let { HumanTranslation.align(document, it) } ?: none
             traceHuman(pair, humanTexts)
         }
-        val result = combineTranslations(key, humanTexts, texts, detected, perLine, own)
+        val result = combineTranslations(key, humanTexts, texts, detected ?: languageCode(lookup?.await()?.sourceLanguage),
+            perLine, own, pass?.provider ?: key.provider)
         if (result.texts.all { it == null }) {
+            failure?.let { throw it }
             // Every line answered and none needed translating: the song is in the target language
             // (or ones left alone). Kept, so it's known the next time it plays.
-            val unanswered = batches.flatten().any { (it.index to it.part) !in aligned }
-            if (!answered || unanswered) throw TranslationFailure("Couldn't translate these lyrics. Try again later.")
+            if (pass == null || !pass.complete) throw TranslationFailure("Couldn't translate these lyrics. Try again later.")
             if (!humanFailed) cache.write(result)
             return@coroutineScope TranslationOutcome.Skipped(detected)
         }
-        if (humanFailed) trace("not cached: Genius gets asked again next time") else cache.write(result)
+        when {
+            failure != null -> trace("not cached: ${translator.provider.label} gets asked again next time")
+            humanFailed -> trace("not cached: Genius gets asked again next time")
+            else -> cache.write(result)
+        }
         TranslationOutcome.Translated(result)
     }
+
+    /** One translator's answer for the whole song. */
+    private class MachinePass(
+        val provider: TranslationProvider,
+        val texts: List<String?>,
+        val languages: List<String?>,
+        val language: String?,
+        /** Every request was answered with the lines it asked for. */
+        val complete: Boolean,
+    )
 
     /**
      * [Translator.translate], waiting out a busy provider briefly. One that asks for longer, or

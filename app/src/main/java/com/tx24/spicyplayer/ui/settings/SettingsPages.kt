@@ -1242,7 +1242,12 @@ private fun SourceList(ranking: SourceRanking, names: Map<String, String>, viewM
     val scroll = LocalPageScroll.current
     val haptics = LocalHapticFeedback.current
     val animate = LocalUiAnimations.current
-    val shown = dragOrder ?: ranking.origins.map { it.id }
+    val saved = ranking.origins.map { it.id }
+    val shown = dragOrder ?: saved
+    // A card's drag handler outlives the composition it started in: it reads the order through
+    // these, or a second drag starts from the order before the first one.
+    val currentShown by rememberUpdatedState(shown)
+    val currentSaved by rememberUpdatedState(saved)
 
     // Past half of a neighbour, the dragged card takes its place; its offset keeps it under the finger.
     fun settle() {
@@ -1308,7 +1313,7 @@ private fun SourceList(ranking: SourceRanking, names: Map<String, String>, viewM
                         handle = Modifier.pointerInput(id) {
                             detectDragGestures(
                                 onDragStart = {
-                                    dragOrder = shown
+                                    dragOrder = currentShown
                                     dragged = id
                                     dragOffset = 0f
                                     haptics.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -1318,7 +1323,7 @@ private fun SourceList(ranking: SourceRanking, names: Map<String, String>, viewM
                                     dragged = null
                                     dragOffset = 0f
                                     dragOrder = null
-                                    if (order != null && order != ranking.origins.map { it.id }) viewModel.setSourceOrder(order)
+                                    if (order != null && order != currentSaved) viewModel.setSourceOrder(order)
                                 },
                                 onDragCancel = {
                                     dragged = null

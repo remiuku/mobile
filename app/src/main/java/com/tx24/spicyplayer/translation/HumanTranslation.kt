@@ -187,6 +187,8 @@ fun combineTranslations(
     key: TranslationKey, human: List<String?>, machine: List<String?>, language: String?,
     languages: List<String?> = human.map { null },
     own: List<String?> = human.map { null },
+    /** Who translated the machine lines: the key's provider, unless a fallback stood in. */
+    machineProvider: TranslationProvider = key.provider,
 ): TranslationResult {
     require(human.size == machine.size && own.size == human.size)
     val texts = human.indices.map {
@@ -197,7 +199,7 @@ fun combineTranslations(
             texts[index] == null -> null
             !own[index].isNullOrBlank() -> TranslationOrigin.Lyrics
             !human[index].isNullOrBlank() -> TranslationOrigin.Genius
-            else -> TranslationOrigin.valueOf(key.provider.name)
+            else -> TranslationOrigin.valueOf(machineProvider.name)
         }
     }
     return TranslationResult(key, texts, language, origins, languages)

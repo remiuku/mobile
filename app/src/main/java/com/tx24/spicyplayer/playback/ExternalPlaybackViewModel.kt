@@ -234,6 +234,8 @@ data class PlayerUiState(
     val translationEnabled: Boolean = false,
     /** A translation is being fetched for the lyrics on screen. */
     val translating: Boolean = false,
+    /** The last translation failed: the button shows off, and a tap tries again. */
+    val translationFailed: Boolean = false,
     val translation: TranslationResult? = null,
     val lyricsLanguage: String? = null,
     val lyricsLanguageOverride: String? = null,
@@ -291,7 +293,10 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
     private val translationCache = DiskTranslationCache(File(application.cacheDir, "translations"))
     private val translationEngine = TranslationEngine(SongLanguageDetector { null }, translationCache)
     private val translationSession = TranslationSession()
+    // An AI service sends nothing until the whole answer is written, so the read timeout (10 s
+    // by default) can't be shorter than the call's.
     private val translationClient = okhttp3.OkHttpClient.Builder().counted().callTimeout(45, java.util.concurrent.TimeUnit.SECONDS)
+        .readTimeout(45, java.util.concurrent.TimeUnit.SECONDS)
         .followRedirects(false).followSslRedirects(false).build()
     private var translationJob: Job? = null
     private var translatedDocument: String? = null
@@ -323,7 +328,10 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
 
     fun toggleTranslation() {
         UsageStats.count(UsageCounter.TRANSLATE)
-        if (mutableState.value.translationEnabled) {
+        // After a failure the button shows off, so a tap tries again instead of turning it off.
+        if (mutableState.value.translationEnabled && mutableState.value.translationFailed) {
+            translateCurrent(manual = true, force = true)
+        } else if (mutableState.value.translationEnabled) {
             clearTranslation()
             mutableState.value = mutableState.value.copy(translationEnabled = false)
         } else if (!translationConsent("manual")) {
@@ -443,7 +451,7 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
         translationJob?.cancel()
         translationSession.invalidate()
         translatedDocument = null
-        mutableState.value = mutableState.value.copy(translation = null, translating = false)
+        mutableState.value = mutableState.value.copy(translation = null, translating = false, translationFailed = false)
     }
 
     private fun translationDocument(): TranslationDocument? {
@@ -462,16 +470,30 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
         if (guessedDocument == document.hash) return
         guessedDocument = document.hash
         viewModelScope.launch {
-            // A song in two scripts is in two languages: unknown, so the button stays.
-            val (mixed, language) = withContext(Dispatchers.Default) {
-                val mixed = mixedScripts(document.lines.filterNot { it.boundary }.map { it.text })
-                mixed to if (mixed) null else languageGuesser.detect(document.context)
-            }
-            traceTranslation("guess: " + if (mixed) "two scripts, unknown" else language ?: "unknown")
+            val language = guessedLanguage(document)
             if (translationDocument()?.hash == document.hash) {
-                mutableState.value = mutableState.value.copy(guessedLanguage = languageCode(language))
+                mutableState.value = mutableState.value.copy(guessedLanguage = language)
             }
         }
+    }
+
+    /** The phone's guess at [document]'s language, worked out once per lyrics; null when unsure. */
+    private val guesses = object : LinkedHashMap<String, String?>(8, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String?>) = size > 8
+    }
+
+    private suspend fun guessedLanguage(document: TranslationDocument): String? {
+        synchronized(guesses) { if (guesses.containsKey(document.hash)) return guesses[document.hash] }
+        // A song in two scripts is in two languages: unknown, so the button stays.
+        val (mixed, language) = withContext(Dispatchers.Default) {
+            val mixed = mixedScripts(document.lines.filterNot { it.boundary }.map { it.text })
+            mixed to if (mixed) null else languageCode(languageGuesser.detect(document.context))
+        }
+        synchronized(guesses) {
+            if (!guesses.containsKey(document.hash)) traceTranslation("guess: " + if (mixed) "two scripts, unknown" else language ?: "unknown")
+            guesses[document.hash] = language
+        }
+        return language
     }
 
     private fun traceTranslation(line: String) {
@@ -501,6 +523,16 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
                     if (manual) showMessage("Already in ${TranslationLanguages.name(source!!)}.")
                     return@launch
                 }
+                // Automatically, a song the phone is sure is in the target language isn't sent
+                // anywhere (the button hides for it too); a tap still asks the translator.
+                if (source == null && !manual) {
+                    val guess = guessedLanguage(document)
+                    if (skipTranslation(guess, preferences.targetLanguage, preferences.excludedLanguages)) {
+                        traceTranslation("skipped: the phone is sure it's in $guess")
+                        return@launch
+                    }
+                    if (!translationSession.accepts(ticket) || translationDocument()?.hash != document.hash) return@launch
+                }
                 // Translations that came with the lyrics and cover the song are shown without
                 // asking a translator, so nothing needs consenting to.
                 val own = withContext(Dispatchers.Default) { translationEngine.ownResult(document, preferences, source) }
@@ -522,12 +554,17 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
                         GeminiTranslator(translationClient, translationStore.key(TranslationProvider.Gemini), translationStore.ai().geminiModel)
                     TranslationProvider.GeminiNano -> GeminiNanoTranslator()
                 }
+                // Google stands in for a slow or busy translator, only once it's been agreed to.
+                val fallback = GoogleTranslator(translationClient).takeIf {
+                    preferences.provider != TranslationProvider.Google && translationStore.disclosed(TranslationProvider.Google, false)
+                }
                 mutableState.value = mutableState.value.copy(translating = true)
                 val result = try {
                     withContext(Dispatchers.IO) {
                         translationEngine.translate(document, preferences, source, translator,
                             human = { lyricsBackend.humanTranslation(state.title, state.artist, preferences.targetLanguage) },
                             trace = ::traceTranslation,
+                            fallback = fallback,
                             onPartial = { partial ->
                                 withContext(Dispatchers.Main) {
                                     if (translationSession.accepts(ticket) && translationDocument()?.hash == document.hash && mutableState.value.translationEnabled) {
@@ -578,6 +615,7 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
                 Log.w(TRANSLATE_TAG, "translation failed", error)
                 traceTranslation("failed: ${error.message}")
                 if (translationSession.accepts(ticket) && mutableState.value.translationEnabled) {
+                    mutableState.value = mutableState.value.copy(translationFailed = true)
                     // Never surface provider bodies, request contents, or credentials in a message.
                     showMessage(if (error is TranslationFailure) error.message ?: "Couldn't translate these lyrics." else "Couldn't translate these lyrics. Try again later.")
                 }

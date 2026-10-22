@@ -61,7 +61,7 @@ internal fun debugReport(context: Context, state: PlayerUiState): String {
  * The step-by-step logs kept apart from [debugReport], which they'd bury: what translation did,
  * how the lyric clock was synced, and what was downloaded. Null when there are none yet.
  */
-internal fun extraLogs(): String? {
+internal fun extraLogs(context: Context): String? {
     val now = SystemClock.elapsedRealtime()
     val report = buildString {
         fun section(title: String, lines: List<String>) {
@@ -73,6 +73,7 @@ internal fun extraLogs(): String? {
         section("Translation (newest last):", TranslationTrace.lines(now))
         section("Sync (newest last):", SyncTrace.lines(now))
         section("Downloaded since start:", TrafficCounter.lines())
+        section("Last crash:", com.tx24.spicyplayer.playback.CrashLog.lines(context))
     }
     return redactSecrets(report).trimEnd().ifEmpty { null }
 }
@@ -123,12 +124,12 @@ internal fun CopyExtraLogsRow() {
     }
     SettingRow(
         label = "Copy extra logs",
-        description = "What translation, syncing and downloads did, step by step. Add them when asked.",
+        description = "What translation, syncing and downloads did, step by step, and how the app last crashed. Add them when asked.",
         icon = Icons.Rounded.ContentCopy,
     ) {
         SpicyButton(if (copied) "Copied" else "Copy", onClick = {
             val clipboard = context.getSystemService(ClipboardManager::class.java)
-            clipboard?.setPrimaryClip(ClipData.newPlainText("Spicy Lyrics Mobile logs", extraLogs() ?: "No logs yet."))
+            clipboard?.setPrimaryClip(ClipData.newPlainText("Spicy Lyrics Mobile logs", extraLogs(context) ?: "No logs yet."))
             copied = clipboard != null
         })
     }

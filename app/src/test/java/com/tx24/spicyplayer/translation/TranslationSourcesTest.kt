@@ -372,4 +372,43 @@ class TranslationSourcesTest {
         assertEquals(listOf("Hello"), presentationSupplements(original, false, RomanizationMode.UnderLine, "Hello", TranslationMode.UnderLine))
         assertSame(original, TranslationPresentation(listOf(null), TranslationMode.Replace).displayLines(listOf(original)).single())
     }
+    /** An AI translator that never answers in time, or turns the request down. */
+    private class Slow(private val error: Exception = java.net.SocketTimeoutException("timeout")) : Translator {
+        override val provider = TranslationProvider.Gemini
+        var asked = 0
+        override suspend fun translate(request: TranslatorRequest): TranslatorResponse { asked++; throw error }
+    }
+    private val gemini = preferences.copy(provider = TranslationProvider.Gemini)
+
+    @Test fun `a timed-out AI still shows Genius's lines, and isn't kept`() = runBlocking {
+        val input = document("夜が来る", "違う歌詞", "星が光る")
+        val pair = GeniusTranslationPair.fromText("夜が来る\n星が光る", "Night comes\nStars shine", "ja")!!
+        val cache = Cache()
+        val result = (TranslationEngine(SongLanguageDetector { null }, cache, pause = {}).translate(input, gemini, null, Slow()) { pair }
+            as TranslationOutcome.Translated).result
+        assertEquals(listOf("Night comes", null, "Stars shine"), result.texts)
+        assertNull(cache.result)
+    }
+
+    @Test fun `a timed-out AI falls back to Google, credited to Google and not kept`() = runBlocking {
+        val input = document("夜が来る", "星が光る")
+        val cache = Cache()
+        val result = (TranslationEngine(SongLanguageDetector { null }, cache, pause = {})
+            .translate(input, gemini, null, Slow(), fallback = Machine()) { null } as TranslationOutcome.Translated).result
+        assertEquals(listOf("machine:夜が来る", "machine:星が光る"), result.texts)
+        assertEquals("Google", result.credit())
+        assertNull(cache.result)
+    }
+
+    @Test fun `with nothing else to show, the timeout stands, and a bad setting never falls back`() = runBlocking {
+        val engine = TranslationEngine(SongLanguageDetector { null }, Cache(), pause = {})
+        val timedOut = runCatching { engine.translate(document("夜が来る"), gemini, null, Slow()) { null } }.exceptionOrNull()
+        assertTrue(timedOut is java.net.SocketTimeoutException)
+        val google = Machine()
+        val badKey = runCatching {
+            engine.translate(document("夜が来る"), gemini, null, Slow(TranslationFailure("bad key")), fallback = google) { null }
+        }.exceptionOrNull()
+        assertEquals("bad key", badKey?.message)
+        assertTrue(google.requests.isEmpty())
+    }
 }
