@@ -1590,8 +1590,8 @@ private fun PipLyrics(
         val staticBoost = if ((state.lyrics as? LyricsState.Ready)?.lyricsType == LyricsType.Static)
             LyricsLayoutMetrics.baseFontSizeSp(LyricsType.Syllable, maxWidth.value) / LyricsLayoutMetrics.baseFontSizeSp(LyricsType.Static, maxWidth.value)
             else 1f
-        // The floating window's size follows its own shape, as the screen's does the way it's turned.
-        val fontScale = windowScale * settings.lyricsScale(landscape = maxWidth > maxHeight) * staticBoost
+        // The floating window has its own lyrics size, apart from the full screen's.
+        val fontScale = windowScale * (settings.pipLyricsSize / 100f) * staticBoost
         SpicySessionBackground(
             artwork = state.artwork,
             artworkUri = state.artworkUri,

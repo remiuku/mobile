@@ -177,6 +177,11 @@ class AppSettings(private val prefs: SharedPreferences) {
     var pipDockCover by boolean("pipDockCover", true)
     /** What the floating window shows for a song without lyrics. */
     var pipWithoutLyrics by enum("pipWithoutLyrics", PipWithoutLyrics.Message)
+    /**
+     * The floating window's lyric text size, in percent, on top of its own fit to the window. Held
+     * apart from the full screen's, so big lyrics there don't leave one word per row in the window.
+     */
+    var pipLyricsSize by int("pipLyricsSize", 100, LYRICS_SIZE_RANGE)
 
     /** The floating window's width over its height. */
     val pipAspect: Float

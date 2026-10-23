@@ -1130,6 +1130,24 @@ internal fun FloatingLyricsContent(settings: AppSettings) {
         icon = Icons.Rounded.Lyrics,
         enabled = supported,
     )
+    SettingRow(
+        label = "Lyrics size",
+        description = "The floating window's own text size, apart from the full screen's.",
+        icon = Icons.Rounded.FormatSize,
+        enabled = supported && settings.pipShowLyrics,
+        stacked = true,
+        searchDescription = "Make the floating lyrics smaller or bigger. Picture-in-picture text size.",
+    ) {
+        SpicyBipolarSlider(
+            value = settings.pipLyricsSize,
+            range = LYRICS_SIZE_RANGE,
+            step = 5,
+            onValueChange = { settings.pipLyricsSize = it },
+            default = 100,
+            unit = "%",
+            enabled = supported && settings.pipShowLyrics,
+        )
+    }
     ToggleRow(
         label = "Song bar",
         checked = settings.pipDock,
