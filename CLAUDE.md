@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Spicy Lyrics Mobile (called Spicy Player until 0.9.1; the package and repository still use the old name) is an Android (Kotlin + Jetpack Compose) lyrics app for music playing in *another* app. It has no library and no playback service of its own. It reads the other app's MediaSession through a notification-listener grant, fetches lyrics from many online sources, and draws them with a word-synced renderer and animated backgrounds. Application ID: `com.tx24.spicyplayer.next`. The single module is `:app` with namespace `com.tx24.spicyplayer`.
+Spicy Lyrics Mobile (called Spicy Player until 0.9.1; the package and repository still use the old name) is an Android (Kotlin + Jetpack Compose) lyrics app for music playing in *another* app. It has no library and no playback service of its own. It reads the other app's MediaSession through a notification-listener grant, fetches lyrics from many online sources, and draws them with a word-synced renderer and animated backgrounds. Application ID: `com.tx24.spicyplayer.next`. The app module is `:app` with namespace `com.tx24.spicyplayer`. `:core` is a plain JVM Kotlin module (no Android SDK) holding the sources, blends, Spotify matching, TTML/LRC parsing, lyric models, romanization, translation and the lyric clock, in the same packages; `:app` depends on it, and a desktop app can too. Code in `:core` logs through `platform/CoreLog`, which `NextLyricsBackend` sends to logcat.
 
 Code comments describe what the code does, not where it was ported from. Credits live in `THIRD_PARTY_NOTICES.md` and the README. Spicy Lyrics as a lyrics *source* (its API, provider, key) is fine to name. `PublicDocsTest` keeps `CLAUDE.md` and `docs/` free of provenance notes.
 
@@ -13,13 +13,13 @@ Code comments describe what the code does, not where it was ported from. Credits
 Windows / PowerShell (use `./gradlew` from Git Bash):
 
 ```
-.\gradlew.bat assembleDebug testDebugUnitTest lintDebug      # full check (from README)
-.\gradlew.bat testDebugUnitTest --tests "com.tx24.spicyplayer.lyrics.spicy.parser.TtmlLyricsParserTest"
+.\gradlew.bat assembleDebug testDebugUnitTest :core:test lintDebug      # full check (from README)
+.\gradlew.bat :core:test --tests "com.tx24.spicyplayer.lyrics.spicy.parser.TtmlLyricsParserTest"
 .\gradlew.bat testDebugUnitTest --tests "*ScrollManagerTest.some test name*"
 .\gradlew.bat installDebug
 ```
 
-- Unit tests are plain JVM JUnit4. `unitTests.isReturnDefaultValues = true` turns Android logging and clock calls into no-ops, so provider and parser code runs unchanged. XML parsing in tests uses kxml2.
+- Unit tests are plain JVM JUnit4. Provider, parser, blend and clock tests live in `:core` (`:core:test`) and need no Android SDK; the rest are in `:app` (`testDebugUnitTest`), where `unitTests.isReturnDefaultValues = true` turns Android logging and clock calls into no-ops. XML parsing in tests uses kxml2.
 - The live-network tests skip themselves unless you opt in: `RUN_SPICY_LYRICS_PROVIDER_TEST=1` (also needs `SPICY_LYRICS_CLIENT_KEY` in the environment) and `RUN_AMLL_NETWORK_TEST=1`. `RUN_MOTION_COVER_TEST=1` checks that the Apple Music animated-cover lookup still works. `RUN_SPOTIFY_CANVAS_TEST=1` checks that the Spotify Canvas lookup service still answers. `RUN_ALL_SOURCES_TEST=1` asks every source for a few well-known songs and prints a table (run with `--info`); use it to check which APIs still work.
 - `SPICY_LYRICS_CLIENT_KEY` is read from a git-ignored root `.env` into `BuildConfig`. It must be a publishable `sl_pk_` key, never a secret `sl_sk_` key. Users can override it in Settings → Sources.
 
