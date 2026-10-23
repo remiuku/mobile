@@ -44,6 +44,7 @@ import com.tx24.spicyplayer.ui.components.SpicyModalButton
 import com.tx24.spicyplayer.ui.components.SpicyModalGap
 import com.tx24.spicyplayer.ui.components.SpicyModalHeading
 import com.tx24.spicyplayer.ui.components.SpicyModalMessage
+import android.app.KeyguardManager
 import android.content.Context
 import android.content.Intent
 import android.os.Build
@@ -736,6 +737,16 @@ private fun LyricsApp(
     var showQuickSettings by remember { mutableStateOf(false) }
     var quickStart by remember { mutableStateOf(QuickScreen.Main) }
     var showSpotifySearch by remember { mutableStateOf(false) }
+    // Over the lock screen the lyrics can be read and played without unlocking. Anything opened
+    // over them asks to unlock first, and they drop behind the lock screen until it's closed.
+    val overLockScreen = settings.showOverLockScreen &&
+        !(showSettings || showLyricsManager || showQuickSettings || showSpotifySearch)
+    LaunchedEffect(activity, overLockScreen) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O_MR1 || activity == null) return@LaunchedEffect
+        if (!overLockScreen && settings.showOverLockScreen) activity.getSystemService(KeyguardManager::class.java)
+            ?.takeIf { it.isKeyguardLocked }?.requestDismissKeyguard(activity, null)
+        activity.setShowWhenLocked(overLockScreen)
+    }
     val noticeActions = remember(viewModel, context) {
         NoticeActions(
             onRetry = { viewModel.loadLyrics(force = true) },

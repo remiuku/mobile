@@ -118,6 +118,7 @@ fun configSnapshot(settings: AppSettings): Map<String, Any> = with(settings) {
         "refined_background" to refinedBackground,
         "background_follows_motion" to backgroundFollowsMotion,
         "keep_screen_on" to keepScreenOn,
+        "show_over_lock_screen" to showOverLockScreen,
         "auto_pip" to autoPip,
         "pip_shape" to pipShape.name,
         "pip_custom_ratio" to pipCustomRatio,

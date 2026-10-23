@@ -1,5 +1,6 @@
 package com.tx24.spicyplayer.ui.settings
 
+import android.os.Build
 import com.tx24.spicyplayer.ui.components.SpicyGlyphs
 import com.tx24.spicyplayer.ui.components.drawBrandRamp
 import androidx.compose.ui.graphics.Color
@@ -127,6 +128,7 @@ import androidx.compose.material.icons.rounded.AspectRatio
 import androidx.compose.material.icons.rounded.Crop
 import androidx.compose.material.icons.rounded.Lyrics
 import java.util.Locale
+import androidx.compose.material.icons.rounded.ScreenLockPortrait
 import androidx.compose.material.icons.rounded.StayCurrentPortrait
 import androidx.compose.material.icons.rounded.Fullscreen
 import androidx.compose.material.icons.rounded.TouchApp
@@ -1015,6 +1017,13 @@ internal fun DeviceContent(settings: AppSettings) {
         onCheckedChange = { settings.highRefreshRate = it },
         description = "Draw at your screen's full refresh rate instead of 60 Hz. Uses slightly more battery.",
         icon = Icons.Rounded.Animation,
+    )
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) ToggleRow(
+        label = "Show over lock screen",
+        checked = settings.showOverLockScreen,
+        onCheckedChange = { settings.showOverLockScreen = it },
+        description = "The power button brings the lyrics back without unlocking. Settings still ask to unlock.",
+        icon = Icons.Rounded.ScreenLockPortrait,
     )
     SubPageCard {
         val supported = PictureInPicture.supported(LocalContext.current)
