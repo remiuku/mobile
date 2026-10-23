@@ -22,8 +22,8 @@ android {
         applicationId = "com.tx24.spicyplayer.next"
         minSdk = 23
         targetSdk = 36
-        versionCode = 22
-        versionName = "0.14.4"
+        versionCode = 23
+        versionName = "0.14.5"
         // A publishable (sl_pk_) key, made to ship in clients: SL rate-limits it per viewer IP.
         val clientKey = localEnv("SPICY_LYRICS_CLIENT_KEY")
         require(clientKey.isBlank() || Regex("sl_pk_[A-Za-z0-9_-]+").matches(clientKey)) {

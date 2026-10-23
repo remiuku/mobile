@@ -19,7 +19,9 @@ class AppSettingsCorruptValuesTest {
     }
 
     @Test fun theOldCoverStageSwitchBecomesThePickedArt() {
-        assertEquals(StageArt.DEFAULT, AppSettings(Prefs(mapOf("coverStage" to true))).stageArt)
+        assertEquals(StageArt.COVER_STAGE_ON, AppSettings(Prefs(mapOf("coverStage" to true))).stageArt)
+        assertEquals(StageArt.DEFAULT, AppSettings(Prefs(mapOf("coverStage" to "yes"))).stageArt)
+        assertEquals(StageArt.DEFAULT, AppSettings(Prefs(emptyMap())).stageArt)
         assertEquals(emptySet<StageArt>(), AppSettings(Prefs(mapOf("coverStage" to false))).stageArt)
         // Once picked, the switch no longer counts.
         assertEquals(setOf(StageArt.CoverArt), AppSettings(Prefs(mapOf("coverStage" to false, "stageArts" to "CoverArt"))).stageArt)

@@ -35,6 +35,7 @@ import com.tx24.spicyplayer.lyrics.LyricsState
 import com.tx24.spicyplayer.lyrics.NoticeKind
 import com.tx24.spicyplayer.lyrics.NextLyricsBackend
 import com.tx24.spicyplayer.lyrics.RemoteLyricsAdapter
+import com.tx24.spicyplayer.widget.NowPlayingHolder
 import com.tx24.spicyplayer.network.data.LyricsLookupRequest
 import com.tx24.spicyplayer.network.data.RemoteLyricsQuality
 import com.tx24.spicyplayer.network.data.LyricsSourceDescriptor
@@ -52,7 +53,6 @@ import com.tx24.spicyplayer.network.data.SpicyLyricsKey
 import com.tx24.spicyplayer.translation.*
 import com.tx24.spicyplayer.network.data.RemoteLyricsSource
 import com.tx24.spicyplayer.network.data.LyricsCapability
-import com.tx24.spicyplayer.network.data.RemoteLyricsPayload
 import com.tx24.spicyplayer.network.data.measuredQuality
 import com.tx24.spicyplayer.network.data.SourceDisclosure
 import com.tx24.spicyplayer.network.data.SourceDisclosures
@@ -72,7 +72,6 @@ import com.tx24.spicyplayer.network.data.spotify.SpotifyTrackCandidate
 import com.tx24.spicyplayer.lyrics.spicy.canvas.kawarp.BackgroundSpeed
 import com.tx24.spicyplayer.ui.nowplaying.SessionCustomAction
 import com.tx24.spicyplayer.ui.nowplaying.TrackDirection
-import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -81,7 +80,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -145,13 +146,6 @@ internal val FOLDER_SOURCE = LyricsSourceDescriptor("folder", "Lyrics folder", 0
 private const val FOLDER_RESCAN_MS = 30_000L
 /** How wide a saved song's cover is kept for the Lyrics Manager's list. */
 private const val COVER_THUMB_PX = 128
-private val IN_BETWEEN_STATES = setOf(
-    PlaybackState.STATE_BUFFERING,
-    PlaybackState.STATE_CONNECTING,
-    PlaybackState.STATE_SKIPPING_TO_NEXT,
-    PlaybackState.STATE_SKIPPING_TO_PREVIOUS,
-    PlaybackState.STATE_SKIPPING_TO_QUEUE_ITEM,
-)
 
 /**
  * Something Spotify Free doesn't allow, noticed when Spotify leaves a command out of its session
@@ -731,6 +725,10 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
             val status = lyricsFolder.status()
             mutableState.value = mutableState.value.copy(lyricsFolder = status)
         }
+        // The widget shows the screen's own pick while the screen is up.
+        viewModelScope.launch {
+            state.map { it.lyrics }.distinctUntilChanged().collect { NowPlayingHolder.offer(currentLyricsKey, it) }
+        }
     }
 
     fun refresh() {
@@ -1184,10 +1182,7 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
         )
     }
 
-    private fun localSelection(ttml: String, persistent: Boolean): RemoteLyricsSelection {
-        val payload = RemoteLyricsPayload(ttmlLyrics = ttml, sourceId = LOCAL_SOURCE.id)
-        return RemoteLyricsSelection(if (persistent) LOCAL_SOURCE else UPLOADED_SOURCE, payload, payload.measuredQuality())
-    }
+    private fun localSelection(ttml: String, persistent: Boolean): RemoteLyricsSelection = savedSelection(ttml, persistent)
 
     /**
      * The playing song's lyrics from the Lyrics Manager: a just-once upload, else a saved song,
@@ -1195,12 +1190,7 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
      */
     private fun localLyricsFor(identity: String?, request: LyricsLookupRequest): RemoteLyricsResolution? {
         val selection = temporaryLyrics?.takeIf { it.first == identity.orEmpty() }?.second
-            ?: localLyrics.get(request.title, request.artist)?.let { localSelection(it, persistent = true) }
-            ?: lyricsFolder.lyrics(request.title, request.artist)?.let { ttml ->
-                val payload = RemoteLyricsPayload(ttmlLyrics = ttml, sourceId = FOLDER_SOURCE.id)
-                RemoteLyricsSelection(FOLDER_SOURCE, payload, payload.measuredQuality())
-                    .takeIf { it.quality != RemoteLyricsQuality.NONE }
-            }
+            ?: savedLyricsFor(request, localLyrics, lyricsFolder)
             ?: return null
         val message = when (selection.source) {
             UPLOADED_SOURCE -> "applied once"
@@ -1630,21 +1620,8 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
     }
 
     /** What the sources are asked for [metadata]: its names cleaned up for lookup. */
-    private fun lookupRequest(metadata: MediaMetadata, spotifyTrackId: String?): LyricsLookupRequest {
-        val names = TrackNameCleaner.clean(
-            title = metadata.getString(MediaMetadata.METADATA_KEY_TITLE)
-                ?: metadata.getString(MediaMetadata.METADATA_KEY_DISPLAY_TITLE).orEmpty(),
-            artist = metadata.getString(MediaMetadata.METADATA_KEY_ARTIST)
-                ?: metadata.getString(MediaMetadata.METADATA_KEY_ALBUM_ARTIST).orEmpty(),
-        )
-        return LyricsLookupRequest(
-            artist = names.artist,
-            title = names.title,
-            album = metadata.getString(MediaMetadata.METADATA_KEY_ALBUM).orEmpty(),
-            durationSeconds = (metadata.getLong(MediaMetadata.METADATA_KEY_DURATION) / 1_000L).coerceAtLeast(0L).toInt(),
-            spotifyTrackId = spotifyTrackId,
-        )
-    }
+    private fun lookupRequest(metadata: MediaMetadata, spotifyTrackId: String?): LyricsLookupRequest =
+        metadata.lookupRequest(spotifyTrackId)
 
     /**
      * Fetches the next [FETCH_AHEAD] queue entries into the disk cache, one at a time: started only once the current song is settled and cancelled by
@@ -1839,22 +1816,11 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
             }
         }
         val now = SystemClock.elapsedRealtime()
-        val current = sessions.firstOrNull { it.sessionToken == controller?.sessionToken }
-        val kept = current?.takeIf {
-            val state = it.playbackState?.state
-            sessionStickiness.keep(state == PlaybackState.STATE_PLAYING || state in IN_BETWEEN_STATES, now)
-        }
+        val best = bestSession(sessions, controller?.sessionToken, sessionStickiness, now)
         mainHandler.removeCallbacks(sessionRecheck)
-        if (kept != null) sessionStickiness.remainingMs(now)?.let { mainHandler.postDelayed(sessionRecheck, it + 50L) }
-        val best = kept ?: sessions.firstOrNull {
-            it.playbackState?.state == PlaybackState.STATE_PLAYING &&
-                it.playbackInfo?.playbackType == MediaController.PlaybackInfo.PLAYBACK_TYPE_LOCAL
-        } ?: sessions.firstOrNull { it.playbackState?.state == PlaybackState.STATE_PLAYING }
-            ?: sessions.firstOrNull { it.sessionToken == controller?.sessionToken }
-            ?: sessions.firstOrNull {
-                it.playbackInfo?.playbackType == MediaController.PlaybackInfo.PLAYBACK_TYPE_LOCAL
-            } ?: sessions.firstOrNull()
         if (best?.sessionToken == controller?.sessionToken) {
+            // Kept through a stop: look again once its grace runs out.
+            sessionStickiness.remainingMs(now)?.takeIf { it > 0 }?.let { mainHandler.postDelayed(sessionRecheck, it + 50L) }
             updateFromController()
             return
         }
@@ -1930,12 +1896,7 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
         if (!waitingForSeek && playback != null) {
             reconcileClock(playback, force = trackChanged || confirmed, trackChanged = trackChanged, snap = trackChanged || resyncConfirmed)
         }
-        val mediaId = metadata?.description?.mediaId
-        val spotifyId = sequenceOf(
-            mediaId,
-            metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID),
-            metadata?.description?.mediaUri?.toString(),
-        ).mapNotNull { it.spotifyTrackId() }.firstOrNull()
+        val spotifyId = metadata.sessionSpotifyId()
 
         val latency = pendingCommand?.takeIf { it.acknowledged(playback, trackIdentity) }
             ?.let { SystemClock.elapsedRealtime() - it.issuedAtMs }
@@ -2247,6 +2208,7 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
 
     fun setUiStarted(started: Boolean) {
         uiStarted.value = started
+        NowPlayingHolder.setAppShowing(started)
         TrafficCounter.background = !started
         if (!started) {
             // Songs fetched ahead are for someone looking; nobody is now.
@@ -2417,24 +2379,6 @@ private fun MediaMetadata?.trackIdentity(): String? = this?.let {
         album = getString(MediaMetadata.METADATA_KEY_ALBUM),
         durationMs = getLong(MediaMetadata.METADATA_KEY_DURATION),
     )
-}
-
-private fun MediaMetadata?.lyricsKey(): String? = this?.let {
-    val title = (getString(MediaMetadata.METADATA_KEY_TITLE) ?: getString(MediaMetadata.METADATA_KEY_DISPLAY_TITLE))
-        ?.trim()?.lowercase().orEmpty()
-    val artist = (getString(MediaMetadata.METADATA_KEY_ARTIST)
-        ?: getString(MediaMetadata.METADATA_KEY_ALBUM_ARTIST))?.trim()?.lowercase().orEmpty()
-    if (title.isBlank() && artist.isBlank()) null else "$title\u001f$artist"
-}
-
-private fun MediaMetadata?.overrideKey(): String? = this?.let {
-    val title = getString(MediaMetadata.METADATA_KEY_TITLE)?.trim()?.lowercase().orEmpty()
-    val artist = (getString(MediaMetadata.METADATA_KEY_ARTIST)
-        ?: getString(MediaMetadata.METADATA_KEY_ALBUM_ARTIST))?.trim()?.lowercase().orEmpty()
-    if (title.isBlank() || artist.isBlank()) return null
-    val identity = "$title\u001f$artist\u001f${getLong(MediaMetadata.METADATA_KEY_DURATION)}"
-    MessageDigest.getInstance("SHA-256").digest(identity.toByteArray())
-        .joinToString("") { "%02x".format(it) }
 }
 
 internal fun trackIdentity(

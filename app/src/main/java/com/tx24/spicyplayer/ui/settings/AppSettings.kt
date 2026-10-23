@@ -128,20 +128,24 @@ class AppSettings(private val prefs: SharedPreferences) {
     /** Landscape: the timeline sits under the cover, above the song, rather than with the controls on it. */
     var timelineOutsideCover by boolean("timelineOutsideCover", true)
     /** The record's looping Apple Music cover in place of the still one, where it has one. */
-    var animatedCover by boolean("animatedCover", false)
+    var animatedCover by boolean("animatedCover", true)
     /**
      * Landscape, beside the lyrics: what may fill its side of the screen, with the song docked
      * along its bottom. A song gets the first one it has; nothing picked is no stage. Unset, it
-     * follows the `coverStage` switch it replaced: on was the animated cover, else the still one.
+     * follows the `coverStage` switch it replaced, if that was ever flipped, else [StageArt.DEFAULT].
      */
     var stageArt by setting("stageArts", String::class, {
         read { prefs.getString("stageArts", null) }?.let(StageArt::parse)
-            ?: if (read { prefs.getBoolean("coverStage", true) } != false) StageArt.DEFAULT else emptySet()
+            ?: when (read { prefs.getBoolean("coverStage", true) }.takeIf { prefs.contains("coverStage") }) {
+                true -> StageArt.COVER_STAGE_ON
+                false -> emptySet()
+                null -> StageArt.DEFAULT
+            }
     }) { prefs.edit().putString("stageArts", StageArt.store(it)).apply() }
     /** Where the song has a Spotify Canvas, the background is that Canvas, blurred, over [backgroundType]. */
     var canvasBackground by boolean("canvasBackground", false)
     /** Portrait: the song's Spotify Canvas fills the screen while the big cover is open. */
-    var bigCoverCanvas by boolean("bigCoverCanvas", false)
+    var bigCoverCanvas by boolean("bigCoverCanvas", true)
     /** While the stage or the big cover shows a Canvas, the background is that Canvas, blurred. */
     var canvasBackdrop by boolean("canvasBackdrop", true)
     /** The loops that hold their frame while the music is paused; both kinds by default. */
@@ -161,6 +165,10 @@ class AppSettings(private val prefs: SharedPreferences) {
     var keepScreenOn by boolean("keepScreenOn", true)
     /** The lyrics screen shows over the lock screen; anything opened over the lyrics asks to unlock first. */
     var showOverLockScreen by boolean("showOverLockScreen", false)
+    /** Left untouched while the music plays, the lyrics screen dims to the lyrics alone on black. */
+    var ambientMode by boolean("ambientMode", false)
+    /** How long the lyrics screen waits after the last touch before [ambientMode] dims it. */
+    var ambientDelay by enum("ambientDelay", AmbientDelay.Default)
     /** Which of the phone's bars stay on screen. */
     var systemBars by enum("systemBars", SystemBarsMode.HideBoth)
     /** Leaving the app with a song playing shrinks the lyrics into a small floating window. */
@@ -339,6 +347,14 @@ enum class ControlsHideDelay(val label: String, val millis: Long) {
     Default("3 seconds", 3_000L),
     Long("5 seconds", 5_000L),
     Longer("10 seconds", 10_000L),
+}
+
+enum class AmbientDelay(val label: String, val millis: Long) {
+    Shortest("15 seconds", 15_000L),
+    Default("30 seconds", 30_000L),
+    Minute("1 minute", 60_000L),
+    TwoMinutes("2 minutes", 120_000L),
+    FiveMinutes("5 minutes", 300_000L),
 }
 
 /** Where the song's release year shows beside the artists, if at all. */
