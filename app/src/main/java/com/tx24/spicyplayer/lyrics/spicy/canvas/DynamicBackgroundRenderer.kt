@@ -40,10 +40,18 @@ class DynamicBackgroundRenderer {
         private const val TEXTURE_SIZE = 128
     }
 
+    /*
+     * The textures are swapped on a background thread while the main thread draws them, so they
+     * are never recycled here: a frame that is still drawing the old one would crash with
+     * "trying to use a recycled bitmap". They are small, and the GC frees them.
+     */
+
     /** The pre-blurred, circular-cropped current texture bitmap. */
+    @Volatile
     private var blurredTexture: Bitmap? = null
 
     /** The pre-blurred, circular-cropped previous texture bitmap for cross-fading. */
+    @Volatile
     private var previousTexture: Bitmap? = null
 
     /** The source image URL/path that produced the current texture (for dedup). */
@@ -92,7 +100,6 @@ class DynamicBackgroundRenderer {
         if (sourceId == currentSourceId) return
         
         // Move current to previous for cross-fade
-        previousTexture?.recycle()
         previousTexture = blurredTexture
         
         currentSourceId = sourceId
@@ -122,12 +129,14 @@ class DynamicBackgroundRenderer {
         expandedCanvas.drawBitmap(circled, offset, offset, null)
 
         // 5. Apply blur
-        blurredTexture = StackBlur.blur(expanded, blurRadius)
+        val blurred = StackBlur.blur(expanded, blurRadius)
 
         // Recycle intermediates
         if (scaled !== source) scaled.recycle()
         circled.recycle()
         // expanded is consumed by blur which returns a copy
+
+        blurredTexture = blurred
     }
 
     /**
@@ -237,12 +246,10 @@ class DynamicBackgroundRenderer {
     fun hasTexture(): Boolean = blurredTexture != null
 
     /**
-     * Releases bitmap resources.
+     * Drops the textures.
      */
     fun release() {
-        blurredTexture?.recycle()
         blurredTexture = null
-        previousTexture?.recycle()
         previousTexture = null
         currentSourceId = null
     }
