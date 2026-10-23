@@ -5,6 +5,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import android.content.pm.ActivityInfo
 import com.tx24.spicyplayer.ui.settings.LocalAppIcon
 import com.tx24.spicyplayer.ui.settings.AppIcon
+import com.tx24.spicyplayer.ui.settings.SettingsPage
 import com.tx24.spicyplayer.ui.components.LocalPopupPalette
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberCoroutineScope
@@ -733,6 +734,8 @@ private fun LyricsApp(
         ),
     )
     var showSettings by remember { mutableStateOf(false) }
+    // The settings pages left open, so coming back from the floating window lands on the same one.
+    var settingsPages by remember { mutableStateOf(emptyList<SettingsPage>()) }
     var showLyricsManager by remember { mutableStateOf(false) }
     var showQuickSettings by remember { mutableStateOf(false) }
     var quickStart by remember { mutableStateOf(QuickScreen.Main) }
@@ -776,9 +779,18 @@ private fun LyricsApp(
         )
     }
     // Leaving the app only shrinks the lyrics when nothing else is half done in front of them.
-    val pipAllowed = settings.autoPip && state.accessGranted && !showIntro && !showSettings && !showLyricsManager &&
-        !showQuickSettings && !showSpotifySearch && state.limitNotice == null && lyricsViewState.profileRequest == null
+    // Settings and the other panels don't count: the settings wait on their page for its return,
+    // and the others close as it shrinks, like on the lock screen.
+    val pipAllowed = settings.autoPip && state.accessGranted && !showIntro &&
+        state.limitNotice == null && lyricsViewState.profileRequest == null
     LaunchedEffect(pipAllowed) { onPipAllowed(pipAllowed) }
+    LaunchedEffect(inPip) {
+        if (inPip) {
+            showLyricsManager = false
+            showQuickSettings = false
+            showSpotifySearch = false
+        }
+    }
     CountUsage(
         state,
         showSettings to UsageCounter.SETTINGS,
@@ -1503,10 +1515,12 @@ private fun LyricsApp(
                 settings = settings,
                 backdrop = backdrop,
                 contentPadding = padding,
-                onClosed = { showSettings = false },
+                onClosed = { showSettings = false; settingsPages = emptyList() },
                 onOpenLyricsManager = { whenUnlocked { showLyricsManager = true } },
                 onOpenSpotifySearch = { whenUnlocked { showSpotifySearch = true } },
                 onPeekChange = { settingsPeeking = it },
+                restorePages = settingsPages,
+                onPagesChange = { settingsPages = it },
             )
         }
 
