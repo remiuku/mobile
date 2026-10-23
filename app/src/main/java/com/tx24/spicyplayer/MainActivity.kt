@@ -738,20 +738,41 @@ private fun LyricsApp(
     var quickStart by remember { mutableStateOf(QuickScreen.Main) }
     var showSpotifySearch by remember { mutableStateOf(false) }
     // Over the lock screen the lyrics can be read and played without unlocking. Anything opened
-    // over them asks to unlock first, and they drop behind the lock screen until it's closed.
-    val overLockScreen = settings.showOverLockScreen &&
-        !(showSettings || showLyricsManager || showQuickSettings || showSpotifySearch)
-    LaunchedEffect(activity, overLockScreen) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O_MR1 || activity == null) return@LaunchedEffect
-        if (!overLockScreen && settings.showOverLockScreen) activity.getSystemService(KeyguardManager::class.java)
-            ?.takeIf { it.isKeyguardLocked }?.requestDismissKeyguard(activity, null)
-        activity.setShowWhenLocked(overLockScreen)
+    // over them asks to unlock first and opens once unlocked; whatever was open when the phone
+    // locked is closed before the lock screen shows it.
+    LaunchedEffect(activity, settings.showOverLockScreen) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) activity?.setShowWhenLocked(settings.showOverLockScreen)
+    }
+    val whenUnlocked: (() -> Unit) -> Unit = remember(activity) {
+        { open ->
+            val keyguard = activity?.getSystemService(KeyguardManager::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1 && keyguard?.isKeyguardLocked == true) {
+                keyguard.requestDismissKeyguard(activity, object : KeyguardManager.KeyguardDismissCallback() {
+                    override fun onDismissSucceeded() = open()
+                })
+            } else open()
+        }
+    }
+    val lockLifecycle = LocalLifecycleOwner.current.lifecycle
+    DisposableEffect(lockLifecycle, activity) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_START &&
+                activity?.getSystemService(KeyguardManager::class.java)?.isKeyguardLocked == true
+            ) {
+                showSettings = false
+                showLyricsManager = false
+                showQuickSettings = false
+                showSpotifySearch = false
+            }
+        }
+        lockLifecycle.addObserver(observer)
+        onDispose { lockLifecycle.removeObserver(observer) }
     }
     val noticeActions = remember(viewModel, context) {
         NoticeActions(
             onRetry = { viewModel.loadLyrics(force = true) },
             report = { debugReport(context, viewModel.state.value) },
-            onSearchSpotify = { showSpotifySearch = true },
+            onSearchSpotify = { whenUnlocked { showSpotifySearch = true } },
         )
     }
     // Leaving the app only shrinks the lyrics when nothing else is half done in front of them.
@@ -1029,12 +1050,12 @@ private fun LyricsApp(
                     translating = state.translating,
                 )
                 val onEnterPipButton = onEnterPip.takeIf { settings.pipButton }
-                val onOpenLyricsManager = if (settings.lyricsManagerButton) ({ showLyricsManager = true }) else null
-                val onOpenQuickSettings = if (settings.quickSettingsButton) ({ quickStart = QuickScreen.Main; showQuickSettings = true }) else null
+                val onOpenLyricsManager = if (settings.lyricsManagerButton) ({ whenUnlocked { showLyricsManager = true } }) else null
+                val onOpenQuickSettings = if (settings.quickSettingsButton) ({ whenUnlocked { quickStart = QuickScreen.Main; showQuickSettings = true } }) else null
                 // The queue's own button opens quick settings on its queue screen.
-                val onOpenQueue = if (settings.queueButton && state.queue.isNotEmpty()) ({ quickStart = QuickScreen.Queue; showQuickSettings = true }) else null
+                val onOpenQueue = if (settings.queueButton && state.queue.isNotEmpty()) ({ whenUnlocked { quickStart = QuickScreen.Queue; showQuickSettings = true } }) else null
                 // So does the source's, on its list of sources, while there's a song to choose for.
-                val onOpenSource = if (settings.sourceButton && state.localLyricsKey != null) ({ quickStart = QuickScreen.Source; showQuickSettings = true }) else null
+                val onOpenSource = if (settings.sourceButton && state.localLyricsKey != null) ({ whenUnlocked { quickStart = QuickScreen.Source; showQuickSettings = true } }) else null
                 val romanizeButton = romanizationAvailable && settings.romanizeButton
                 // Expanded, it's the only way back to the lyrics, so it stays.
                 val expandButton = settings.expandButton || headerExpanded
@@ -1216,7 +1237,7 @@ private fun LyricsApp(
                                     settings.romanize = !settings.romanize
                                     UsageStats.count(UsageCounter.ROMANIZE)
                                 },
-                                onOpenSettings = { showSettings = true },
+                                onOpenSettings = { whenUnlocked { showSettings = true } },
                                 onOpenLyricsManager = onOpenLyricsManager,
                                 onOpenQueue = onOpenQueue,
                                 onOpenSource = onOpenSource,
@@ -1278,7 +1299,7 @@ private fun LyricsApp(
                                         settings.romanize = !settings.romanize
                                         UsageStats.count(UsageCounter.ROMANIZE)
                                     },
-                                    onOpenSettings = { showSettings = true },
+                                    onOpenSettings = { whenUnlocked { showSettings = true } },
                                     onOpenLyricsManager = onOpenLyricsManager,
                                     onOpenQueue = onOpenQueue,
                                     onOpenSource = onOpenSource,
@@ -1342,7 +1363,7 @@ private fun LyricsApp(
                             settings.romanize = !settings.romanize
                             UsageStats.count(UsageCounter.ROMANIZE)
                         },
-                        onOpenSettings = { showSettings = true },
+                        onOpenSettings = { whenUnlocked { showSettings = true } },
                         onOpenLyricsManager = onOpenLyricsManager,
                         onOpenQueue = onOpenQueue,
                         onOpenSource = onOpenSource,
@@ -1431,7 +1452,7 @@ private fun LyricsApp(
                 SwitchedOffMessage(
                     title, text,
                     onDismiss = viewModel::dismissSwitchedOff,
-                    onOpenSettings = { viewModel.dismissSwitchedOff(); showSettings = true },
+                    onOpenSettings = { viewModel.dismissSwitchedOff(); whenUnlocked { showSettings = true } },
                 )
             }
         }
@@ -1483,8 +1504,8 @@ private fun LyricsApp(
                 backdrop = backdrop,
                 contentPadding = padding,
                 onClosed = { showSettings = false },
-                onOpenLyricsManager = { showLyricsManager = true },
-                onOpenSpotifySearch = { showSpotifySearch = true },
+                onOpenLyricsManager = { whenUnlocked { showLyricsManager = true } },
+                onOpenSpotifySearch = { whenUnlocked { showSpotifySearch = true } },
                 onPeekChange = { settingsPeeking = it },
             )
         }
