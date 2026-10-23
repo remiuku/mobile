@@ -28,11 +28,15 @@ object SharedSpotify {
         extras ?: SpotifyTrackExtras(client, gson, catalog, resolver, cacheDir).also { extras = it }
     }
 
-    /** The Spotify Canvas lookup, on the same connections, given up on sooner: it's only decoration. */
-    fun canvas(cacheDir: File): SpotifyCanvasFinder = canvas ?: synchronized(this) {
+    /**
+     * The Spotify Canvas lookup, on the same connections, given up on sooner: it's only decoration.
+     * [ownUrl] is the build's own Worker, asked first (blank for none).
+     */
+    fun canvas(cacheDir: File, ownUrl: String): SpotifyCanvasFinder = canvas ?: synchronized(this) {
         canvas ?: SpotifyCanvasFinder(
             client = client.newBuilder().callTimeout(CANVAS_TIMEOUT_S, TimeUnit.SECONDS).build(),
             memoFile = File(cacheDir, "canvas/known.json"),
+            baseUrls = SpotifyCanvasFinder.defaultBaseUrls(ownUrl),
         ).also { canvas = it }
     }
 

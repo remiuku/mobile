@@ -2,7 +2,6 @@ package com.tx24.spicyplayer.network.canvas
 
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
-import com.tx24.spicyplayer.BuildConfig
 import com.tx24.spicyplayer.network.data.awaitResponse
 import java.io.File
 import java.io.IOException
@@ -37,7 +36,7 @@ class SpotifyCanvasFinder(
     private val client: OkHttpClient,
     private val memoFile: File?,
     private val now: () -> Long = System::currentTimeMillis,
-    private val baseUrls: List<String> = defaultBaseUrls(),
+    private val baseUrls: List<String> = defaultBaseUrls(ownUrl = ""),
     private val retryDelayMs: Long = RETRY_DELAY_MS,
 ) {
     private val lock = Mutex()
@@ -148,9 +147,9 @@ class SpotifyCanvasFinder(
         /** The third-party lookup service, asked as `?trackId=<id>`, after the project's own Worker. */
         const val FALLBACK_URL = "https://spotify-canva.vercel.app/api/canvas"
 
-        /** The build's own Worker (`SPOTIFY_CANVAS_URL`, blank for none), then [FALLBACK_URL]. */
-        fun defaultBaseUrls(): List<String> = listOfNotNull(
-            BuildConfig.SPOTIFY_CANVAS_URL.trim().takeIf { it.startsWith("https://") },
+        /** The build's own Worker ([ownUrl], the app's `SPOTIFY_CANVAS_URL`; blank for none), then [FALLBACK_URL]. */
+        fun defaultBaseUrls(ownUrl: String): List<String> = listOfNotNull(
+            ownUrl.trim().takeIf { it.startsWith("https://") },
             FALLBACK_URL,
         ).distinct()
 
