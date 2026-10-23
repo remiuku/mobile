@@ -165,6 +165,10 @@ class AppSettings(private val prefs: SharedPreferences) {
     var keepScreenOn by boolean("keepScreenOn", true)
     /** The lyrics screen shows over the lock screen; anything opened over the lyrics asks to unlock first. */
     var showOverLockScreen by boolean("showOverLockScreen", false)
+    /** Left untouched while the music plays, the lyrics screen dims to the lyrics alone on black. */
+    var ambientMode by boolean("ambientMode", false)
+    /** How long the lyrics screen waits after the last touch before [ambientMode] dims it. */
+    var ambientDelay by enum("ambientDelay", AmbientDelay.Default)
     /** Which of the phone's bars stay on screen. */
     var systemBars by enum("systemBars", SystemBarsMode.HideBoth)
     /** Leaving the app with a song playing shrinks the lyrics into a small floating window. */
@@ -343,6 +347,14 @@ enum class ControlsHideDelay(val label: String, val millis: Long) {
     Default("3 seconds", 3_000L),
     Long("5 seconds", 5_000L),
     Longer("10 seconds", 10_000L),
+}
+
+enum class AmbientDelay(val label: String, val millis: Long) {
+    Shortest("15 seconds", 15_000L),
+    Default("30 seconds", 30_000L),
+    Minute("1 minute", 60_000L),
+    TwoMinutes("2 minutes", 120_000L),
+    FiveMinutes("5 minutes", 300_000L),
 }
 
 /** Where the song's release year shows beside the artists, if at all. */

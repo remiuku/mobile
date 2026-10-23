@@ -128,6 +128,7 @@ import androidx.compose.material.icons.rounded.AspectRatio
 import androidx.compose.material.icons.rounded.Crop
 import androidx.compose.material.icons.rounded.Lyrics
 import java.util.Locale
+import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.ScreenLockPortrait
 import androidx.compose.material.icons.rounded.StayCurrentPortrait
 import androidx.compose.material.icons.rounded.Fullscreen
@@ -1025,6 +1026,27 @@ internal fun DeviceContent(settings: AppSettings) {
         description = "The power button brings the lyrics back without unlocking. Settings still ask to unlock.",
         icon = Icons.Rounded.ScreenLockPortrait,
     )
+    ToggleRow(
+        label = "Ambient mode",
+        checked = settings.ambientMode,
+        onCheckedChange = { settings.ambientMode = it },
+        description = "Left untouched while music plays, dim to the lyrics and the song on black.",
+        searchDescription = "Untouched for 30 seconds while music plays, dim to the lyrics alone on black.",
+        icon = Icons.Rounded.DarkMode,
+    )
+    SettingRow(
+        label = "Dim After",
+        description = "How long ambient mode waits after the last touch.",
+        icon = Icons.Rounded.Timer,
+        enabled = settings.ambientMode,
+    ) {
+        SpicySelect(
+            value = settings.ambientDelay.name,
+            options = AmbientDelay.entries.map { it.name },
+            labels = AmbientDelay.entries.map { it.label },
+            onChange = { settings.ambientDelay = AmbientDelay.valueOf(it) },
+        )
+    }
     SubPageCard {
         val supported = PictureInPicture.supported(LocalContext.current)
         SubPageRow(
