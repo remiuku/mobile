@@ -94,6 +94,21 @@ class LineWrapperTest {
             LyricsLayoutCalculator.overflowFragments(japanese).map { (a, b) -> japanese.substring(a, b) })
     }
 
+    @Test fun aSingleWordWiderThanARowIsCutBetweenLetters() {
+        // Issue #24: one timed word with no spaces used to stay one piece and run off-screen.
+        val held = "Wenggggggg"
+        val fits = { s: String -> s.length * 10f <= 50f }
+        val cuts = LyricsLayoutCalculator.wrapFragments(held, fits)
+        assertEquals(held.map { it.toString() }, cuts.map { (a, b) -> held.substring(a, b) })
+        val pieces = cuts.map { (a, b) -> LineWrapper.Piece(10f, held.substring(a, b), gluedToPrevious = a > 0) }
+        assertEquals(listOf(0, 5, 10), syllable(pieces, max = 50f))
+        assertEquals(listOf(0, 5, 10), text(pieces, max = 50f))
+        // Fragments that fit a row stay whole; only the over-wide one is cut.
+        val mixed = "oh Wenggggggg"
+        assertEquals(listOf("oh") + "Wenggggggg".map { it.toString() },
+            LyricsLayoutCalculator.wrapFragments(mixed, fits).map { (a, b) -> mixed.substring(a, b) })
+    }
+
     @Test fun anOverlongLatinWordStillBreaksRatherThanOverflow() {
         val pieces = listOf(word(40f, "a")) + listOf(glued(40f, "b"), glued(40f, "c"), glued(40f, "d"))
         assertEquals(listOf(0, 2, 4), text(pieces, max = 90f))

@@ -236,6 +236,19 @@ internal object LyricsLayoutCalculator {
         return out
     }
 
+    /**
+     * Where a word wider than a row is cut so it wraps: at [overflowFragments], and inside any
+     * fragment still wider than a row ([fits] false) between every grapheme, glued, so a long
+     * word with no spaces (a held "Weeeeng") fills rows and breaks instead of running off-screen.
+     */
+    internal fun wrapFragments(text: String, fits: (String) -> Boolean): List<Pair<Int, Int>> =
+        overflowFragments(text).flatMap { (start, end) ->
+            if (fits(text.substring(start, end))) return@flatMap listOf(start to end)
+            var at = start
+            com.tx24.spicyplayer.lyrics.spicy.parser.GraphemeSegmenter.segment(text.substring(start, end))
+                .map { grapheme -> (at to at + grapheme.length).also { at += grapheme.length } }
+        }
+
     /** The string to render for a word: its romanization when [romanize] is on and available. */
     private fun displayText(word: Word, romanize: Boolean): String =
         if (romanize) (word.romanizedText ?: word.text) else word.text
@@ -417,6 +430,10 @@ internal object LyricsLayoutCalculator {
                 val text = if (romanizeLine) shown.trim() else shown
                 val fullResult = textMeasurer.measure(text, style)
                 val fullW = fullResult.size.width.toFloat()
+                // A word wider than a row is cut where it may wrap (see wrapFragments).
+                val fragments = if (!word.isLetterGroup && fullW > lineMaxWidth) {
+                    wrapFragments(text) { textMeasurer.measure(it, style).size.width <= lineMaxWidth }
+                } else emptyList()
 
                 // `word.isPartOfWord` records that the ORIGINAL text had no whitespace before this
                 // token — true both for real hyphen-continuations ("Hel-"+"lo") and, just as often,
@@ -454,12 +471,13 @@ internal object LyricsLayoutCalculator {
                         ))
                         currentX += charResult.size.width
                     }
-                } else if (fullW > lineMaxWidth && overflowFragments(text).size > 1) {
+                } else if (fragments.size > 1) {
                     // One timed word wider than a row (a whole line timed as one span, often
-                    // romanized into several words) can't wrap as a piece. It's cut where text
-                    // may break, at spaces and between CJK characters; each fragment keeps its
-                    // place in the word, so the wipe runs on across rows.
-                    for ((start, end) in overflowFragments(text)) {
+                    // romanized into several words, or one long held word) can't wrap as a piece.
+                    // It's cut where text may break, at spaces and between CJK characters, and
+                    // between letters where a fragment alone is still wider than a row; each
+                    // fragment keeps its place in the word, so the wipe runs on across rows.
+                    for ((start, end) in fragments) {
                         val fragment = text.substring(start, end)
                         pieces.add(Piece(
                             word = word,
