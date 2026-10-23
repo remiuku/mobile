@@ -1,8 +1,8 @@
 /**
- * A caching front for public Spotify Canvas lookup services. It answers
- * `GET /api/canvas?trackId=<id>` with `{"canvasesList":[{"canvasUrl":"…mp4","trackUri":"…"}]}`, the
- * shape the app already reads, by asking each upstream in turn (retrying once after a server
- * error) and remembering the answers:
+ * The Canvas address 0.14.4 asks. It answers `GET /api/canvas?trackId=<id>` with
+ * `{"canvasesList":[{"canvasUrl":"…mp4","trackUri":"…"}]}`, the shape that version reads, by asking
+ * each upstream in turn (retrying once after a server error) and remembering the answers. Later
+ * versions ask Spicy Lyrics' Canvas service directly; this forwards to it too.
  *
  * - every answer, canvas or none, in the data centre's cache for [EDGE_TTL_S];
  * - found canvases in KV (global) for [KV_TTL_S], served when every upstream is failing.
@@ -13,7 +13,11 @@
 export interface Env {
   /** Found canvases by track ID; optional, without it only the per-data-centre cache is kept. */
   CANVAS?: KVNamespace;
-  /** Comma-separated lookup services, each asked as `<url>?trackId=<id>`, tried in order. */
+  /**
+   * Comma-separated lookup services, tried in order. One whose path ends in `/provider/canvaslist`
+   * is asked as `<url>/<id>` and answers `{"data":{"<id>":{"url":…}|null}}`; any other as
+   * `<url>?trackId=<id>`, answering `{"canvasesList":[…]}`.
+   */
   UPSTREAMS?: string;
 }
 
@@ -27,13 +31,15 @@ export interface Deps {
   waitUntil: (promise: Promise<unknown>) => void;
 }
 
-export const DEFAULT_UPSTREAMS = ["https://spotify-canva.vercel.app/api/canvas"];
+export const DEFAULT_UPSTREAMS = ["https://regional.canvasstore.slnode.spicylyrics.org/provider/canvaslist"];
 export const EDGE_TTL_S = 24 * 60 * 60;
 export const KV_TTL_S = 30 * 24 * 60 * 60;
 /** How long one lookup may spend upstream in all, inside the app's 6-second timeout. */
 const BUDGET_MS = 5000;
 const UPSTREAM_TIMEOUT_MS = 4000;
 const RETRY_DELAY_MS = 600;
+/** Names this Worker to the upstreams, so one can allow it past bot protection. */
+const USER_AGENT = "SpicyLyricsMobile-CanvasWorker/1 (+https://canvas.tx24.dev)";
 
 export interface Canvas {
   canvasUrl: string;
@@ -91,14 +97,37 @@ async function lookUp(trackId: string, urls: string[], deps: Deps): Promise<Canv
 
 async function askOne(base: string, trackId: string, deps: Deps, timeoutMs: number): Promise<Canvas[] | "invalid" | null> {
   const target = new URL(base);
-  target.searchParams.set("trackId", trackId);
+  const canvaslist = target.pathname.replace(/\/+$/, "").endsWith("/provider/canvaslist");
+  if (canvaslist) target.pathname = `${target.pathname.replace(/\/+$/, "")}/${trackId}`;
+  else target.searchParams.set("trackId", trackId);
   const response = await deps.fetch(target.toString(), {
-    headers: { Accept: "application/json" },
+    headers: { Accept: "application/json", "User-Agent": USER_AGENT },
     signal: AbortSignal.timeout(timeoutMs),
   });
   if (response.status === 400) return "invalid";
-  if (!response.ok) return null;
-  return parse(await response.json(), trackId);
+  if (!response.ok) {
+    // Shows in `wrangler tail`: which upstream refused, how, and with what page.
+    const body = (await response.text().catch(() => "")).slice(0, 300);
+    console.log(`upstream ${target.host} answered ${response.status} ${response.headers.get("cf-mitigated") ?? ""} ${body}`);
+    return null;
+  }
+  const body = await response.json();
+  return canvaslist ? parseCanvaslist(body, trackId) : parse(body, trackId);
+}
+
+/**
+ * The canvas in a canvaslist answer: `{"data":{"<id>":{"url":"…mp4",…}}}`, or `"<id>":null` for
+ * none. An image canvas counts as none. Null (a failure) when the body has no `data`, no entry for
+ * [trackId], or an `{"error":…}` entry for it.
+ */
+export function parseCanvaslist(body: unknown, trackId: string): Canvas[] | null {
+  const data = (body as { data?: unknown } | null)?.data;
+  if (!data || typeof data !== "object" || !(trackId in data)) return null;
+  const entry = (data as Record<string, unknown>)[trackId] as { url?: unknown; error?: unknown } | null;
+  if (entry === null) return [];
+  if (typeof entry !== "object" || entry.error !== undefined) return null;
+  const url = typeof entry.url === "string" ? entry.url : "";
+  return isVideoUrl(url) ? [{ canvasUrl: url, trackUri: `spotify:track:${trackId}` }] : [];
 }
 
 /**

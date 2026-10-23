@@ -32,7 +32,8 @@ object SharedSpotify {
     fun canvas(cacheDir: File): SpotifyCanvasFinder = canvas ?: synchronized(this) {
         canvas ?: SpotifyCanvasFinder(
             client = client.newBuilder().callTimeout(CANVAS_TIMEOUT_S, TimeUnit.SECONDS).build(),
-            memoFile = File(cacheDir, "canvas/known.json"),
+            // v2: answers from the current Canvas service, not the one before it.
+            memoFile = File(cacheDir, "canvas/known-v2.json"),
         ).also { canvas = it }
     }
 
