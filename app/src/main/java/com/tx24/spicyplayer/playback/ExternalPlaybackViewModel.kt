@@ -135,6 +135,8 @@ private const val LOADING_PAUSE_GRACE_MS = 3_000L
 private const val TRACK_REPORT_FRESH_MS = 1_000L
 /** A buffering report this close to the song's end is the player loading the next one, not a stall. */
 private const val END_BUFFERING_MS = 2_000L
+/** How long the followed session may stay stopped before another playing one takes over ([SessionStickiness]). */
+private const val SESSION_SWITCH_GRACE_MS = 2_000L
 /** Lyrics saved in the Lyrics Manager, and lyrics uploaded for one song "just once". */
 internal val LOCAL_SOURCE = LyricsSourceDescriptor("local", "Local Lyrics DB", 0, setOf(LyricsCapability.WORD_SYNC))
 internal val UPLOADED_SOURCE = LyricsSourceDescriptor("uploaded", "Uploaded TTML", 0, setOf(LyricsCapability.WORD_SYNC))
@@ -682,6 +684,9 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
     private var skipCheckJob: Job? = null
     /** When the track last changed, for a pause some players report while they load the next one. */
     private var trackChangedAt = Long.MIN_VALUE / 2
+    private val sessionStickiness = SessionStickiness(SESSION_SWITCH_GRACE_MS)
+    /** Looks at the sessions again once the followed one has been stopped for its grace. */
+    private val sessionRecheck = Runnable { refreshSessionSelection() }
     /** Resync on a player that can't seek: the next fresh report re-anchors the clock outright. */
     private var resyncOnNextReport = false
     /** The player that last ignored a seek it lists (Spotify Free): its resyncs go by its reports. */
@@ -1832,7 +1837,15 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
                 session.registerCallback(callback, mainHandler)
             }
         }
-        val best = sessions.firstOrNull {
+        val now = SystemClock.elapsedRealtime()
+        val current = sessions.firstOrNull { it.sessionToken == controller?.sessionToken }
+        val kept = current?.takeIf {
+            val state = it.playbackState?.state
+            sessionStickiness.keep(state == PlaybackState.STATE_PLAYING || state in IN_BETWEEN_STATES, now)
+        }
+        mainHandler.removeCallbacks(sessionRecheck)
+        if (kept != null) sessionStickiness.remainingMs(now)?.let { mainHandler.postDelayed(sessionRecheck, it + 50L) }
+        val best = kept ?: sessions.firstOrNull {
             it.playbackState?.state == PlaybackState.STATE_PLAYING &&
                 it.playbackInfo?.playbackType == MediaController.PlaybackInfo.PLAYBACK_TYPE_LOCAL
         } ?: sessions.firstOrNull { it.playbackState?.state == PlaybackState.STATE_PLAYING }
@@ -1844,6 +1857,9 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
             updateFromController()
             return
         }
+        val remote = best?.playbackInfo?.playbackType == MediaController.PlaybackInfo.PLAYBACK_TYPE_REMOTE
+        SyncTrace.add(now, "session: ${controller?.packageName ?: "none"} -> ${best?.packageName ?: "none"}" + if (remote) " (remote)" else "")
+        sessionStickiness.reset()
         detachController()
         controller = best
         refreshOutputRoute()
@@ -2356,6 +2372,7 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
 
     override fun onCleared() {
         runCatching { sessionManager.removeOnActiveSessionsChangedListener(activeSessionsListener) }
+        mainHandler.removeCallbacks(sessionRecheck)
         stopObservingSessions()
         detachController()
     }
