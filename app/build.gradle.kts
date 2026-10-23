@@ -22,8 +22,8 @@ android {
         applicationId = "com.tx24.spicyplayer.next"
         minSdk = 23
         targetSdk = 36
-        versionCode = 21
-        versionName = "0.14.3"
+        versionCode = 22
+        versionName = "0.14.4"
         // A publishable (sl_pk_) key, made to ship in clients: SL rate-limits it per viewer IP.
         val clientKey = localEnv("SPICY_LYRICS_CLIENT_KEY")
         require(clientKey.isBlank() || Regex("sl_pk_[A-Za-z0-9_-]+").matches(clientKey)) {
@@ -38,6 +38,13 @@ android {
         buildConfigField("String", "UMAMI_WEBSITE_ID", "\"$umamiSite\"")
         // Only release builds send; see the build types.
         buildConfigField("boolean", "USAGE_STATS", "false")
+        // The project's own Spotify Canvas Worker (server/canvas), asked before the public service
+        // it fronts. Blank asks only the public service.
+        val canvasUrl = localEnv("SPOTIFY_CANVAS_URL")
+        require(canvasUrl.isBlank() || Regex("https://[A-Za-z0-9./_-]+").matches(canvasUrl)) {
+            "SPOTIFY_CANVAS_URL must be an https:// URL, such as https://canvas.tx24.dev/api/canvas"
+        }
+        buildConfigField("String", "SPOTIFY_CANVAS_URL", "\"$canvasUrl\"")
     }
 
     buildTypes {

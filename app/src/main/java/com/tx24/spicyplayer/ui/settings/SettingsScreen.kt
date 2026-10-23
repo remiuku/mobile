@@ -2,6 +2,8 @@ package com.tx24.spicyplayer.ui.settings
 
 import kotlin.math.roundToInt
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.toMutableStateList
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.platform.LocalDensity
@@ -188,7 +190,7 @@ internal val LocalOpenSettingsPage = staticCompositionLocalOf<(SettingsPage) -> 
  * Stays composed until its closing animation ends, then calls [onClosed].
  */
 @Composable
-fun SettingsScreen(
+internal fun SettingsScreen(
     state: PlayerUiState,
     viewModel: ExternalPlaybackViewModel,
     updater: UpdateViewModel,
@@ -200,6 +202,10 @@ fun SettingsScreen(
     onOpenSpotifySearch: () -> Unit = {},
     /** Told when a peek clears the settings away (true) and when they come back (false). */
     onPeekChange: (Boolean) -> Unit = {},
+    /** Pages to open straight onto, already in place: the ones open when the settings were last left. */
+    restorePages: List<SettingsPage> = emptyList(),
+    /** Told the open pages, deepest last, whenever they change. */
+    onPagesChange: (List<SettingsPage>) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     val palette = settings.settingsTheme.palette
@@ -213,7 +219,9 @@ fun SettingsScreen(
     var swipeFromLeft by remember { mutableStateOf(true) }
     // The pages opened over the first one, deepest last, each with how far it has slid in
     // (0 → 1) and whether its rows have replaced its skeleton.
-    val stack = remember { mutableStateListOf<OpenPage>() }
+    val stack = remember { restorePages.map { OpenPage(it, shown = true) }.toMutableStateList() }
+    val onPagesChangeUpdated by rememberUpdatedState(onPagesChange)
+    LaunchedEffect(Unit) { snapshotFlow { stack.map { it.page } }.collect { onPagesChangeUpdated(it) } }
     var closing by remember { mutableStateOf(false) }
     // Clearing the settings away to see the lyrics: the peek button, or a slider being dragged.
     val peek = remember { SettingsPeek(allowRows = { settings.peekWhileAdjusting }) }
@@ -542,9 +550,9 @@ private fun PageContent(
 
 /** A page opened over the first one: how far it has slid in, and whether its rows have replaced its skeleton. */
 @Stable
-private class OpenPage(val page: SettingsPage) {
-    val shift = Animatable(0f)
-    var ready by mutableStateOf(false)
+private class OpenPage(val page: SettingsPage, shown: Boolean = false) {
+    val shift = Animatable(if (shown) 1f else 0f)
+    var ready by mutableStateOf(shown)
 }
 
 /** A scrolling page under a glass back button and its title. */
@@ -623,8 +631,8 @@ private fun PageSkeleton(page: SettingsPage) {
         SettingsPage.Controls -> SettingsSkeleton(rows = 6)
         SettingsPage.Theme -> SettingsSkeleton(rows = 4)
         SettingsPage.Sources -> SettingsSkeleton(rows = 8, cards = true)
-        SettingsPage.Device -> SettingsSkeleton(rows = 6)
-        SettingsPage.FloatingLyrics -> SettingsSkeleton(rows = 6)
+        SettingsPage.Device -> SettingsSkeleton(rows = 7)
+        SettingsPage.FloatingLyrics -> SettingsSkeleton(rows = 7)
         SettingsPage.Advanced -> SettingsSkeleton(rows = 10)
     }
 }

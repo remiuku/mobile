@@ -1,5 +1,6 @@
 package com.tx24.spicyplayer.ui.settings
 
+import android.os.Build
 import com.tx24.spicyplayer.ui.components.SpicyGlyphs
 import com.tx24.spicyplayer.ui.components.drawBrandRamp
 import androidx.compose.ui.graphics.Color
@@ -127,6 +128,7 @@ import androidx.compose.material.icons.rounded.AspectRatio
 import androidx.compose.material.icons.rounded.Crop
 import androidx.compose.material.icons.rounded.Lyrics
 import java.util.Locale
+import androidx.compose.material.icons.rounded.ScreenLockPortrait
 import androidx.compose.material.icons.rounded.StayCurrentPortrait
 import androidx.compose.material.icons.rounded.Fullscreen
 import androidx.compose.material.icons.rounded.TouchApp
@@ -1016,6 +1018,13 @@ internal fun DeviceContent(settings: AppSettings) {
         description = "Draw at your screen's full refresh rate instead of 60 Hz. Uses slightly more battery.",
         icon = Icons.Rounded.Animation,
     )
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) ToggleRow(
+        label = "Show over lock screen",
+        checked = settings.showOverLockScreen,
+        onCheckedChange = { settings.showOverLockScreen = it },
+        description = "The power button brings the lyrics back without unlocking. Settings still ask to unlock.",
+        icon = Icons.Rounded.ScreenLockPortrait,
+    )
     SubPageCard {
         val supported = PictureInPicture.supported(LocalContext.current)
         SubPageRow(
@@ -1121,6 +1130,24 @@ internal fun FloatingLyricsContent(settings: AppSettings) {
         icon = Icons.Rounded.Lyrics,
         enabled = supported,
     )
+    SettingRow(
+        label = "Lyrics size",
+        description = "The floating window's own text size, apart from the full screen's.",
+        icon = Icons.Rounded.FormatSize,
+        enabled = supported && settings.pipShowLyrics,
+        stacked = true,
+        searchDescription = "Make the floating lyrics smaller or bigger. Picture-in-picture text size.",
+    ) {
+        SpicyBipolarSlider(
+            value = settings.pipLyricsSize,
+            range = LYRICS_SIZE_RANGE,
+            step = 5,
+            onValueChange = { settings.pipLyricsSize = it },
+            default = 100,
+            unit = "%",
+            enabled = supported && settings.pipShowLyrics,
+        )
+    }
     ToggleRow(
         label = "Song bar",
         checked = settings.pipDock,
