@@ -593,8 +593,9 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
                         if (manual) showMessage("Translated: ${result.result.lineSources()}.")
                     }
                     is TranslationOutcome.Skipped -> {
-                        mutableState.value = mutableState.value.copy(lyricsLanguage = result.language ?: source)
-                        if (manual && result.language != null) showMessage("Already in ${TranslationLanguages.name(result.language)}.")
+                        val language = result.language
+                        mutableState.value = mutableState.value.copy(lyricsLanguage = language ?: source)
+                        if (manual && language != null) showMessage("Already in ${TranslationLanguages.name(language)}.")
                     }
                 }
             } catch (cancelled: CancellationException) {
