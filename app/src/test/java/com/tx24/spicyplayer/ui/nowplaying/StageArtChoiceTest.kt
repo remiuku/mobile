@@ -39,11 +39,19 @@ class StageArtChoiceTest {
     }
 
     @Test
-    fun `the default is the animated cover, else the still one`() {
+    fun `the default is the canvas, else the animated cover, never the still one`() {
         val default = StageArt.DEFAULT
-        assertEquals(StagePicture.Animated(motion), pick(default, true, false, found, motion))
-        assertEquals(StagePicture.Animated(motion), pick(default, true, false, CanvasLookup.Pending, motion))
-        assertEquals(StagePicture.Still, pick(default, true, false, CanvasLookup.None, null))
+        assertEquals(StagePicture.Canvas(canvas), pick(default, true, false, found, motion))
+        assertEquals(StagePicture.Animated(motion), pick(default, true, false, CanvasLookup.None, motion))
+        assertNull(pick(default, true, false, CanvasLookup.None, null))
+    }
+
+    @Test
+    fun `the old cover stage switch is the animated cover, else the still one`() {
+        val old = StageArt.COVER_STAGE_ON
+        assertEquals(StagePicture.Animated(motion), pick(old, true, false, found, motion))
+        assertEquals(StagePicture.Animated(motion), pick(old, true, false, CanvasLookup.Pending, motion))
+        assertEquals(StagePicture.Still, pick(old, true, false, CanvasLookup.None, null))
     }
 
     @Test
@@ -71,7 +79,8 @@ class StageArtChoiceTest {
     @Test
     fun `lookups run only for what's picked`() {
         assertTrue(wantsCanvas(setOf(StageArt.Canvas), false))
-        assertFalse(wantsCanvas(StageArt.DEFAULT, false))
+        assertTrue(wantsCanvas(StageArt.DEFAULT, false))
+        assertFalse(wantsCanvas(StageArt.COVER_STAGE_ON, false))
         assertTrue(wantsAnimated(setOf(StageArt.AnimatedCover), true, false))
         assertFalse(wantsAnimated(setOf(StageArt.Canvas, StageArt.CoverArt), true, false))
         assertFalse(wantsAnimated(setOf(StageArt.AnimatedCover), false, false))

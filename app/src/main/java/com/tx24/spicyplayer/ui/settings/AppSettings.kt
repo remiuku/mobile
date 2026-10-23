@@ -128,20 +128,24 @@ class AppSettings(private val prefs: SharedPreferences) {
     /** Landscape: the timeline sits under the cover, above the song, rather than with the controls on it. */
     var timelineOutsideCover by boolean("timelineOutsideCover", true)
     /** The record's looping Apple Music cover in place of the still one, where it has one. */
-    var animatedCover by boolean("animatedCover", false)
+    var animatedCover by boolean("animatedCover", true)
     /**
      * Landscape, beside the lyrics: what may fill its side of the screen, with the song docked
      * along its bottom. A song gets the first one it has; nothing picked is no stage. Unset, it
-     * follows the `coverStage` switch it replaced: on was the animated cover, else the still one.
+     * follows the `coverStage` switch it replaced, if that was ever flipped, else [StageArt.DEFAULT].
      */
     var stageArt by setting("stageArts", String::class, {
         read { prefs.getString("stageArts", null) }?.let(StageArt::parse)
-            ?: if (read { prefs.getBoolean("coverStage", true) } != false) StageArt.DEFAULT else emptySet()
+            ?: when (read { prefs.getBoolean("coverStage", true) }.takeIf { prefs.contains("coverStage") }) {
+                true -> StageArt.COVER_STAGE_ON
+                false -> emptySet()
+                null -> StageArt.DEFAULT
+            }
     }) { prefs.edit().putString("stageArts", StageArt.store(it)).apply() }
     /** Where the song has a Spotify Canvas, the background is that Canvas, blurred, over [backgroundType]. */
     var canvasBackground by boolean("canvasBackground", false)
     /** Portrait: the song's Spotify Canvas fills the screen while the big cover is open. */
-    var bigCoverCanvas by boolean("bigCoverCanvas", false)
+    var bigCoverCanvas by boolean("bigCoverCanvas", true)
     /** While the stage or the big cover shows a Canvas, the background is that Canvas, blurred. */
     var canvasBackdrop by boolean("canvasBackdrop", true)
     /** The loops that hold their frame while the music is paused; both kinds by default. */
