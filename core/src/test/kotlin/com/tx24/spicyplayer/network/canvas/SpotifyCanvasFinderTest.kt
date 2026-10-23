@@ -21,35 +21,45 @@ import org.junit.Test
 class SpotifyCanvasFinderTest {
     private val id = "4Dvkj6JhhA12EX05fT7y2e"
     private val mp4 = "https://canvaz.scdn.co/upload/licensor/x/video/abc.cnvs.mp4"
-    private val found = """{"canvasesList":[{"id":"abc","canvasUrl":"$mp4","trackUri":"spotify:track:$id",
-        "artist":{"artistUri":"spotify:artist:1","artistName":"Harry Styles"},"canvasUri":"spotify:canvas:1"}]}"""
+    private val other = "0VjIjW4GlUZAMYd2vXMi3b"
+    private val found = """{"object":"canvaslist.entries","request_id":"req_1_us",
+        "lookup":{"type":"track_id","value":["$id"]},
+        "data":{"$id":{"url":"$mp4","type":"VIDEO_LOOPING_RANDOM","fileId":"f","uri":"spotify:canvas:1"}}}"""
+    /** No canvas, for either track the tests ask about. */
+    private val none = """{"object":"canvaslist.entries","data":{"$id":null,"$other":null}}"""
+
+    private fun entry(value: String) = """{"data":{"$id":$value}}"""
 
     @Test
-    fun `a list with a canvas gives its MP4`() {
+    fun `an entry with a canvas gives its MP4`() {
         assertEquals(Answer.Found(mp4), parse(found, id))
     }
 
     @Test
-    fun `an empty list is no canvas`() {
-        assertEquals(Answer.None, parse("""{"canvasesList":[]}""", id))
+    fun `a null entry is no canvas`() {
+        assertEquals(Answer.None, parse(none, id))
     }
 
     @Test
-    fun `entries for another track or without a video are skipped`() {
-        val json = """{"canvasesList":[
-            {"canvasUrl":"https://canvaz.scdn.co/other.mp4","trackUri":"spotify:track:0VjIjW4GlUZAMYd2vXMi3b"},
-            {"canvasUrl":"https://canvaz.scdn.co/still.jpg","trackUri":"spotify:track:$id"},
-            {"canvasUrl":"http://canvaz.scdn.co/plain.mp4","trackUri":"spotify:track:$id"},
-            {"canvasUrl":"$mp4?x=1","trackUri":"spotify:track:$id"}]}"""
-        assertEquals(Answer.Found("$mp4?x=1"), parse(json, id))
-        assertEquals(Answer.None, parse("""{"canvasesList":[{"canvasUrl":"https://canvaz.scdn.co/still.jpg"}]}""", id))
+    fun `an entry without an HTTPS MP4 is no canvas`() {
+        assertEquals(Answer.None, parse(entry("""{"url":"https://canvaz.scdn.co/still.jpg","type":"IMAGE"}"""), id))
+        assertEquals(Answer.None, parse(entry("""{"url":"http://canvaz.scdn.co/plain.mp4"}"""), id))
+        assertEquals(Answer.None, parse(entry("""{"type":"VIDEO"}"""), id))
+        assertEquals(Answer.Found("$mp4?x=1"), parse(entry("""{"url":"$mp4?x=1"}"""), id))
+    }
+
+    @Test
+    fun `an answer for another track, a bare map or an error entry is a failure, not a miss`() {
+        assertNull(parse("""{"data":{"$other":{"url":"$mp4"}}}""", id))
+        assertNull(parse("""{"$id":{"url":"$mp4"}}""", id))
+        assertNull(parse(entry("""{"error":{"status":502,"code":"upstream_failed","message":"m"}}"""), id))
     }
 
     @Test
     fun `a malformed body is a failure, not a miss`() {
         assertNull(parse("not json", id))
-        assertNull(parse("""{"error":"Missing trackId parameter"}""", id))
-        assertNull(parse("""["canvasesList"]""", id))
+        assertNull(parse("""{"object":"error","error":{"status":500,"code":"internal_error","message":"m"}}""", id))
+        assertNull(parse("""["data"]""", id))
     }
 
     @Test
@@ -70,8 +80,7 @@ class SpotifyCanvasFinderTest {
         assertEquals(mp4, runBlocking { finder.find(id) })
         assertEquals(1, calls)
 
-        body = """{"canvasesList":[]}"""
-        val other = "0VjIjW4GlUZAMYd2vXMi3b"
+        body = none
         assertNull(runBlocking { finder.find(other) })
         assertNull(runBlocking { finder.find(other) })
         assertEquals(2, calls)
@@ -81,7 +90,7 @@ class SpotifyCanvasFinderTest {
     fun `a miss is asked again once it is old`() {
         var calls = 0
         var clock = 0L
-        val finder = newFinder(fake { calls++; 200 to """{"canvasesList":[]}""" }, now = { clock })
+        val finder = newFinder(fake { calls++; 200 to none }, now = { clock })
         runBlocking { finder.find(id) }
         clock += SpotifyCanvasFinder.MISS_TTL_MS - 1
         runBlocking { finder.find(id) }
@@ -94,7 +103,7 @@ class SpotifyCanvasFinderTest {
     @Test
     fun `a bad request is no canvas and is remembered`() {
         var calls = 0
-        val finder = newFinder(fake { calls++; 400 to """{"error":"Missing trackId parameter"}""" })
+        val finder = newFinder(fake { calls++; 400 to """{"object":"error","error":{"status":400,"code":"invalid_track_id","message":"m"}}""" })
         assertNull(runBlocking { finder.find(id) })
         assertNull(runBlocking { finder.find(id) })
         assertEquals(1, calls)
@@ -110,7 +119,7 @@ class SpotifyCanvasFinderTest {
             assertNull(runBlocking { finder.find(id) })
             assertEquals(2, calls)
             // Paused: not asked again straight away, even for another track.
-            assertNull(runBlocking { finder.find("0VjIjW4GlUZAMYd2vXMi3b") })
+            assertNull(runBlocking { finder.find(other) })
             assertEquals(2, calls)
             clock += SpotifyCanvasFinder.FAILURE_PAUSE_MS
             fail = false
@@ -132,8 +141,7 @@ class SpotifyCanvasFinderTest {
         var clock = 0L
         var fail = true
         var calls = 0
-        val finder = newFinder(fake { calls++; if (fail) 500 to "oops" else 200 to """{"canvasesList":[]}""" }, now = { clock })
-        val other = "0VjIjW4GlUZAMYd2vXMi3b"
+        val finder = newFinder(fake { calls++; if (fail) 500 to "oops" else 200 to none }, now = { clock })
         runBlocking { finder.find(id) }
         clock += SpotifyCanvasFinder.FAILURE_PAUSE_MS
         runBlocking { finder.find(id) }
@@ -168,20 +176,32 @@ class SpotifyCanvasFinderTest {
     }
 
     @Test
-    fun `the own service is asked first and the fallback only when it fails`() {
-        val asked = mutableListOf<String>()
-        var ownFails = false
-        val client = fakeUrl { url ->
-            asked += url.substringBefore('?')
-            if (ownFails && url.startsWith("https://own.example")) 502 to "{}" else 200 to found
-        }
-        val finder = newFinder(client, urls = listOf("https://own.example/api/canvas", SpotifyCanvasFinder.FALLBACK_URL))
+    fun `a Retry-After is waited out without a second try`() {
+        var calls = 0
+        var clock = 0L
+        var limited = true
+        val client = OkHttpClient.Builder().addInterceptor { chain ->
+            calls++
+            val builder = Response.Builder().request(chain.request()).protocol(Protocol.HTTP_1_1).message("")
+            if (limited) {
+                builder.code(429).header("Retry-After", "600")
+                    .body("""{"object":"error","error":{"status":429,"code":"rate_limited","message":"m"}}""".toResponseBody())
+            } else {
+                builder.code(200).body(found.toResponseBody())
+            }
+            builder.build()
+        }.build()
+        val finder = newFinder(client, now = { clock })
+        assertNull(runBlocking { finder.find(id) })
+        assertEquals(1, calls)
+        // Longer than the first pause, as the service asked.
+        clock += SpotifyCanvasFinder.FAILURE_PAUSE_MS
+        limited = false
+        assertNull(runBlocking { finder.find(id) })
+        assertEquals(1, calls)
+        clock = 600_000L
         assertEquals(mp4, runBlocking { finder.find(id) })
-        assertEquals(listOf("https://own.example/api/canvas"), asked)
-        ownFails = true
-        runBlocking { finder.forget(id) }
-        assertEquals(mp4, runBlocking { finder.find(id) })
-        assertEquals(listOf("https://own.example/api/canvas", "https://own.example/api/canvas", SpotifyCanvasFinder.FALLBACK_URL), asked)
+        assertEquals(2, calls)
     }
 
     @Test
@@ -204,11 +224,11 @@ class SpotifyCanvasFinderTest {
     }
 
     @Test
-    fun `the track ID goes in the query`() {
+    fun `the track ID goes in the path`() {
         var asked: String? = null
         val finder = newFinder(fakeUrl { asked = it; 200 to found })
         runBlocking { finder.find(id) }
-        assertEquals("${SpotifyCanvasFinder.FALLBACK_URL}?trackId=$id", asked)
+        assertEquals("${SpotifyCanvasFinder.BASE_URL}/provider/canvaslist/$id", asked)
     }
 
     @Test
@@ -221,13 +241,12 @@ class SpotifyCanvasFinderTest {
         assertTrue(url!!.startsWith("https://") && url.endsWith(".mp4"))
     }
 
-    /** A finder asking only [urls], with no wait before its retry. */
+    /** A finder with no wait before its retry. */
     private fun newFinder(
         client: OkHttpClient,
         memoFile: File? = null,
         now: () -> Long = System::currentTimeMillis,
-        urls: List<String> = listOf(SpotifyCanvasFinder.FALLBACK_URL),
-    ) = SpotifyCanvasFinder(client, memoFile, now, urls, retryDelayMs = 0)
+    ) = SpotifyCanvasFinder(client, memoFile, now, retryDelayMs = 0)
 
     /** A client whose every call is answered by [answer] (status, body), given the URL asked. */
     private fun fakeUrl(answer: (String) -> Pair<Int, String>): OkHttpClient = OkHttpClient.Builder()

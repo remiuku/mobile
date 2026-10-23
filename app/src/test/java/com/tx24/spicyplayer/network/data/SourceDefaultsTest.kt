@@ -107,7 +107,7 @@ class SourceDefaultsTest {
     @Test
     fun `spotify canvas says it sends the track ID to its lookup service`() {
         val text = SourceDisclosures.forId(SourceDisclosures.SPOTIFY_CANVAS_ID)!!.description
-        assertTrue(text, text.contains("Spotify track ID") && text.contains("spotify-canva.vercel.app"))
+        assertTrue(text, text.contains("Spotify track ID") && text.contains("spicylyrics.org"))
     }
 
     @Test

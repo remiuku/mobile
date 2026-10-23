@@ -699,7 +699,7 @@ class ExternalPlaybackViewModel(application: Application) : AndroidViewModel(app
     /** What the screen asks for; [extrasWanted] adds the beats while calibrating. */
     private var screenExtrasWanted = TrackExtrasWanted()
     private var extrasJob: Job? = null
-    private val canvasFinder = SharedSpotify.canvas(application.cacheDir, BuildConfig.SPOTIFY_CANVAS_URL)
+    private val canvasFinder = SharedSpotify.canvas(application.cacheDir)
     /** The cover stage shows the song's Spotify Canvas; nothing is looked up otherwise. */
     private var canvasWanted = false
     private var canvasJob: Job? = null

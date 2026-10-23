@@ -14,4 +14,4 @@ binding = "CANVAS"
 id = "d01d592a039f45e88b22f91f5b70a89f"
 
 # [vars]
-# UPSTREAMS = "https://spotify-canva.vercel.app/api/canvas"
+# UPSTREAMS = "https://regional.canvasstore.slnode.spicylyrics.org/provider/canvaslist"

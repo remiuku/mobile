@@ -57,7 +57,7 @@ object SourceDisclosures {
     }
     /** The setting that lays human-written romanizations from Genius over the lyrics. */
     const val GENIUS_ROMANIZATION_ID = "genius_romanization"
-    /** Stage art set to Spotify Canvas, which asks a third-party lookup service (through the project's own cache). */
+    /** Stage art set to Spotify Canvas, which asks Spicy Lyrics' Canvas service. */
     const val SPOTIFY_CANVAS_ID = "spotify_canvas"
 
     private val byId = listOf(
@@ -70,12 +70,11 @@ object SourceDisclosures {
         SourceDisclosure("youtube_transcript", "YouTube transcripts", "YouTube's search (youtube.com)"),
         SourceDisclosure(GENIUS_ROMANIZATION_ID, "Human romanizations", "Genius (genius.com)",
             note = "It's only asked for songs in a script that gets romanized."),
-        SourceDisclosure(SPOTIFY_CANVAS_ID, "Spotify Canvas", "spotify-canva.vercel.app",
+        SourceDisclosure(SPOTIFY_CANVAS_ID, "Spotify Canvas", "Spicy Lyrics' Canvas service (spicylyrics.org)",
             descriptionOverride = "While the cover stage shows, Spotify Canvas sends each song's Spotify track ID to " +
-                "a small caching server Spicy Lyrics Mobile runs on Cloudflare, which asks spotify-canva.vercel.app, a " +
-                "lookup service that isn't run by Spicy Lyrics or Spotify. If that server can't answer, the app asks " +
-                "spotify-canva.vercel.app directly. It then plays the video the answer points to. No account or device " +
-                "details are sent. The service is unofficial and may stop working, so its own terms apply."),
+                "Spicy Lyrics' Canvas service (spicylyrics.org), which asks Spotify for the song's Canvas, and plays " +
+                "the video it points to from Spotify's servers. No account or device details are sent. The service " +
+                "is unofficial and may stop working."),
     ).associateBy(SourceDisclosure::id)
 
     /**
