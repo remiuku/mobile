@@ -17,7 +17,13 @@ import com.tx24.spicyplayer.lyrics.spicy.models.LyricsType
 internal object RemoteLyricsAdapter {
     private val lrcStamp = Regex("\\[(\\d{1,3}):(\\d{2})(?:[.:](\\d{1,3}))?]")
 
-    fun render(selection: RemoteLyricsSelection, durationMs: Long, splitBackgroundVocals: Boolean = true): LyricsState.Ready {
+    /** [romanize]: false leaves the words the source didn't romanize as they are (the widget shows none). */
+    fun render(
+        selection: RemoteLyricsSelection,
+        durationMs: Long,
+        splitBackgroundVocals: Boolean = true,
+        romanize: Boolean = true,
+    ): LyricsState.Ready {
         val payload = selection.payload
         val attribution = payload.attribution
         val parsedTtml = payload.ttmlLyrics?.takeIf(String::isNotBlank)?.let { ttml ->
@@ -51,9 +57,11 @@ internal object RemoteLyricsAdapter {
         val unromanized = if (selection.quality == RemoteLyricsQuality.WORD_SYNCED) parsed else parsed.map(::wrappable)
         require(unromanized.isNotEmpty()) { "Selected lyrics contain no displayable text" }
         // On-device romanization fills only the words the source left unromanized.
-        val computed = RomanizationService.romanize(unromanized.map { line -> line.words.map(TimedWord::text) })
-        val romanized = unromanized.mapIndexed { l, line ->
-            line.copy(words = line.words.mapIndexed { w, word -> word.copy(romanized = word.romanized ?: computed[l][w]) })
+        val romanized = if (!romanize) unromanized else {
+            val computed = RomanizationService.romanize(unromanized.map { line -> line.words.map(TimedWord::text) })
+            unromanized.mapIndexed { l, line ->
+                line.copy(words = line.words.mapIndexed { w, word -> word.copy(romanized = word.romanized ?: computed[l][w]) })
+            }
         }
         // Lines timed only as a whole are drawn as line-synced, which wraps between words. They
         // are split after romanizing, so a line read as one span keeps its romaji's spaces.
