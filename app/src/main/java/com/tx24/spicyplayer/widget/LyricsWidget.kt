@@ -32,7 +32,8 @@ class LyricsWidget : AppWidgetProvider() {
         /** The player's position, for the progress bar and the time (lyric delays aside). */
         val positionMs: Long,
         val durationMs: Long,
-        val provider: String?,
+        /** Where the lyrics are from, as the controls and the floating window say it ([LyricsFooter.miniCredit]). */
+        val credit: String?,
         /** The cover, small and rounded, for the song row. */
         val cover: Bitmap?,
         /** A still frame of the app's background for this cover ([KawarpSnapshot]). */
@@ -131,13 +132,13 @@ class LyricsWidget : AppWidgetProvider() {
                 views.setProgressBar(R.id.widget_progress, PROGRESS_MAX, permille, false)
                 views.setChronometer(R.id.widget_elapsed, SystemClock.elapsedRealtime() - content.positionMs, null, content.playing)
             }
-            val credit = content.provider?.takeIf { settings.credit && it.isNotBlank() }
+            val credit = content.credit?.takeIf { settings.credit && it.isNotBlank() }
             views.setViewVisibility(R.id.widget_progress, visibleIf(timed))
             views.setViewVisibility(R.id.widget_elapsed, visibleIf(timed))
             views.setViewVisibility(R.id.widget_duration, visibleIf(timed))
             views.setTextViewText(R.id.widget_duration, clockTime(content.durationMs))
             views.setViewVisibility(R.id.widget_credit, if (credit != null) View.VISIBLE else View.INVISIBLE)
-            views.setTextViewText(R.id.widget_credit, credit?.let { "Provided by $it" }.orEmpty())
+            views.setTextViewText(R.id.widget_credit, credit.orEmpty())
             views.setViewVisibility(R.id.widget_times, visibleIf(timed || credit != null))
 
             val hasSong = settings.songInfo != WidgetSettings.SongInfo.HIDDEN && content.title.isNotEmpty()

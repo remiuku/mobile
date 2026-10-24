@@ -7,6 +7,9 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.graphics.Bitmap
 import com.tx24.spicyplayer.lyrics.spicy.canvas.kawarp.KawarpSnapshot
+import com.tx24.spicyplayer.lyrics.spicy.models.LyricsCredit
+import com.tx24.spicyplayer.lyrics.spicy.models.LyricsFooter
+import com.tx24.spicyplayer.lyrics.spicy.models.LyricsProvenance
 import android.graphics.BitmapShader
 import android.graphics.Canvas
 import android.graphics.Paint
@@ -91,7 +94,7 @@ internal object NowPlayingHolder {
     private var title = ""
     private var artist = ""
     private var durationMs = 0L
-    private var provider: String? = null
+    private var credit: String? = null
     private var leads: List<WidgetLines.Lead> = emptyList()
     private var synced = false
     /** Shown in place of lyrics while there are none. */
@@ -326,7 +329,11 @@ internal object NowPlayingHolder {
                 lookupJob?.cancel()
                 leads = WidgetLines.leads(lyrics.lines)
                 synced = lyrics.lyricsType != LyricsType.Static
-                provider = lyrics.provider
+                credit = LyricsFooter(
+                    provenance = LyricsProvenance(lyrics.source ?: lyrics.provider),
+                    maker = lyrics.maker?.let { LyricsCredit(it.username, it.profileUrl, it.avatarUrl) },
+                    uploader = lyrics.uploader?.let { LyricsCredit(it.username, it.profileUrl, it.avatarUrl) },
+                ).miniCredit()?.text
                 lookedUpPlain = false
                 notice = if (leads.isEmpty()) NO_LYRICS else null
             }
@@ -342,7 +349,7 @@ internal object NowPlayingHolder {
         title = ""
         artist = ""
         durationMs = 0L
-        provider = null
+        credit = null
         lookedUpPlain = false
         leads = emptyList()
         synced = false
@@ -436,7 +443,7 @@ internal object NowPlayingHolder {
                 playing = playing,
                 positionMs = clock.positionAt(SystemClock.elapsedRealtime()),
                 durationMs = durationMs,
-                provider = provider.takeIf { notice == null },
+                credit = credit.takeIf { notice == null },
                 cover = cover,
                 backdrop = backdrop,
                 colors = colors,
