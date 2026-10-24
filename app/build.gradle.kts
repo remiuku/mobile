@@ -109,6 +109,7 @@ android {
 }
 
 dependencies {
+    implementation(project(":core"))
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
     implementation(platform("androidx.compose:compose-bom:2026.09.00"))
     implementation("androidx.activity:activity-compose:1.13.0")
@@ -128,7 +129,6 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer-hls:1.11.1")
     implementation("androidx.media3:media3-database:1.11.1")
     implementation("com.jakewharton.timber:timber:5.0.1")
-    implementation("com.atilika.kuromoji:kuromoji-ipadic:0.9.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
     implementation("com.squareup.retrofit2:retrofit:3.0.0")
     implementation("com.squareup.retrofit2:converter-gson:3.0.0")

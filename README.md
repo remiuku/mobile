@@ -114,10 +114,10 @@ The counts are kept on your phone until the next report. Turning the setting off
 You need JDK 17+ and the Android SDK for API 37 (Android Studio installs both). `local.properties` may point to your SDK; it is ignored by Git.
 
 ```powershell
-.\gradlew.bat assembleDebug testDebugUnitTest lintDebug
+.\gradlew.bat assembleDebug testDebugUnitTest :core:test lintDebug
 ```
 
-On macOS or Linux, run `./gradlew assembleDebug testDebugUnitTest lintDebug`. The APK lands in `app/build/outputs/apk/debug/app-debug.apk`. The application ID is `com.tx24.spicyplayer.next`; debug builds install beside it as `com.tx24.spicyplayer.next.debug` ("Spicy Lyrics Mobile Debug").
+On macOS or Linux, run `./gradlew assembleDebug testDebugUnitTest :core:test lintDebug`. The APK lands in `app/build/outputs/apk/debug/app-debug.apk`. The application ID is `com.tx24.spicyplayer.next`; debug builds install beside it as `com.tx24.spicyplayer.next.debug` ("Spicy Lyrics Mobile Debug").
 
 The Spicy Lyrics provider needs a publishable `sl_pk_` client key. Copy `.env.example` to `.env` and set `SPICY_LYRICS_CLIENT_KEY` to include one, or enter your own in Settings. The file is ignored by Git, but **the value is embedded in the APK**, so never use an `sl_sk_` secret key. Other sources work with this blank.
 

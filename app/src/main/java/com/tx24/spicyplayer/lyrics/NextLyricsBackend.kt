@@ -2,6 +2,7 @@ package com.tx24.spicyplayer.lyrics
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.util.Log
 import com.google.gson.Gson
 import com.google.gson.JsonParser
 import com.google.gson.JsonObject
@@ -13,6 +14,7 @@ import com.tx24.spicyplayer.network.data.spotify.AnonymousSpotifyCatalogSearch
 import com.tx24.spicyplayer.network.data.spotify.SharedSpotify
 import com.tx24.spicyplayer.network.data.spotify.SpotifyTrackResolver
 import com.tx24.spicyplayer.network.service.LyricsService
+import com.tx24.spicyplayer.platform.CoreLog
 import java.io.File
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
@@ -26,6 +28,13 @@ import retrofit2.converter.gson.GsonConverterFactory
 
 /** External-playback wiring for the original player's provider boundary. */
 internal class NextLyricsBackend(context: Context, clientKey: String) {
+    init {
+        // The sources, matching and parsers live in :core, which logs through CoreLog.
+        CoreLog.sink = { level, tag, message ->
+            if (level == CoreLog.Level.WARN) Log.w(tag, message) else Log.d(tag, message)
+        }
+    }
+
     private val diskCache = File(context.cacheDir, "lyrics")
     private val preferences = context.getSharedPreferences("lyrics_sources", Context.MODE_PRIVATE)
     private val client = OkHttpClient.Builder()

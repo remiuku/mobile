@@ -23,6 +23,7 @@ import com.tx24.spicyplayer.lyrics.spicy.models.interludeDotTimes
 import com.tx24.spicyplayer.lyrics.spicy.models.Line
 import com.tx24.spicyplayer.lyrics.spicy.models.LyricsType
 import com.tx24.spicyplayer.lyrics.spicy.models.Word
+import com.tx24.spicyplayer.lyrics.spicy.parser.CjkDetector
 import com.tx24.spicyplayer.lyrics.spicy.parser.RtlDetector
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.text.style.TextAlign
@@ -200,17 +201,7 @@ internal object LyricsLayoutCalculator {
         LyricScriptFont.NOTO_SANS_GEORGIAN -> georgianFontFamily
     }
 
-    internal fun isCjk(c: Char): Boolean {
-        val block = Character.UnicodeBlock.of(c)
-        return block == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS ||
-            block == Character.UnicodeBlock.CJK_COMPATIBILITY_IDEOGRAPHS ||
-            block == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS_EXTENSION_A ||
-            block == Character.UnicodeBlock.HIRAGANA ||
-            block == Character.UnicodeBlock.KATAKANA ||
-            block == Character.UnicodeBlock.HANGUL_SYLLABLES ||
-            block == Character.UnicodeBlock.HANGUL_JAMO ||
-            block == Character.UnicodeBlock.HANGUL_COMPATIBILITY_JAMO
-    }
+    internal fun isCjk(c: Char): Boolean = CjkDetector.isCjk(c)
 
     /**
      * Where an over-wide word may be cut: [start, end) ranges between its spaces (which fall out),
