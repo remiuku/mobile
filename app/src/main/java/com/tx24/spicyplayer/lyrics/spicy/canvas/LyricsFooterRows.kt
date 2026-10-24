@@ -304,6 +304,8 @@ private fun measureFlowRow(
     val avatar = fontSp * density * 1.15f
     val gap = fontSp * density * 0.3f
     val dotGap = fontSp * density * 0.45f
+    // Between wrapped lines: room for the next line's avatar under a name's underline.
+    val wrapGap = fontSp * density * 0.3f
     val dot = measure("·", muted)
     val pieces = mutableListOf<FlowPiece>()
     val taps = mutableListOf<FlowTap>()
@@ -319,7 +321,7 @@ private fun measureFlowRow(
         var withDot = !first
         if (x > 0f && x + width(withDot) > maxWidthPx) {
             x = 0f
-            y += lineHeight
+            y += lineHeight + wrapGap
             withDot = false
         }
         val before = x
