@@ -846,9 +846,10 @@ private fun LyricsApp(
         }
     }
     // Ambient mode: left untouched while the music plays, the page goes dark and dim with only the
-    // lyrics on it. Any touch or key brings it back (and does nothing else).
+    // lyrics on it. Any touch or key brings it back (and does nothing else). Over the big cover in
+    // portrait too: the cover fades with the header and comes back as it was.
     var ambient by remember { mutableStateOf(false) }
-    val ambientAllowed = settings.ambientMode && state.isPlaying && !inPip && !overlayOpen && !headerExpanded
+    val ambientAllowed = settings.ambientMode && state.isPlaying && !inPip && !overlayOpen && !(headerExpanded && landscape)
     LaunchedEffect(ambientAllowed, settings.ambientDelay) {
         if (!ambientAllowed) {
             ambient = false
@@ -1220,9 +1221,9 @@ private fun LyricsApp(
                             .padding(belowTop)
                             .inLyricsBox()
                             .fillMaxSize()
-                            // Expanding, the lyrics fade out under the cover.
+                            // Expanding, the lyrics fade out under the cover; ambient mode brings them back over it.
                             .graphicsLayer {
-                                alpha = (1f - expansion) * swapFade()
+                                alpha = (1f - expansion * (1f - ambientFade.value)) * swapFade()
                                 translationY = shownLyricsTopPx.value - lyricsTopPx
                             },
                     ) {
