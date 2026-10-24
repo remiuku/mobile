@@ -3,6 +3,7 @@ package com.tx24.spicyplayer.widget
 import com.tx24.spicyplayer.lyrics.TimedLine
 import com.tx24.spicyplayer.lyrics.TimedWord
 import com.tx24.spicyplayer.lyrics.spicy.models.LineRole
+import com.tx24.spicyplayer.lyrics.spicy.models.interludeDotTimes
 
 /**
  * What the home screen widget shows at a moment: the line being sung ([current]), up to
@@ -16,6 +17,8 @@ internal data class WidgetLines(
     val current: Lead,
     val after: List<Lead>,
     val changesAtMs: Long?,
+    /** In a break ([Lead.interlude] current): how many of its three dots have lit, as the lyrics view lights them. */
+    val dots: Int = 0,
 ) {
     /**
      * One lead line as the widget writes it, with its romanization, the source's translation, its
@@ -29,14 +32,17 @@ internal data class WidgetLines(
         val translation: String? = null,
         val background: String? = null,
         val oppositeAligned: Boolean = false,
+        /** A break in the singing, drawn as three dots. */
+        val interlude: Boolean = false,
     )
 
     companion object {
         /** The most lines a widget shows on each side of the current one. */
         const val MAX_AROUND = 2
-        /** Between two lines at least this far apart the widget shows [BREAK] instead of the line just sung. */
+        /** Between two lines at least this far apart the widget shows a break instead of the line just sung. */
         const val BREAK_GAP_MS = 4_000L
-        const val BREAK = "♪"
+        /** A break's text, for whatever can't draw its dots. */
+        const val BREAK = "• • •"
 
         /** A notice in place of lyrics. */
         fun notice(text: String): WidgetLines = WidgetLines(emptyList(), Lead(0L, 0L, text), emptyList(), null)
@@ -44,7 +50,8 @@ internal data class WidgetLines(
         /**
          * The lead lines of [lines] as text, the words spaced as the lyrics view spaces them (a space
          * before each word not [TimedWord.attached]). Background vocals go with their lead line (by
-         * group, else the lead before them), in brackets; interludes are left out.
+         * group, else the lead before them), without the brackets a source may write round them;
+         * interludes are left out.
          */
         fun leads(lines: List<TimedLine>): List<Lead> {
             val leadLines = ArrayList<TimedLine>()
@@ -71,7 +78,7 @@ internal data class WidgetLines(
                     joined(line.words) { it.text },
                     romanized,
                     line.translation?.tidy()?.takeIf { it.isNotEmpty() },
-                    backing[index].takeIf { it.isNotEmpty() }?.joinToString(" ")?.let { if (it.startsWith("(")) it else "($it)" },
+                    backing[index].takeIf { it.isNotEmpty() }?.joinToString(" ") { it.unbracketed() },
                     line.oppositeAligned,
                 )
             }.filter { it.text.isNotEmpty() || it.romanized != null }
@@ -102,7 +109,7 @@ internal data class WidgetLines(
         fun at(leads: List<Lead>, positionMs: Long): WidgetLines {
             if (leads.isEmpty()) return notice("")
             val index = leads.indexOfLast { it.startMs <= positionMs }
-            if (index < 0) return WidgetLines(emptyList(), breakBefore(leads[0]), leads.take(MAX_AROUND), leads[0].startMs)
+            if (index < 0) return interlude(emptyList(), 0L, leads[0], leads.take(MAX_AROUND), positionMs)
             val line = leads[index]
             val before = leads.subList((index - MAX_AROUND).coerceAtLeast(0), index)
             val following = leads.getOrNull(index + 1)
@@ -112,13 +119,22 @@ internal data class WidgetLines(
             return when {
                 // In a break the line just sung joins the ones above it.
                 breakAhead && positionMs >= line.endMs ->
-                    WidgetLines((before + line).takeLast(MAX_AROUND), breakBefore(following), after, following.startMs)
+                    interlude((before + line).takeLast(MAX_AROUND), line.endMs, following, after, positionMs)
                 breakAhead -> WidgetLines(before, line, after, line.endMs)
                 else -> WidgetLines(before, line, after, following.startMs)
             }
         }
 
-        private fun breakBefore(next: Lead) = Lead(next.startMs, next.startMs, BREAK)
+        /** A break from [startMs] until [next], its dots lit by [positionMs] and the next change when the next one lights. */
+        private fun interlude(before: List<Lead>, startMs: Long, next: Lead, after: List<Lead>, positionMs: Long): WidgetLines {
+            val dotStarts = interludeDotTimes(startMs, next.startMs).map { it.first }
+            val lit = dotStarts.count { it <= positionMs }
+            val changesAt = dotStarts.firstOrNull { it > positionMs } ?: next.startMs
+            return WidgetLines(before, Lead(startMs, next.startMs, BREAK, interlude = true), after, changesAt, lit)
+        }
+
+        /** "(ooh)" as "ooh": background vocals are told apart by their size, not brackets. */
+        private fun String.unbracketed() = if (startsWith("(") && endsWith(")")) substring(1, length - 1).trim() else this
 
         private val WHITESPACE = Regex("\\s+")
 

@@ -13,7 +13,8 @@ import kotlin.math.floor
  */
 internal data class WidgetFit(val settings: WidgetSettings, val currentLines: Int) {
     companion object {
-        private const val PADDING_DP = 32f
+        /** The widget's padding, both sides together. */
+        const val PADDING_DP = 32
         private const val SONG_ROW_DP = 54f
         private const val TIMELINE_DP = 34f
         private const val LINE_GAP_DP = 4f
@@ -45,6 +46,17 @@ internal data class WidgetFit(val settings: WidgetSettings, val currentLines: In
                 if (lines >= 2 || step === steps.last()) return WidgetFit(step, lines.coerceIn(1, MAX_CURRENT_LINES))
             }
             return WidgetFit(steps.last(), 1)
+        }
+
+        /** Without a known height, the lyrics area is drawn this tall. */
+        private const val DEFAULT_LINES_DP = 180f
+
+        /** How tall the lyrics area is in a widget [heightDp] tall laid out by [settings]. */
+        fun linesAreaDp(settings: WidgetSettings, heightDp: Int?): Float {
+            if (heightDp == null || heightDp <= 0) return DEFAULT_LINES_DP
+            val songRow = if (settings.songInfo != WidgetSettings.SongInfo.HIDDEN || settings.controls != WidgetSettings.Controls.NONE) SONG_ROW_DP else 0f
+            val timeline = if (settings.progress || settings.credit) TIMELINE_DP else 0f
+            return (heightDp - PADDING_DP - songRow - timeline).coerceAtLeast(currentLineDp(settings))
         }
 
         private fun currentLineDp(settings: WidgetSettings) = settings.textSize.currentSp * LINE_HEIGHT

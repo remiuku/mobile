@@ -447,6 +447,7 @@ internal object NowPlayingHolder {
                 cover = cover,
                 backdrop = backdrop,
                 colors = colors,
+                duet = leads.any { it.oppositeAligned },
             )
             last = content
             LyricsWidget.show(app, content, full)

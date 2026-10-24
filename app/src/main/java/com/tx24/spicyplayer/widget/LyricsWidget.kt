@@ -9,13 +9,12 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.os.SystemClock
-import android.util.TypedValue
-import android.view.Gravity
 import android.view.View
 import android.widget.RemoteViews
 import androidx.core.graphics.ColorUtils
 import com.tx24.spicyplayer.LyricsActivity
 import com.tx24.spicyplayer.R
+import com.tx24.spicyplayer.ui.settings.AppSettings
 import com.tx24.spicyplayer.ui.background.CoverColors
 
 /**
@@ -39,6 +38,8 @@ class LyricsWidget : AppWidgetProvider() {
         /** A still frame of the app's background for this cover ([KawarpSnapshot]). */
         val backdrop: Bitmap?,
         val colors: CoverColors?,
+        /** The song has a duet, so its lines lean to their singer's side. */
+        val duet: Boolean = false,
     )
 
     override fun onEnabled(context: Context) = NowPlayingHolder.start(context)
@@ -72,13 +73,12 @@ class LyricsWidget : AppWidgetProvider() {
         const val DEFAULT_ACCENT = 0xFF121212.toInt()
         private const val PROGRESS_MAX = 1_000
 
-        private val lineSlots = listOf(
-            R.id.widget_line_b2 to R.id.widget_note_b2,
-            R.id.widget_line_b1 to R.id.widget_note_b1,
-            R.id.widget_line_now to R.id.widget_note_now,
-            R.id.widget_line_a1 to R.id.widget_note_a1,
-            R.id.widget_line_a2 to R.id.widget_note_a2,
-        )
+        /** Without a reported size (the settings preview), the lyrics area is drawn for a widget this wide. */
+        private const val DEFAULT_WIDTH_DP = 320
+
+        private var painter: WidgetLyricsPainter? = null
+        /** What each widget's lyrics picture was last drawn from, so an update that moves only the progress bar doesn't resend it. */
+        private val painted = HashMap<Int, Any>()
 
         fun placed(context: Context): Boolean = ids(context).isNotEmpty()
 
@@ -92,7 +92,9 @@ class LyricsWidget : AppWidgetProvider() {
             val manager = AppWidgetManager.getInstance(context)
             val store = WidgetSettingsStore(context)
             for (id in ids) {
-                val views = views(context, content, store.read(id), full, heightDp(manager, id))
+                val options = manager.getAppWidgetOptions(id)
+                val widthDp = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH).takeIf { it > 0 }
+                val views = views(context, content, store.read(id), full, heightDp(manager, id), widthDp, id)
                 if (full) manager.updateAppWidget(id, views) else manager.partiallyUpdateAppWidget(id, views)
             }
         }
@@ -111,10 +113,19 @@ class LyricsWidget : AppWidgetProvider() {
         }
 
         /**
-         * [content] as [chosen] lay it out, less what doesn't fit [heightDp] ([WidgetFit]). With
-         * [full] off, the pictures, colours and buttons' actions are left as they were.
+         * [content] as [chosen] lay it out, less what doesn't fit [heightDp] ([WidgetFit]), its lyrics
+         * drawn for a widget [widthDp] wide. With [full] off, the pictures, colours and buttons'
+         * actions are left as they were, and so are the lyrics if widget [id] already shows them.
          */
-        fun views(context: Context, content: Content, chosen: WidgetSettings, full: Boolean, heightDp: Int?): RemoteViews {
+        fun views(
+            context: Context,
+            content: Content,
+            chosen: WidgetSettings,
+            full: Boolean,
+            heightDp: Int?,
+            widthDp: Int? = null,
+            id: Int? = null,
+        ): RemoteViews {
             val lines = content.lines
             val notes = (lines.before + lines.current + lines.after).any { lead ->
                 lead.background != null || (chosen.romanization && lead.romanized != null) || (chosen.translation && lead.translation != null)
@@ -124,8 +135,7 @@ class LyricsWidget : AppWidgetProvider() {
             // By the chosen place, not the fitted one: a partial update must name the layout it updates.
             val layout = if (chosen.songInfo == WidgetSettings.SongInfo.TOP) R.layout.widget_lyrics_top else R.layout.widget_lyrics
             val views = RemoteViews(context.packageName, layout)
-            showLines(views, lines, settings)
-            views.setInt(R.id.widget_line_now, "setMaxLines", fit.currentLines)
+            showLines(context, views, content, settings, heightDp, widthDp, full, id)
             val timed = settings.progress && content.durationMs > 0L
             if (timed) {
                 val permille = (content.positionMs * PROGRESS_MAX / content.durationMs).toInt().coerceIn(0, PROGRESS_MAX)
@@ -174,35 +184,29 @@ class LyricsWidget : AppWidgetProvider() {
             return views
         }
 
-        private fun showLines(views: RemoteViews, lines: WidgetLines, settings: WidgetSettings) {
-            val before = lines.before.takeLast(settings.around)
-            val after = lines.after.take(settings.around)
-            val shown = listOf(before.getOrNull(before.size - 2), before.lastOrNull(), lines.current, after.getOrNull(0), after.getOrNull(1))
-            lineSlots.forEachIndexed { slot, (lineId, noteId) ->
-                val lead = shown[slot]
-                // A duet partner's lines lean the other way, as in the lyrics view.
-                val gravity = when {
-                    settings.centered -> Gravity.CENTER_HORIZONTAL
-                    lead?.oppositeAligned == true -> Gravity.END
-                    else -> Gravity.START
-                }
-                val current = slot == 2
-                // A line the source wrote only romanized shows that as its text.
-                val text = lead?.text?.ifEmpty { lead.romanized.orEmpty() }.orEmpty()
-                val note = listOfNotNull(
-                    lead?.background,
-                    lead?.romanized?.takeIf { settings.romanization && lead.text.isNotEmpty() },
-                    lead?.translation?.takeIf { settings.translation },
-                ).joinToString("\n")
-                views.setViewVisibility(lineId, visibleIf(text.isNotEmpty()))
-                views.setViewVisibility(noteId, visibleIf(text.isNotEmpty() && note.isNotEmpty()))
-                views.setTextViewText(lineId, text)
-                views.setTextViewText(noteId, note)
-                views.setTextViewTextSize(lineId, TypedValue.COMPLEX_UNIT_SP, if (current) settings.textSize.currentSp else settings.textSize.aroundSp)
-                views.setTextViewTextSize(noteId, TypedValue.COMPLEX_UNIT_SP, settings.textSize.noteSp + if (current) 1f else 0f)
-                views.setInt(lineId, "setGravity", gravity)
-                views.setInt(noteId, "setGravity", gravity)
-            }
+        private fun showLines(
+            context: Context,
+            views: RemoteViews,
+            content: Content,
+            settings: WidgetSettings,
+            heightDp: Int?,
+            widthDp: Int?,
+            full: Boolean,
+            id: Int?,
+        ) {
+            val density = context.resources.displayMetrics.density
+            val areaWidthPx = (((widthDp ?: DEFAULT_WIDTH_DP) - WidgetFit.PADDING_DP) * density).toInt()
+            val areaHeightPx = (WidgetFit.linesAreaDp(settings, heightDp) * density).toInt()
+            val style = WidgetLyricsPainter.Style(
+                duet = content.duet,
+                wideDuet = AppSettings(context.getSharedPreferences("ui", Context.MODE_PRIVATE)).duetLinePadding,
+            )
+            val key = listOf(content.lines, settings, areaWidthPx, areaHeightPx, style)
+            if (!full && id != null && painted[id] == key) return
+            val painter = painter ?: WidgetLyricsPainter(context.applicationContext).also { painter = it }
+            views.setImageViewBitmap(R.id.widget_lyrics_image, painter.paint(content.lines, settings, style, areaWidthPx, areaHeightPx, density))
+            views.setContentDescription(R.id.widget_lyrics_image, content.lines.current.text.takeUnless { content.lines.current.interlude })
+            if (id != null) painted[id] = key
         }
 
         private fun showBackground(views: RemoteViews, content: Content, settings: WidgetSettings) {

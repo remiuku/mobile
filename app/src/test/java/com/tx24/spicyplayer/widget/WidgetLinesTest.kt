@@ -5,6 +5,7 @@ import com.tx24.spicyplayer.lyrics.TimedWord
 import com.tx24.spicyplayer.lyrics.spicy.models.LineRole
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class WidgetLinesTest {
@@ -26,7 +27,7 @@ class WidgetLinesTest {
     @Test
     fun `background vocals go with their lead line and words are spaced`() {
         assertEquals(listOf("Hello world", "Second", "Third", "After the break"), leads.map { it.text })
-        assertEquals(listOf("(echo)", null, null, null), leads.map { it.background })
+        assertEquals(listOf("echo", null, null, null), leads.map { it.background })
     }
 
     @Test
@@ -38,7 +39,7 @@ class WidgetLinesTest {
                 TimedLine(500, 900, listOf(TimedWord("ooh", 500, 900, attached = false)), role = LineRole.BACKGROUND, groupId = 1),
             ),
         )
-        assertEquals(listOf("(ooh)", null), grouped.map { it.background })
+        assertEquals(listOf("ooh", null), grouped.map { it.background })
         assertEquals(listOf(false, true), grouped.map { it.oppositeAligned })
     }
 
@@ -73,7 +74,10 @@ class WidgetLinesTest {
     fun `before the first line the break shows with the first lines after it`() {
         val shown = WidgetLines.at(leads, 0)
         assertEquals(Triple(emptyList<String>(), WidgetLines.BREAK, listOf("Hello world", "Second")), shown.texts())
-        assertEquals(1_000L, shown.changesAtMs)
+        assertTrue(shown.current.interlude)
+        // The first dot lights as the break starts; the next change is the second dot.
+        assertEquals(1, shown.dots)
+        assertTrue(shown.changesAtMs!! in 1..999)
     }
 
     @Test
@@ -88,7 +92,11 @@ class WidgetLinesTest {
         assertEquals(6_000L, WidgetLines.at(leads, 5_500).changesAtMs)
         val shown = WidgetLines.at(leads, 7_000)
         assertEquals(Triple(listOf("Second", "Third"), WidgetLines.BREAK, listOf("After the break")), shown.texts())
-        assertEquals(12_000L, shown.changesAtMs)
+        assertEquals(1, shown.dots)
+        // The dots light one by one through the break, then the next line.
+        val lit = (6_000L until 12_000L step 100).map { WidgetLines.at(leads, it).dots }
+        assertEquals(listOf(1, 2, 3), lit.distinct())
+        assertEquals(12_000L, WidgetLines.at(leads, 11_900).changesAtMs)
     }
 
     @Test

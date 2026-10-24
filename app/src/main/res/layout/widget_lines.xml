@@ -1,72 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Centred, so a column taller than the widget loses its outer lines and keeps the current one. -->
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/widget_lines"
+<!-- The lyrics, drawn as one picture (WidgetLyricsPainter) so they can use the lyrics font. The
+     include reaches past the widget's padding by WidgetLyricsPainter.BLEED_DP each side, for the glow. -->
+<ImageView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_lyrics_image"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:gravity="center_vertical"
-    android:orientation="vertical">
-
-    <TextView
-        android:id="@+id/widget_line_b2"
-        style="@style/WidgetLyricLine"
-        android:maxLines="2"
-        android:textColor="#59FFFFFF"
-        android:textSize="15sp" />
-
-    <TextView
-        android:id="@+id/widget_note_b2"
-        style="@style/WidgetLyricNote"
-        android:textColor="#40FFFFFF" />
-
-    <TextView
-        android:id="@+id/widget_line_b1"
-        style="@style/WidgetLyricLine"
-        android:maxLines="2"
-        android:textColor="#73FFFFFF"
-        android:textSize="15sp" />
-
-    <TextView
-        android:id="@+id/widget_note_b1"
-        style="@style/WidgetLyricNote"
-        android:textColor="#4DFFFFFF" />
-
-    <TextView
-        android:id="@+id/widget_line_now"
-        style="@style/WidgetLyricLine.Current"
-        android:text="@string/widget_waiting"
-        android:visibility="visible"
-        android:maxLines="3"
-        android:textColor="#FFFFFFFF"
-        android:textSize="21sp" />
-
-    <TextView
-        android:id="@+id/widget_note_now"
-        style="@style/WidgetLyricNote"
-        android:textColor="#B3FFFFFF" />
-
-    <TextView
-        android:id="@+id/widget_line_a1"
-        style="@style/WidgetLyricLine"
-        android:maxLines="2"
-        android:textColor="#73FFFFFF"
-        android:textSize="15sp" />
-
-    <TextView
-        android:id="@+id/widget_note_a1"
-        style="@style/WidgetLyricNote"
-        android:textColor="#4DFFFFFF" />
-
-    <TextView
-        android:id="@+id/widget_line_a2"
-        style="@style/WidgetLyricLine"
-        android:maxLines="2"
-        android:textColor="#59FFFFFF"
-        android:textSize="15sp" />
-
-    <TextView
-        android:id="@+id/widget_note_a2"
-        style="@style/WidgetLyricNote"
-        android:textColor="#40FFFFFF" />
-
-</LinearLayout>
+    android:importantForAccessibility="yes"
+    android:scaleType="fitCenter" />
