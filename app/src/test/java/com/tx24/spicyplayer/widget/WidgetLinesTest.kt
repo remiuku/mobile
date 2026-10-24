@@ -75,8 +75,8 @@ class WidgetLinesTest {
         val shown = WidgetLines.at(leads, 0)
         assertEquals(Triple(emptyList<String>(), WidgetLines.BREAK, listOf("Hello world", "Second")), shown.texts())
         assertTrue(shown.current.interlude)
-        // The first dot lights as the break starts; the next change is the second dot.
-        assertEquals(1, shown.dots)
+        // No dot is lit as the break starts; the next change is the first one finishing.
+        assertEquals(0, shown.dots)
         assertTrue(shown.changesAtMs!! in 1..999)
     }
 
@@ -92,10 +92,10 @@ class WidgetLinesTest {
         assertEquals(6_000L, WidgetLines.at(leads, 5_500).changesAtMs)
         val shown = WidgetLines.at(leads, 7_000)
         assertEquals(Triple(listOf("Second", "Third"), WidgetLines.BREAK, listOf("After the break")), shown.texts())
-        assertEquals(1, shown.dots)
-        // The dots light one by one through the break, then the next line.
+        assertEquals(0, shown.dots)
+        // Each dot lights as it finishes, one by one through the break, then the next line.
         val lit = (6_000L until 12_000L step 100).map { WidgetLines.at(leads, it).dots }
-        assertEquals(listOf(1, 2, 3), lit.distinct())
+        assertEquals(listOf(0, 1, 2, 3), lit.distinct())
         assertEquals(12_000L, WidgetLines.at(leads, 11_900).changesAtMs)
     }
 

@@ -17,7 +17,7 @@ internal data class WidgetLines(
     val current: Lead,
     val after: List<Lead>,
     val changesAtMs: Long?,
-    /** In a break ([Lead.interlude] current): how many of its three dots have lit, as the lyrics view lights them. */
+    /** In a break ([Lead.interlude] current): how many of its three dots are done, as the lyrics view fills them. */
     val dots: Int = 0,
 ) {
     /**
@@ -125,11 +125,14 @@ internal data class WidgetLines(
             }
         }
 
-        /** A break from [startMs] until [next], its dots lit by [positionMs] and the next change when the next one lights. */
+        /**
+         * A break from [startMs] until [next], each of its dots lit once its time is done by
+         * [positionMs], and the next change when the next one finishes.
+         */
         private fun interlude(before: List<Lead>, startMs: Long, next: Lead, after: List<Lead>, positionMs: Long): WidgetLines {
-            val dotStarts = interludeDotTimes(startMs, next.startMs).map { it.first }
-            val lit = dotStarts.count { it <= positionMs }
-            val changesAt = dotStarts.firstOrNull { it > positionMs } ?: next.startMs
+            val dotEnds = interludeDotTimes(startMs, next.startMs).map { it.second }
+            val lit = dotEnds.count { it <= positionMs }
+            val changesAt = dotEnds.firstOrNull { it > positionMs } ?: next.startMs
             return WidgetLines(before, Lead(startMs, next.startMs, BREAK, interlude = true), after, changesAt, lit)
         }
 

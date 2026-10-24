@@ -23,8 +23,8 @@ import com.tx24.spicyplayer.lyrics.spicy.parser.RtlDetector
  * The widget's lyrics, drawn as one picture so they can use the lyrics font (a widget's text
  * views only get system fonts). The line being sung sits in the middle, glowing, with the lines
  * around it above and below, faded out at the edges like the lyrics view. Under each line: its
- * romanization and translation, then its background vocals, smaller. A break is three dots that
- * light one by one. In a song with a duet, each line is inset on the side it leans away from.
+ * romanization and translation, then its background vocals, smaller. A break is three dots, each
+ * lit as it finishes. In a song with a duet, each line is inset on the side it leans away from.
  */
 internal class WidgetLyricsPainter(context: Context) {
     private val bold: Typeface = ResourcesCompat.getFont(context, R.font.lyrics_bold) ?: Typeface.DEFAULT_BOLD
