@@ -121,7 +121,7 @@ internal class ScrollManager(
     ) {
         val now = monotonicNowMs()
         val top = topY
-        val bottom = -totalContentHeight.coerceAtLeast(0f)
+        val bottom = bottomY(totalContentHeight)
         var y = animScrollY
 
         if (targetY == null && snapNext) {
@@ -204,10 +204,16 @@ internal class ScrollManager(
         if (dtSec > 0) velocity = velocity * 0.4f + (dy / dtSec) * 0.6f
         lastDragTimeMs = now
         lastUserMoveMs = now
-        val bottom = -totalContentHeight.coerceAtLeast(0f)
+        val bottom = bottomY(totalContentHeight)
         val outside = animScrollY > topY || animScrollY < bottom
         animScrollY += if (outside) dy * 0.5f else dy
     }
+
+    /**
+     * The lowest the view scrolls: the content's end, but never above [topY]. Lyrics shorter
+     * than a raised top (a single line) just rest at the top.
+     */
+    private fun bottomY(totalContentHeight: Float) = minOf(-totalContentHeight.coerceAtLeast(0f), topY)
 
     fun onDragEnd() {
         isUserScrolling = false

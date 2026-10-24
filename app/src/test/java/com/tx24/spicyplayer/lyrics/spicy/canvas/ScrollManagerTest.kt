@@ -46,6 +46,22 @@ class ScrollManagerTest {
         assertEquals(-900f, scroll.animScrollY, 0.01f)
     }
 
+    @Test fun lyricsShorterThanARaisedTopRestAtTheTop() {
+        // The crash: one ~92px line under a top raised to -156px made the scroll range empty.
+        scroll.topY = -156f
+        repeat(120) {
+            now += 16
+            scroll.updateScroll(1f / 60f, 92f, 0, -40f, targetVisiblePx = 92f)
+        }
+        assertEquals(-156f, scroll.animScrollY, 0.01f)
+        drag(-300f)
+        repeat(120) {
+            now += 16
+            scroll.updateScroll(1f / 60f, 92f, 0, -40f, targetVisiblePx = 92f)
+        }
+        assertTrue(scroll.animScrollY.isFinite())
+    }
+
     @Test fun aLineChangeGlidesFrontLoadedLikeDesktopChromium() {
         frames(0.1f, 0, 0f)
         // 400px: sqrt(400) = 20 frames. cubic-bezier(0.4, 0, 0, 1) covers ~86% of it by the
