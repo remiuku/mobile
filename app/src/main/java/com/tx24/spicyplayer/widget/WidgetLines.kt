@@ -17,13 +17,18 @@ internal data class WidgetLines(
     val after: List<Lead>,
     val changesAtMs: Long?,
 ) {
-    /** One lead line as the widget writes it, with its romanization and the source's translation. */
+    /**
+     * One lead line as the widget writes it, with its romanization, the source's translation, its
+     * background vocals, and whether a duet partner sings it from the other side.
+     */
     data class Lead(
         val startMs: Long,
         val endMs: Long,
         val text: String,
         val romanized: String? = null,
         val translation: String? = null,
+        val background: String? = null,
+        val oppositeAligned: Boolean = false,
     )
 
     companion object {
@@ -37,12 +42,27 @@ internal data class WidgetLines(
         fun notice(text: String): WidgetLines = WidgetLines(emptyList(), Lead(0L, 0L, text), emptyList(), null)
 
         /**
-         * The lead lines of [lines] as text: background vocals and interludes left out, and the
-         * words spaced as the lyrics view spaces them (a space before each word not [TimedWord.attached]).
+         * The lead lines of [lines] as text, the words spaced as the lyrics view spaces them (a space
+         * before each word not [TimedWord.attached]). Background vocals go with their lead line (by
+         * group, else the lead before them), in brackets; interludes are left out.
          */
-        fun leads(lines: List<TimedLine>): List<Lead> = lines
-            .filter { it.role == LineRole.LEAD }
-            .map { line ->
+        fun leads(lines: List<TimedLine>): List<Lead> {
+            val leadLines = ArrayList<TimedLine>()
+            val backing = ArrayList<MutableList<String>>()
+            for (line in lines) when (line.role) {
+                LineRole.LEAD -> {
+                    leadLines += line
+                    backing += mutableListOf<String>()
+                }
+                LineRole.BACKGROUND -> {
+                    val grouped = line.groupId?.let { id -> leadLines.indexOfLast { it.groupId == id } } ?: -1
+                    val owner = if (grouped >= 0) grouped else leadLines.lastIndex
+                    val text = joined(line.words) { it.text }
+                    if (owner >= 0 && text.isNotEmpty()) backing[owner] += text
+                }
+                else -> Unit
+            }
+            return leadLines.mapIndexed { index, line ->
                 val romanized = line.words.takeIf { words -> words.any { !it.romanized.isNullOrBlank() } }
                     ?.let { words -> joined(words) { it.romanized ?: it.text } }?.takeIf { it.isNotEmpty() }
                 Lead(
@@ -51,9 +71,11 @@ internal data class WidgetLines(
                     joined(line.words) { it.text },
                     romanized,
                     line.translation?.tidy()?.takeIf { it.isNotEmpty() },
+                    backing[index].takeIf { it.isNotEmpty() }?.joinToString(" ")?.let { if (it.startsWith("(")) it else "($it)" },
+                    line.oppositeAligned,
                 )
-            }
-            .filter { it.text.isNotEmpty() || it.romanized != null }
+            }.filter { it.text.isNotEmpty() || it.romanized != null }
+        }
 
         /**
          * [words] as one line of their [part]s. Empty parts (the text half of a word split from its

@@ -28,7 +28,7 @@ internal data class WidgetSettings(
     }
 
     enum class Background(val label: String) {
-        BLURRED_COVER("Blurred cover"),
+        BLURRED_COVER("Spicy background"),
         COVER_COLOR("Cover colour"),
         BLACK("Black"),
         CLEAR("See-through"),

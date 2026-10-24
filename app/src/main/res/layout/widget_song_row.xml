@@ -28,8 +28,8 @@
             android:ellipsize="end"
             android:maxLines="1"
             android:textColor="#FFFFFFFF"
-            android:textSize="15sp"
-            android:textStyle="bold" />
+            android:fontFamily="@font/lyrics_bold"
+            android:textSize="15sp" />
 
         <TextView
             android:id="@+id/widget_artist"
@@ -37,6 +37,7 @@
             android:layout_height="wrap_content"
             android:ellipsize="end"
             android:maxLines="1"
+            android:fontFamily="@font/lyrics_medium"
             android:textColor="#B3FFFFFF"
             android:textSize="12sp" />
     </LinearLayout>

@@ -7,10 +7,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
-import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.Paint
-import android.graphics.Rect
 import android.os.SystemClock
 import android.util.TypedValue
 import android.view.Gravity
@@ -38,8 +35,8 @@ class LyricsWidget : AppWidgetProvider() {
         val provider: String?,
         /** The cover, small and rounded, for the song row. */
         val cover: Bitmap?,
-        /** The cover shrunk to a few pixels, drawn back up for the blurred background. */
-        val sample: Bitmap?,
+        /** A still frame of the app's background for this cover ([KawarpSnapshot]). */
+        val backdrop: Bitmap?,
         val colors: CoverColors?,
     )
 
@@ -72,7 +69,6 @@ class LyricsWidget : AppWidgetProvider() {
         private const val ACTION_NEXT = "com.tx24.spicyplayer.widget.NEXT"
         /** The background without a cover: the app's near-black. */
         const val DEFAULT_ACCENT = 0xFF121212.toInt()
-        private const val BACKDROP_PX = 96
         private const val PROGRESS_MAX = 1_000
 
         private val lineSlots = listOf(
@@ -120,7 +116,7 @@ class LyricsWidget : AppWidgetProvider() {
         fun views(context: Context, content: Content, chosen: WidgetSettings, full: Boolean, heightDp: Int?): RemoteViews {
             val lines = content.lines
             val notes = (lines.before + lines.current + lines.after).any { lead ->
-                (chosen.romanization && lead.romanized != null) || (chosen.translation && lead.translation != null)
+                lead.background != null || (chosen.romanization && lead.romanized != null) || (chosen.translation && lead.translation != null)
             }
             val fit = WidgetFit.of(chosen, heightDp, notes)
             val settings = fit.settings
@@ -181,13 +177,19 @@ class LyricsWidget : AppWidgetProvider() {
             val before = lines.before.takeLast(settings.around)
             val after = lines.after.take(settings.around)
             val shown = listOf(before.getOrNull(before.size - 2), before.lastOrNull(), lines.current, after.getOrNull(0), after.getOrNull(1))
-            val gravity = if (settings.centered) Gravity.CENTER_HORIZONTAL else Gravity.START
             lineSlots.forEachIndexed { slot, (lineId, noteId) ->
                 val lead = shown[slot]
+                // A duet partner's lines lean the other way, as in the lyrics view.
+                val gravity = when {
+                    settings.centered -> Gravity.CENTER_HORIZONTAL
+                    lead?.oppositeAligned == true -> Gravity.END
+                    else -> Gravity.START
+                }
                 val current = slot == 2
                 // A line the source wrote only romanized shows that as its text.
                 val text = lead?.text?.ifEmpty { lead.romanized.orEmpty() }.orEmpty()
                 val note = listOfNotNull(
+                    lead?.background,
                     lead?.romanized?.takeIf { settings.romanization && lead.text.isNotEmpty() },
                     lead?.translation?.takeIf { settings.translation },
                 ).joinToString("\n")
@@ -214,19 +216,11 @@ class LyricsWidget : AppWidgetProvider() {
                 WidgetSettings.Background.CLEAR -> Color.TRANSPARENT
             }
             views.setInt(R.id.widget_backdrop, "setBackgroundColor", color)
-            val blurred = content.sample?.takeIf { settings.background == WidgetSettings.Background.BLURRED_COVER }
-            if (blurred != null) views.setImageViewBitmap(R.id.widget_backdrop, blurredCover(blurred, shade, dim))
+            val backdrop = content.backdrop?.takeIf { settings.background == WidgetSettings.Background.BLURRED_COVER }
+            if (backdrop != null) views.setImageViewBitmap(R.id.widget_backdrop, backdrop)
             else views.setImageViewResource(R.id.widget_backdrop, android.R.color.transparent)
-        }
-
-        /** [sample] drawn back up smoothed, which reads as a heavy blur, under a veil of [shade] [dim] strong. */
-        private fun blurredCover(sample: Bitmap, shade: Int, dim: Float): Bitmap {
-            val out = Bitmap.createBitmap(BACKDROP_PX, BACKDROP_PX, Bitmap.Config.ARGB_8888)
-            Canvas(out).apply {
-                drawBitmap(sample, null, Rect(0, 0, BACKDROP_PX, BACKDROP_PX), Paint(Paint.FILTER_BITMAP_FLAG))
-                drawColor(ColorUtils.setAlphaComponent(shade, (dim * 255).toInt().coerceIn(0, 255)))
-            }
-            return out
+            // Dimmed under a black veil (the filter draws over the picture, keeping its shape).
+            views.setInt(R.id.widget_backdrop, "setColorFilter", if (backdrop != null) ColorUtils.setAlphaComponent(Color.BLACK, (dim * 255).toInt().coerceIn(0, 255)) else Color.TRANSPARENT)
         }
 
         private fun broadcast(context: Context, action: String, requestCode: Int): PendingIntent =

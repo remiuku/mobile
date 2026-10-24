@@ -24,8 +24,22 @@ class WidgetLinesTest {
     private fun WidgetLines.texts() = Triple(before.map { it.text }, current.text, after.map { it.text })
 
     @Test
-    fun `background vocals are left out and words are spaced`() {
+    fun `background vocals go with their lead line and words are spaced`() {
         assertEquals(listOf("Hello world", "Second", "Third", "After the break"), leads.map { it.text })
+        assertEquals(listOf("(echo)", null, null, null), leads.map { it.background })
+    }
+
+    @Test
+    fun `background vocals find their lead by group and get brackets`() {
+        val grouped = WidgetLines.leads(
+            listOf(
+                TimedLine(0, 1_000, listOf(TimedWord("One", 0, 1_000, attached = false)), groupId = 1),
+                TimedLine(1_000, 2_000, listOf(TimedWord("Two", 1_000, 2_000, attached = false)), groupId = 2, oppositeAligned = true),
+                TimedLine(500, 900, listOf(TimedWord("ooh", 500, 900, attached = false)), role = LineRole.BACKGROUND, groupId = 1),
+            ),
+        )
+        assertEquals(listOf("(ooh)", null), grouped.map { it.background })
+        assertEquals(listOf(false, true), grouped.map { it.oppositeAligned })
     }
 
     @Test

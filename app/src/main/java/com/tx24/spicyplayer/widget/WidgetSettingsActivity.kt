@@ -202,6 +202,6 @@ private val SAMPLE = LyricsWidget.Content(
     durationMs = 181_000L,
     provider = "Spicy Lyrics",
     cover = null,
-    sample = null,
+    backdrop = null,
     colors = null,
 )

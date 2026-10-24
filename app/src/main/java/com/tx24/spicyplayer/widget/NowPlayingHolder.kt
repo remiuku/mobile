@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.graphics.Bitmap
+import com.tx24.spicyplayer.lyrics.spicy.canvas.kawarp.KawarpSnapshot
 import android.graphics.BitmapShader
 import android.graphics.Canvas
 import android.graphics.Paint
@@ -96,7 +97,7 @@ internal object NowPlayingHolder {
     /** Shown in place of lyrics while there are none. */
     private var notice: String? = WAITING
     private var art: Bitmap? = null
-    private var sample: Bitmap? = null
+    private var backdrop: Bitmap? = null
     private var cover: Bitmap? = null
     private var colors: CoverColors? = null
     /** Whether any placed widget shows romanization, and any the progress bar ([LyricsWidget.wants]). */
@@ -379,14 +380,14 @@ internal object NowPlayingHolder {
             ?: metadata.getBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON)
         if (picture === art) return false
         art = picture
-        sample = null
+        backdrop = null
         cover = null
         colors = null
         if (picture != null) runCatching { readCover(picture) }
         return true
     }
 
-    /** The cover shrunk to [SAMPLE_PX] (for the colours and the blurred background) and to a rounded thumbnail. */
+    /** The cover's colours (from it shrunk to [SAMPLE_PX]), a still of the background, and a rounded thumbnail. */
     private fun readCover(picture: Bitmap) {
         val hardware = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && picture.config == Bitmap.Config.HARDWARE
         val readable = if (hardware) picture.copy(Bitmap.Config.ARGB_8888, false) else picture
@@ -394,7 +395,7 @@ internal object NowPlayingHolder {
         val pixels = IntArray(SAMPLE_PX * SAMPLE_PX)
         small.getPixels(pixels, 0, SAMPLE_PX, 0, 0, SAMPLE_PX, SAMPLE_PX)
         colors = CoverColors.of(pixels)
-        sample = small
+        backdrop = runCatching { KawarpSnapshot.render(readable) }.getOrNull()
         val thumb = Bitmap.createBitmap(COVER_PX, COVER_PX, Bitmap.Config.ARGB_8888)
         Canvas(thumb).apply {
             val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
@@ -437,7 +438,7 @@ internal object NowPlayingHolder {
                 durationMs = durationMs,
                 provider = provider.takeIf { notice == null },
                 cover = cover,
-                sample = sample,
+                backdrop = backdrop,
                 colors = colors,
             )
             last = content

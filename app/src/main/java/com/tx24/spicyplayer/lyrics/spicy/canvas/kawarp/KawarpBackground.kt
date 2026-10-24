@@ -53,7 +53,7 @@ import kotlin.math.roundToInt
  * `saturate(2.5) brightness(0.65)` filter over the whole canvas — composed in one shader since blend/warp/output are
  * pure functions of uv and the CSS filter is just a final per-pixel color transform.
  */
-private const val KAWARP_FUSED_AGSL = """
+internal const val KAWARP_FUSED_AGSL = """
 uniform float2 uResolution;
 uniform float uTime;
 uniform float uBlend;
@@ -168,7 +168,7 @@ half4 main(float2 fragCoord) {
 """
 
 /** The background's Kawarp options. */
-private val SPICY_OPTIONS = KawarpOptions(
+internal val SPICY_OPTIONS = KawarpOptions(
     warpIntensity = 1f,
     blurPasses = 8,
     animationSpeed = 0.1f,
@@ -189,7 +189,7 @@ private const val KAWARP_TRANSITION_DURATION_MS = 1000f
  */
 @SuppressLint("HalfFloat")
 @RequiresApi(Build.VERSION_CODES.O)
-private fun floatsToF16Bitmap(pixels: FloatArray, size: Int): Bitmap {
+internal fun floatsToF16Bitmap(pixels: FloatArray, size: Int): Bitmap {
     val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.RGBA_F16, true,
         ColorSpace.get(ColorSpace.Named.EXTENDED_SRGB))
     val bytes = ByteBuffer.allocate(size * size * 8).order(ByteOrder.nativeOrder())
@@ -205,7 +205,7 @@ private fun floatsToF16Bitmap(pixels: FloatArray, size: Int): Bitmap {
     return bmp
 }
 
-private fun bitmapToFloats(src: Bitmap): Triple<FloatArray, Int, Int> {
+internal fun bitmapToFloats(src: Bitmap): Triple<FloatArray, Int, Int> {
     val w = src.width; val h = src.height
     val ints = IntArray(w * h)
     src.getPixels(ints, 0, w, 0, 0, w, h)
@@ -513,8 +513,8 @@ private const val VIDEO_LOG_TAG = "KawarpVideo"
 private const val VIDEO_LOG_EVERY = 60
 
 /** An unsized WebGL canvas's default 300x150 backbuffer. */
-private const val CANVAS_WIDTH = 300
-private const val CANVAS_HEIGHT = 150
+internal const val CANVAS_WIDTH = 300
+internal const val CANVAS_HEIGHT = 150
 
 /** Paused, the background redraws about this often (20 fps). */
 private const val PAUSED_FRAME_MS = 50L

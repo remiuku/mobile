@@ -12,8 +12,7 @@
         style="@style/WidgetLyricLine"
         android:maxLines="2"
         android:textColor="#59FFFFFF"
-        android:textSize="15sp"
-        android:textStyle="bold" />
+        android:textSize="15sp" />
 
     <TextView
         android:id="@+id/widget_note_b2"
@@ -25,8 +24,7 @@
         style="@style/WidgetLyricLine"
         android:maxLines="2"
         android:textColor="#73FFFFFF"
-        android:textSize="15sp"
-        android:textStyle="bold" />
+        android:textSize="15sp" />
 
     <TextView
         android:id="@+id/widget_note_b1"
@@ -35,13 +33,12 @@
 
     <TextView
         android:id="@+id/widget_line_now"
-        style="@style/WidgetLyricLine"
+        style="@style/WidgetLyricLine.Current"
         android:text="@string/widget_waiting"
         android:visibility="visible"
         android:maxLines="3"
         android:textColor="#FFFFFFFF"
-        android:textSize="21sp"
-        android:textStyle="bold" />
+        android:textSize="21sp" />
 
     <TextView
         android:id="@+id/widget_note_now"
@@ -53,8 +50,7 @@
         style="@style/WidgetLyricLine"
         android:maxLines="2"
         android:textColor="#73FFFFFF"
-        android:textSize="15sp"
-        android:textStyle="bold" />
+        android:textSize="15sp" />
 
     <TextView
         android:id="@+id/widget_note_a1"
@@ -66,8 +62,7 @@
         style="@style/WidgetLyricLine"
         android:maxLines="2"
         android:textColor="#59FFFFFF"
-        android:textSize="15sp"
-        android:textStyle="bold" />
+        android:textSize="15sp" />
 
     <TextView
         android:id="@+id/widget_note_a2"
