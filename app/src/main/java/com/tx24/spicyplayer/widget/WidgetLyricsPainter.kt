@@ -52,8 +52,16 @@ internal class WidgetLyricsPainter(context: Context) {
         val before = lines.before.takeLast(settings.around)
         val after = lines.after.take(settings.around)
 
+        // Everything shrinks together, up to [MIN_SCALE], for one row of the current line and of
+        // each line around it to fit. It goes by the widget's size and settings alone, so the text
+        // keeps its size from one line to the next. Laid out that much wider, the lines still
+        // reach both edges once scaled, and keep their alignment.
+        val scale = fitScale(settings, heightPx, density)
+        val layoutWidth = (widthPx / scale).toInt().coerceAtLeast(1)
+        val visibleHeight = heightPx / scale
+
         val active = (listOf(lines.current) + lines.concurrent).map {
-            block(it, Role.CURRENT, settings, style, widthPx, density, lines.dots)
+            block(it, Role.CURRENT, settings, style, layoutWidth, density, lines.dots)
         }
         val current = Block(active.sumOf { it.height.toDouble() }.toFloat() + gap * (active.size - 1)) { target ->
             var y = 0f
@@ -62,25 +70,20 @@ internal class WidgetLyricsPainter(context: Context) {
                 y += block.height + gap
             }
         }
-        val above = before.reversed().mapIndexed { i, lead -> block(lead, if (i == 0) Role.NEAR else Role.FAR, settings, style, widthPx, density) }
-        val below = after.mapIndexed { i, lead -> block(lead, if (i == 0) Role.NEAR else Role.FAR, settings, style, widthPx, density) }
+        val above = before.reversed().mapIndexed { i, lead -> block(lead, if (i == 0) Role.NEAR else Role.FAR, settings, style, layoutWidth, density) }
+        val below = after.mapIndexed { i, lead -> block(lead, if (i == 0) Role.NEAR else Role.FAR, settings, style, layoutWidth, density) }
 
-        // Make room for nearby lyrics before fading the edges. Fitting depends on measured
-        // rows, including overlapping vocals, rather than removing settings for this line.
-        val desiredHeight = current.height + above.sumOf { (it.height + gap).toDouble() }.toFloat() +
-            below.sumOf { (it.height + gap).toDouble() }.toFloat()
-        val scale = (heightPx / desiredHeight).coerceIn(0.65f, 1f)
-            .coerceAtMost(heightPx / current.height)
-        val visibleHeight = heightPx / scale
-        val top = (visibleHeight - current.height) / 2f
-        canvas.save()
-        canvas.translate(widthPx * (1f - scale) / 2f, 0f)
         canvas.scale(scale, scale)
+        // Lines that don't fit give way to the current one, which never clips: too tall on its
+        // own, it shrinks further to fit.
+        val squeeze = (visibleHeight / current.height).coerceAtMost(1f)
+        val top = (visibleHeight - current.height * squeeze) / 2f
         canvas.save()
         canvas.translate(0f, top)
+        canvas.scale(squeeze, squeeze)
         current.draw(canvas)
         canvas.restore()
-        run {
+        if (squeeze == 1f) {
             var y = top
             for (block in above) {
                 y -= gap + block.height
@@ -94,10 +97,23 @@ internal class WidgetLyricsPainter(context: Context) {
                 canvas.save(); canvas.translate(0f, y); block.draw(canvas); canvas.restore()
                 y += block.height
             }
+            fadeEdges(canvas, bleed / scale, layoutWidth, visibleHeight, (visibleHeight * EDGE_FADE).coerceAtMost(top))
         }
-        canvas.restore()
-        fadeEdges(canvas, bleed, widthPx, heightPx, (heightPx * EDGE_FADE).coerceAtMost(top * scale))
         return bitmap
+    }
+
+    /** How much the lyrics shrink in an area [heightPx] tall: [MIN_SCALE] to 1, by [settings] alone. */
+    private fun fitScale(settings: WidgetSettings, heightPx: Int, density: Float): Float {
+        val gap = LINE_GAP_DP * density
+        val wanted = rowPx(settings.textSize.currentSp * density) +
+            settings.around * 2 * (rowPx(settings.textSize.aroundSp * density) + gap)
+        return (heightPx / wanted).coerceIn(MIN_SCALE, 1f)
+    }
+
+    /** One row of the lyrics font at [sizePx], as [layout] spaces it. */
+    private fun rowPx(sizePx: Float): Float {
+        val metrics = TextPaint().apply { typeface = bold; textSize = sizePx }.fontMetrics
+        return (metrics.descent - metrics.ascent) * LINE_SPACING
     }
 
     private enum class Role(val alpha: Float) { CURRENT(1f), NEAR(0.45f), FAR(0.28f) }
@@ -191,17 +207,17 @@ internal class WidgetLyricsPainter(context: Context) {
     }
 
     /** Fades the picture out over [fadePx] at its top and bottom, as the lyrics view's edge mask does. */
-    private fun fadeEdges(canvas: Canvas, bleed: Int, width: Int, height: Int, fadePx: Float) {
+    private fun fadeEdges(canvas: Canvas, bleed: Float, width: Int, height: Float, fadePx: Float) {
         if (fadePx <= 1f) return
         val mask = Paint().apply { xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_IN) }
         val top = fadePx / height
         mask.shader = LinearGradient(
-            0f, 0f, 0f, height.toFloat(),
+            0f, 0f, 0f, height,
             intArrayOf(Color.TRANSPARENT, Color.BLACK, Color.BLACK, Color.TRANSPARENT),
             floatArrayOf(0f, top, 1f - top, 1f),
             Shader.TileMode.CLAMP,
         )
-        canvas.drawRect(-bleed.toFloat(), 0f, (width + bleed).toFloat(), height.toFloat(), mask)
+        canvas.drawRect(-bleed, 0f, width + bleed, height, mask)
     }
 
     companion object {
@@ -210,6 +226,8 @@ internal class WidgetLyricsPainter(context: Context) {
         private const val LINE_GAP_DP = 6f
         private const val NOTE_GAP_DP = 2f
         private const val LINE_SPACING = 1.08f
+        /** The smallest the lyrics shrink to fit the lines around the current one. */
+        private const val MIN_SCALE = 0.65f
         private const val MAX_CURRENT_LINES = 3
         private const val MAX_AROUND_LINES = 2
         /** Background vocals, against their lead line: the lyrics view's size, dimmer. */

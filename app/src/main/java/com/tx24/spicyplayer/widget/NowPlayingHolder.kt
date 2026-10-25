@@ -1,10 +1,12 @@
 package com.tx24.spicyplayer.widget
 
 import android.content.BroadcastReceiver
+import android.content.ComponentCallbacks
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.res.Configuration
 import android.graphics.Bitmap
 import com.tx24.spicyplayer.lyrics.spicy.canvas.kawarp.KawarpSnapshot
 import com.tx24.spicyplayer.lyrics.spicy.models.LyricsCredit
@@ -139,6 +141,20 @@ internal object NowPlayingHolder {
 
     private val tick = Runnable { refreshSessions() }
 
+    private var orientation = Configuration.ORIENTATION_UNDEFINED
+
+    /** Turned: each widget is drawn again for its size this way round ([LyricsWidget.sizeDp]). */
+    private val configCallbacks = object : ComponentCallbacks {
+        override fun onConfigurationChanged(config: Configuration) {
+            if (config.orientation == orientation) return
+            orientation = config.orientation
+            show(full = true)
+        }
+
+        @Deprecated("Deprecated in Java")
+        override fun onLowMemory() = Unit
+    }
+
     val running: Boolean get() = scope != null
 
     /**
@@ -163,6 +179,8 @@ internal object NowPlayingHolder {
         screenOn = app.getSystemService(PowerManager::class.java)?.isInteractive ?: true
         val screen = IntentFilter(Intent.ACTION_SCREEN_ON).apply { addAction(Intent.ACTION_SCREEN_OFF) }
         ContextCompat.registerReceiver(app, screenReceiver, screen, ContextCompat.RECEIVER_NOT_EXPORTED)
+        orientation = app.resources.configuration.orientation
+        app.registerComponentCallbacks(configCallbacks)
         val manager = app.getSystemService(MediaSessionManager::class.java)
         val listener = ComponentName(app, SessionAccessService::class.java)
         runCatching {
@@ -181,6 +199,7 @@ internal object NowPlayingHolder {
         val app = context ?: return
         main.removeCallbacks(tick)
         runCatching { app.unregisterReceiver(screenReceiver) }
+        app.unregisterComponentCallbacks(configCallbacks)
         runCatching { sessionManager?.removeOnActiveSessionsChangedListener(sessionsListener) }
         controller?.unregisterCallback(controllerCallback)
         observedSessions.forEach { (token, session) -> observedCallbacks[token]?.let(session::unregisterCallback) }
@@ -328,9 +347,9 @@ internal object NowPlayingHolder {
             take(lyrics)
             return
         }
-        // A widget may be created while the app is already showing this song. Its state
-        // flow won't emit those lyrics again, so never wait indefinitely for an offer.
-        lookUpSong()
+        // While the lyrics screen is up it offers its own lyrics, kept even from before a widget
+        // was placed ([offer]), so looking up here would only ask the sources twice.
+        if (!appShowing) lookUpSong()
     }
 
     private fun lookUpSong() {
@@ -486,13 +505,8 @@ internal object NowPlayingHolder {
             last = content
             LyricsWidget.show(app, content, full)
         }
-        if (!screenOn) return
-        // Also recover missed session callbacks while a paused source is followed. No work
-        // is scheduled with the screen off, and notification callbacks still wake us.
-        if (!playing) {
-            main.postDelayed(tick, MAX_SLEEP_MS)
-            return
-        }
+        // Paused, every player's own callbacks wake it again ([follow]).
+        if (!screenOn || !playing) return
         val speed = clock.anchor.speed.takeIf { it > 0f } ?: 1f
         val toLine = lines.changesAtMs?.let { ((it - position) / speed).toLong() }
         val wait = listOfNotNull(toLine, PROGRESS_STEP_MS.takeIf { wantsProgress }).minOrNull() ?: MAX_SLEEP_MS

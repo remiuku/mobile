@@ -139,6 +139,14 @@ class WidgetLinesTest {
     }
 
     @Test
+    fun `a line that only runs into the next is not shown with it`() {
+        val lines = WidgetLines.leads(listOf(line(0, 2_200, "First"), line(2_000, 4_000, "Second")))
+        val shown = WidgetLines.at(lines, 2_100)
+        assertEquals("Second", shown.current.text)
+        assertTrue(shown.concurrent.isEmpty())
+    }
+
+    @Test
     fun `same-start leads are both active and expired lines are excluded`() {
         val duet = WidgetLines.leads(listOf(line(0, 5_000, "First"), line(0, 3_000, "Second")))
         assertEquals(listOf("Second"), WidgetLines.at(duet, 1_000).concurrent.map { it.text })

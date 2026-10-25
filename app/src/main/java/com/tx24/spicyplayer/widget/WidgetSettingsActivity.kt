@@ -61,9 +61,7 @@ class WidgetSettingsActivity : ComponentActivity() {
         setResult(RESULT_OK, Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id))
         val store = WidgetSettingsStore(this)
         val options = AppWidgetManager.getInstance(this).getAppWidgetOptions(id)
-        val heightDp = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT).takeIf { it > 0 }
-            ?: options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT).takeIf { it > 0 }
-            ?: PREVIEW_HEIGHT_DP
+        val heightDp = LyricsWidget.sizeDp(this, options).second ?: PREVIEW_HEIGHT_DP
         enableEdgeToEdge()
         setContent {
             var settings by remember { mutableStateOf(store.read(id)) }

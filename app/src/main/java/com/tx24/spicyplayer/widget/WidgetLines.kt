@@ -43,6 +43,8 @@ internal data class WidgetLines(
         const val MAX_AROUND = 2
         /** Between two lines at least this far apart the widget shows a break instead of the line just sung. */
         const val BREAK_GAP_MS = 3_000L
+        /** How long two lead lines must be sung at once to show together. */
+        const val MIN_OVERLAP_MS = 500L
         /** A break's text, for whatever can't draw its dots. */
         const val BREAK = "• • •"
 
@@ -114,7 +116,12 @@ internal data class WidgetLines(
             if (index < 0) return if (leads[0].startMs >= BREAK_GAP_MS) {
                 interlude(emptyList(), 0L, leads[0], leads.take(MAX_AROUND), positionMs)
             } else WidgetLines(emptyList(), leads[0], leads.drop(1).take(MAX_AROUND), leads[0].startMs)
-            val active = leads.take(index + 1).filter { positionMs < it.endMs }
+            // A line still being sung stays up beside a later one only if it outlasts that one's
+            // start by [MIN_OVERLAP_MS]: lines that just run into the next aren't sung together.
+            val latest = leads[index]
+            val active = leads.take(index + 1).filter { lead ->
+                positionMs < lead.endMs && (lead === latest || lead.endMs - latest.startMs >= MIN_OVERLAP_MS)
+            }
             if (active.isNotEmpty()) {
                 val first = leads.indexOf(active.first())
                 val nextChange = (active.map { it.endMs } + leads.drop(index + 1).map { it.startMs }).minOrNull()
