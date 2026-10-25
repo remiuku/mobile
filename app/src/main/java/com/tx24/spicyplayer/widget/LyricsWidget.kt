@@ -126,11 +126,7 @@ class LyricsWidget : AppWidgetProvider() {
             widthDp: Int? = null,
             id: Int? = null,
         ): RemoteViews {
-            val lines = content.lines
-            val notes = (lines.before + lines.current + lines.after).any { lead ->
-                lead.background != null || (chosen.romanization && lead.romanized != null) || (chosen.translation && lead.translation != null)
-            }
-            val fit = WidgetFit.of(chosen, heightDp, notes)
+            val fit = WidgetFit.of(chosen, heightDp)
             val settings = fit.settings
             // By the chosen place, not the fitted one: a partial update must name the layout it updates.
             val layout = if (chosen.songInfo == WidgetSettings.SongInfo.TOP) R.layout.widget_lyrics_top else R.layout.widget_lyrics
@@ -173,7 +169,9 @@ class LyricsWidget : AppWidgetProvider() {
             if (content.cover != null) views.setImageViewBitmap(R.id.widget_cover, content.cover)
             else views.setImageViewResource(R.id.widget_cover, R.drawable.widget_cover_placeholder)
 
-            val open = Intent(context, LyricsActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            val open = Intent(context, LyricsActivity::class.java).addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP,
+            )
             views.setOnClickPendingIntent(
                 R.id.widget_root,
                 PendingIntent.getActivity(context, 0, open, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE),
@@ -205,7 +203,9 @@ class LyricsWidget : AppWidgetProvider() {
             if (!full && id != null && painted[id] == key) return
             val painter = painter ?: WidgetLyricsPainter(context.applicationContext).also { painter = it }
             views.setImageViewBitmap(R.id.widget_lyrics_image, painter.paint(content.lines, settings, style, areaWidthPx, areaHeightPx, density))
-            views.setContentDescription(R.id.widget_lyrics_image, content.lines.current.text.takeUnless { content.lines.current.interlude })
+            views.setContentDescription(R.id.widget_lyrics_image,
+                (listOf(content.lines.current) + content.lines.concurrent).joinToString("\n") { it.text }
+                    .takeUnless { content.lines.current.interlude })
             if (id != null) painted[id] = key
         }
 

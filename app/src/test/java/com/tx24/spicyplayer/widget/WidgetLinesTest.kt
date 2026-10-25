@@ -72,12 +72,13 @@ class WidgetLinesTest {
 
     @Test
     fun `before the first line the break shows with the first lines after it`() {
-        val shown = WidgetLines.at(leads, 0)
+        val intro = leads.map { it.copy(startMs = it.startMs + 4_000, endMs = it.endMs + 4_000) }
+        val shown = WidgetLines.at(intro, 0)
         assertEquals(Triple(emptyList<String>(), WidgetLines.BREAK, listOf("Hello world", "Second")), shown.texts())
         assertTrue(shown.current.interlude)
         // No dot is lit as the break starts; the next change is the first one finishing.
         assertEquals(0, shown.dots)
-        assertTrue(shown.changesAtMs!! in 1..999)
+        assertTrue(shown.changesAtMs!! in 1..4_999)
     }
 
     @Test
@@ -107,8 +108,66 @@ class WidgetLinesTest {
     }
 
     @Test
-    fun `unsynced lyrics start at the first line`() {
+    fun `unsynced lyrics show an explicit notice instead of freezing on the first lines`() {
         val shown = WidgetLines.unsynced(leads)
-        assertEquals(Triple(emptyList<String>(), "Hello world", listOf("Second", "Third", "After the break")), shown.texts())
+        assertTrue(shown.current.text.startsWith("Unsynced lyrics"))
+        assertTrue(shown.before.isEmpty() && shown.after.isEmpty())
+        assertNull(shown.changesAtMs)
+    }
+
+    @Test
+    fun `consecutive backing vocals retain their own rows`() {
+        val grouped = WidgetLines.leads(listOf(
+            line(0, 4_000, "Lead"),
+            line(500, 1_000, "(one)", role = LineRole.BACKGROUND),
+            line(2_000, 3_000, "(two)", role = LineRole.BACKGROUND),
+        ))
+        assertEquals("one\ntwo", grouped.single().background)
+    }
+
+    @Test
+    fun `overlapping leads stay active together even with no surrounding lines`() {
+        val duet = WidgetLines.leads(listOf(line(0, 5_000, "First"), line(2_000, 3_000, "Second"), line(7_000, 8_000, "Next")))
+        val shown = WidgetLines.at(duet, 2_500)
+        assertEquals("First", shown.current.text)
+        assertEquals(listOf("Second"), shown.concurrent.map { it.text })
+        assertEquals(3_000L, shown.changesAtMs)
+        val after = WidgetLines.at(duet, 3_000)
+        assertEquals("First", after.current.text)
+        assertTrue(after.concurrent.isEmpty())
+        assertEquals(5_000L, after.changesAtMs)
+    }
+
+    @Test
+    fun `same-start leads are both active and expired lines are excluded`() {
+        val duet = WidgetLines.leads(listOf(line(0, 5_000, "First"), line(0, 3_000, "Second")))
+        assertEquals(listOf("Second"), WidgetLines.at(duet, 1_000).concurrent.map { it.text })
+        assertTrue(WidgetLines.at(duet, 3_000).concurrent.isEmpty())
+    }
+
+    @Test
+    fun `three second gaps match the normal lyric screen interlude threshold`() {
+        val lines = WidgetLines.leads(listOf(line(0, 1_000, "First"), line(4_000, 5_000, "Next")))
+        assertTrue(WidgetLines.at(lines, 2_000).current.interlude)
+    }
+
+    @Test
+    fun `a short intro does not invent an interlude`() {
+        assertEquals("Hello world", WidgetLines.at(leads, 0).current.text)
+        assertEquals(1_000L, WidgetLines.at(leads, 0).changesAtMs)
+    }
+
+    @Test
+    fun `a shorter overlapping line does not start the interlude early`() {
+        val lines = WidgetLines.leads(listOf(line(0, 5_000, "Long"), line(2_000, 3_000, "Short"), line(9_000, 10_000, "Next")))
+        val gap = WidgetLines.at(lines, 5_500)
+        assertTrue(gap.current.interlude)
+        assertEquals(5_000L, gap.current.startMs)
+    }
+
+    @Test
+    fun `a cut off syllable cannot wrap away from its dash`() {
+        assertEquals("the w\u2060— down", widgetUnbreakableText("the w— down"))
+        assertEquals("hello world", widgetUnbreakableText("hello world"))
     }
 }

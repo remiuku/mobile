@@ -3,6 +3,8 @@ package com.tx24.spicyplayer.widget
 import android.appwidget.AppWidgetManager
 import android.content.Intent
 import android.os.Bundle
+import android.provider.Settings
+import android.net.Uri
 import android.widget.FrameLayout
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -28,6 +30,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -89,6 +92,7 @@ private fun WidgetSettingsScreen(
     onChange: (WidgetSettings) -> Unit,
     onDone: () -> Unit,
 ) {
+    val context = LocalContext.current
     Column(
         Modifier
             .fillMaxSize()
@@ -109,7 +113,7 @@ private fun WidgetSettingsScreen(
             SettingRow("Song info", description = "Cover, title and artist.") {
                 EnumSelect(settings.songInfo, WidgetSettings.SongInfo.entries, { it.label }) { onChange(settings.copy(songInfo = it)) }
             }
-            SettingRow("Lines around the current one") {
+            SettingRow("Lines around the current one", description = "Shown when space allows; resize the widget to see more.") {
                 SpicySelect(
                     value = settings.around.toString(),
                     options = (0..WidgetLines.MAX_AROUND).map(Int::toString),
@@ -148,6 +152,15 @@ private fun WidgetSettingsScreen(
                     unit = "%",
                     enabled = dims,
                 )
+            }
+        }
+
+        SettingsSection("Background updates") {
+            SettingRow("Battery settings", description = "If updates stop, allow unrestricted battery use for this app. This may use more battery.", stacked = true) {
+                SpicyButton("Open battery settings", {
+                    runCatching { context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) }
+                        .onFailure { context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}"))) }
+                })
             }
         }
 

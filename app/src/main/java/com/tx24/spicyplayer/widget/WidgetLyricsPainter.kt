@@ -52,20 +52,35 @@ internal class WidgetLyricsPainter(context: Context) {
         val before = lines.before.takeLast(settings.around)
         val after = lines.after.take(settings.around)
 
-        val current = block(lines.current, Role.CURRENT, settings, style, widthPx, density, lines.dots)
+        val active = (listOf(lines.current) + lines.concurrent).map {
+            block(it, Role.CURRENT, settings, style, widthPx, density, lines.dots)
+        }
+        val current = Block(active.sumOf { it.height.toDouble() }.toFloat() + gap * (active.size - 1)) { target ->
+            var y = 0f
+            for (block in active) {
+                target.save(); target.translate(0f, y); block.draw(target); target.restore()
+                y += block.height + gap
+            }
+        }
         val above = before.reversed().mapIndexed { i, lead -> block(lead, if (i == 0) Role.NEAR else Role.FAR, settings, style, widthPx, density) }
         val below = after.mapIndexed { i, lead -> block(lead, if (i == 0) Role.NEAR else Role.FAR, settings, style, widthPx, density) }
 
-        // Lines that don't fit a short widget give way to the current one, which never clips: too
-        // tall on its own, it shrinks to fit.
-        val scale = (heightPx / current.height).coerceAtMost(1f)
-        val top = (heightPx - current.height * scale) / 2f
+        // Make room for nearby lyrics before fading the edges. Fitting depends on measured
+        // rows, including overlapping vocals, rather than removing settings for this line.
+        val desiredHeight = current.height + above.sumOf { (it.height + gap).toDouble() }.toFloat() +
+            below.sumOf { (it.height + gap).toDouble() }.toFloat()
+        val scale = (heightPx / desiredHeight).coerceIn(0.65f, 1f)
+            .coerceAtMost(heightPx / current.height)
+        val visibleHeight = heightPx / scale
+        val top = (visibleHeight - current.height) / 2f
+        canvas.save()
+        canvas.translate(widthPx * (1f - scale) / 2f, 0f)
+        canvas.scale(scale, scale)
         canvas.save()
         canvas.translate(0f, top)
-        canvas.scale(scale, scale)
         current.draw(canvas)
         canvas.restore()
-        if (scale == 1f) {
+        run {
             var y = top
             for (block in above) {
                 y -= gap + block.height
@@ -75,12 +90,13 @@ internal class WidgetLyricsPainter(context: Context) {
             y = top + current.height
             for (block in below) {
                 y += gap
-                if (y >= heightPx) break
+                if (y >= visibleHeight) break
                 canvas.save(); canvas.translate(0f, y); block.draw(canvas); canvas.restore()
                 y += block.height
             }
-            fadeEdges(canvas, bleed, widthPx, heightPx, (heightPx * EDGE_FADE).coerceAtMost(top))
         }
+        canvas.restore()
+        fadeEdges(canvas, bleed, widthPx, heightPx, (heightPx * EDGE_FADE).coerceAtMost(top * scale))
         return bitmap
     }
 
@@ -118,7 +134,7 @@ internal class WidgetLyricsPainter(context: Context) {
         lead.translation?.takeIf { settings.translation }?.let {
             rows += layout(it, semibold, noteSize, noteAlpha, width, align, 2) to NOTE_GAP_DP * density
         }
-        lead.background?.let {
+        lead.background?.lineSequence()?.forEach {
             rows += layout(it, bold, sizePx * BACKGROUND_SCALE, role.alpha * BACKGROUND_ALPHA, width, align, 2) to NOTE_GAP_DP * density
         }
         val height = rows.sumOf { (layout, gapBefore) -> (layout.height + gapBefore).toDouble() }.toFloat()
@@ -140,7 +156,8 @@ internal class WidgetLyricsPainter(context: Context) {
             if (glow) setShadowLayer(sizePx * GLOW_RADIUS, 0f, 0f, Color.argb(GLOW_ALPHA, 255, 255, 255))
         }
         // The glow spills past the text, so the room it draws in leaves space for it.
-        return StaticLayout.Builder.obtain(text, 0, text.length, paint, width)
+        val unbroken = widgetUnbreakableText(text)
+        return StaticLayout.Builder.obtain(unbroken, 0, unbroken.length, paint, width)
             .setAlignment(align)
             .setBreakStrategy(LineBreaker.BREAK_STRATEGY_BALANCED)
             .setHyphenationFrequency(Layout.HYPHENATION_FREQUENCY_NONE)

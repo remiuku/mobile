@@ -9,30 +9,40 @@ class WidgetFitTest {
 
     @Test
     fun `a tall widget keeps everything`() {
-        val fit = WidgetFit.of(settings, heightDp = 300, notes = true)
+        val fit = WidgetFit.of(settings, heightDp = 300)
         assertEquals(settings, fit.settings)
-        assertEquals(2, fit.currentLines)
+        assertEquals(3, fit.currentLines)
     }
 
     @Test
     fun `an unknown height changes nothing`() {
-        assertEquals(WidgetFit(settings, 3), WidgetFit.of(settings, heightDp = null, notes = true))
+        assertEquals(WidgetFit(settings, 3), WidgetFit.of(settings, heightDp = null))
     }
 
     @Test
-    fun `a short widget keeps only the current line on one line`() {
-        val fit = WidgetFit.of(settings, heightDp = 90, notes = true)
-        assertEquals(0, fit.settings.around)
+    fun `a tiny widget drops chrome and lets the painter fit the lyrics`() {
+        val fit = WidgetFit.of(settings, heightDp = 60)
+        assertEquals(settings.around, fit.settings.around)
         assertEquals(WidgetSettings.SongInfo.HIDDEN, fit.settings.songInfo)
         assertFalse(fit.settings.progress)
-        assertFalse(fit.settings.romanization)
+        assertEquals(settings.romanization, fit.settings.romanization)
         assertEquals(1, fit.currentLines)
     }
 
     @Test
-    fun `the lines around go before the song row`() {
-        val fit = WidgetFit.of(settings.copy(around = 2), heightDp = 200, notes = false)
+    fun `a normal short widget keeps timeline and surrounding lines`() {
+        val fit = WidgetFit.of(settings.copy(around = 2), heightDp = 200)
         assertEquals(WidgetSettings.SongInfo.BOTTOM, fit.settings.songInfo)
-        assertEquals(true, fit.settings.around < 2)
+        assertEquals(2, fit.settings.around)
+        assertEquals(true, fit.settings.progress)
+    }
+
+    @Test
+    fun `changing the number of surrounding lines never hides the timeline`() {
+        for (height in listOf(160, 180, 200, 240, 300)) {
+            for (around in 0..2) {
+                assertEquals(true, WidgetFit.of(settings.copy(around = around), height).settings.progress)
+            }
+        }
     }
 }

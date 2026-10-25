@@ -1,6 +1,8 @@
 package com.tx24.spicyplayer.playback
 
 import android.service.notification.NotificationListenerService
+import android.content.ComponentName
+import android.os.Build
 import com.tx24.spicyplayer.widget.NowPlayingHolder
 
 /**
@@ -10,4 +12,10 @@ import com.tx24.spicyplayer.widget.NowPlayingHolder
  */
 class SessionAccessService : NotificationListenerService() {
     override fun onListenerConnected() = NowPlayingHolder.start(this)
+
+    override fun onListenerDisconnected() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            requestRebind(ComponentName(this, SessionAccessService::class.java))
+        }
+    }
 }

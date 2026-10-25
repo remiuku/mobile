@@ -19,6 +19,8 @@ internal data class WidgetLines(
     val changesAtMs: Long?,
     /** In a break ([Lead.interlude] current): how many of its three dots are done, as the lyrics view fills them. */
     val dots: Int = 0,
+    /** Other lead vocals being sung at the same time as [current]. */
+    val concurrent: List<Lead> = emptyList(),
 ) {
     /**
      * One lead line as the widget writes it, with its romanization, the source's translation, its
@@ -40,7 +42,7 @@ internal data class WidgetLines(
         /** The most lines a widget shows on each side of the current one. */
         const val MAX_AROUND = 2
         /** Between two lines at least this far apart the widget shows a break instead of the line just sung. */
-        const val BREAK_GAP_MS = 4_000L
+        const val BREAK_GAP_MS = 3_000L
         /** A break's text, for whatever can't draw its dots. */
         const val BREAK = "• • •"
 
@@ -78,7 +80,7 @@ internal data class WidgetLines(
                     joined(line.words) { it.text },
                     romanized,
                     line.translation?.tidy()?.takeIf { it.isNotEmpty() },
-                    backing[index].takeIf { it.isNotEmpty() }?.joinToString(" ") { it.unbracketed() },
+                    backing[index].takeIf { it.isNotEmpty() }?.joinToString("\n") { it.unbracketed() },
                     line.oppositeAligned,
                 )
             }.filter { it.text.isNotEmpty() || it.romanized != null }
@@ -99,28 +101,41 @@ internal data class WidgetLines(
             return out.toString().tidy()
         }
 
-        /** Lyrics without timing: the first line as the current one, the next ones after it. */
+        /** A home screen widget cannot scroll through lyrics without timing. */
         fun unsynced(leads: List<Lead>): WidgetLines {
             if (leads.isEmpty()) return notice("")
-            return WidgetLines(emptyList(), leads[0], leads.drop(1).take(MAX_AROUND * 2), null)
+            return notice("Unsynced lyrics — open the app to read them")
         }
 
         /** What shows at [positionMs] of synced [leads] (in time order). */
         fun at(leads: List<Lead>, positionMs: Long): WidgetLines {
             if (leads.isEmpty()) return notice("")
             val index = leads.indexOfLast { it.startMs <= positionMs }
-            if (index < 0) return interlude(emptyList(), 0L, leads[0], leads.take(MAX_AROUND), positionMs)
+            if (index < 0) return if (leads[0].startMs >= BREAK_GAP_MS) {
+                interlude(emptyList(), 0L, leads[0], leads.take(MAX_AROUND), positionMs)
+            } else WidgetLines(emptyList(), leads[0], leads.drop(1).take(MAX_AROUND), leads[0].startMs)
+            val active = leads.take(index + 1).filter { positionMs < it.endMs }
+            if (active.isNotEmpty()) {
+                val first = leads.indexOf(active.first())
+                val nextChange = (active.map { it.endMs } + leads.drop(index + 1).map { it.startMs }).minOrNull()
+                return WidgetLines(
+                    leads.take(first).takeLast(MAX_AROUND), active.first(),
+                    leads.drop(index + 1).take(MAX_AROUND), nextChange,
+                    concurrent = active.drop(1),
+                )
+            }
             val line = leads[index]
+            val gapStart = leads.take(index + 1).maxOf { it.endMs }
             val before = leads.subList((index - MAX_AROUND).coerceAtLeast(0), index)
             val following = leads.getOrNull(index + 1)
                 ?: return WidgetLines(before, line, emptyList(), null)
             val after = leads.subList(index + 1, (index + 1 + MAX_AROUND).coerceAtMost(leads.size))
-            val breakAhead = following.startMs - line.endMs >= BREAK_GAP_MS
+            val breakAhead = following.startMs - gapStart >= BREAK_GAP_MS
             return when {
                 // In a break the line just sung joins the ones above it.
-                breakAhead && positionMs >= line.endMs ->
-                    interlude((before + line).takeLast(MAX_AROUND), line.endMs, following, after, positionMs)
-                breakAhead -> WidgetLines(before, line, after, line.endMs)
+                breakAhead && positionMs >= gapStart ->
+                    interlude((before + line).takeLast(MAX_AROUND), gapStart, following, after, positionMs)
+                breakAhead -> WidgetLines(before, line, after, gapStart)
                 else -> WidgetLines(before, line, after, following.startMs)
             }
         }

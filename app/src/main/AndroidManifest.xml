@@ -33,6 +33,7 @@
         android:theme="@style/Theme.SpicyLyricsMobile">
         <activity
             android:name="com.tx24.spicyplayer.LyricsActivity"
+            android:launchMode="singleTask"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"
             android:supportsPictureInPicture="true"
             android:exported="true" />
