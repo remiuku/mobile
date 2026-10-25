@@ -41,7 +41,7 @@ internal data class WidgetLines(
     companion object {
         /** The most lines a widget shows on each side of the current one. */
         const val MAX_AROUND = 2
-        /** Between two lines at least this far apart the widget shows a break instead of the line just sung. */
+        /** Between two lines at least this far apart the widget shows a break instead of the line just sung, as the lyrics view does. */
         const val BREAK_GAP_MS = 3_000L
         /** How long two lead lines must be sung at once to show together. */
         const val MIN_OVERLAP_MS = 500L
@@ -132,12 +132,14 @@ internal data class WidgetLines(
                 )
             }
             val line = leads[index]
+            // Whether there's a break goes by the line just before, as the lyrics view decides; it
+            // starts once every earlier line is done, so a longer one still sung isn't cut short.
             val gapStart = leads.take(index + 1).maxOf { it.endMs }
             val before = leads.subList((index - MAX_AROUND).coerceAtLeast(0), index)
             val following = leads.getOrNull(index + 1)
                 ?: return WidgetLines(before, line, emptyList(), null)
             val after = leads.subList(index + 1, (index + 1 + MAX_AROUND).coerceAtMost(leads.size))
-            val breakAhead = following.startMs - gapStart >= BREAK_GAP_MS
+            val breakAhead = following.startMs - line.endMs >= BREAK_GAP_MS && following.startMs > gapStart
             return when {
                 // In a break the line just sung joins the ones above it.
                 breakAhead && positionMs >= gapStart ->

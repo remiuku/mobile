@@ -174,6 +174,15 @@ class WidgetLinesTest {
     }
 
     @Test
+    fun `a break goes by the line just before, as the lyrics view decides`() {
+        // 3.5s after "Short", but only 2.5s after "Long": the lyrics view shows the break.
+        val lines = WidgetLines.leads(listOf(line(0, 4_000, "Long"), line(2_000, 3_000, "Short"), line(6_500, 7_500, "Next")))
+        val gap = WidgetLines.at(lines, 4_500)
+        assertTrue(gap.current.interlude)
+        assertEquals(4_000L, gap.current.startMs)
+    }
+
+    @Test
     fun `a cut off syllable cannot wrap away from its dash`() {
         assertEquals("the w\u2060— down", widgetUnbreakableText("the w— down"))
         assertEquals("hello world", widgetUnbreakableText("hello world"))
