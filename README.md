@@ -7,6 +7,7 @@
 **Word-synced lyrics for whatever is playing on your phone.**
 
 [![Latest release](https://img.shields.io/github/v/release/spicylyrics/mobile?include_prereleases&style=for-the-badge&color=8b5cf6&label=release)](https://github.com/spicylyrics/mobile/releases)
+[![GitHub stars](https://img.shields.io/github/stars/spicylyrics/mobile?style=for-the-badge&color=f5be31&logo=github)](https://github.com/spicylyrics/mobile/stargazers)
 [![Android 6+](https://img.shields.io/badge/Android-6%2B-3ddc84?style=for-the-badge&logo=android&logoColor=white)](https://github.com/spicylyrics/mobile/releases)
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue?style=for-the-badge)](LICENSE)
 [![Discord](https://img.shields.io/badge/Discord-join-5865f2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.com/invite/uqgXU5wh8j)
